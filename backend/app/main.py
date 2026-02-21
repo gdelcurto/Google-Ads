@@ -47,12 +47,19 @@ async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
     alembic_cfg = AlembicConfig("alembic.ini")
     try:
-        await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
+        await asyncio.wait_for(
+            asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head"),
+            timeout=20.0,
+        )
         logger.info("Database migrations applied")
+    except asyncio.TimeoutError:
+        logger.error("Database migration timed out after 20s — app will start anyway")
     except Exception as exc:
         logger.error(f"Database migration failed — app will start anyway: {exc}", exc_info=True)
     try:
-        await _seed_admin()
+        await asyncio.wait_for(_seed_admin(), timeout=10.0)
+    except asyncio.TimeoutError:
+        logger.error("Admin seed timed out — app will start anyway")
     except Exception as exc:
         logger.error(f"Admin seed failed — app will start anyway: {exc}", exc_info=True)
     logger.info(
