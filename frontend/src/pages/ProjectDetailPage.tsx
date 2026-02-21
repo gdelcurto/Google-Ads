@@ -3,34 +3,81 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
 import BriefForm from '../components/BriefForm'
+import { T } from '../styles/theme'
 
 const s: Record<string, React.CSSProperties> = {
-  header: { marginBottom: 24 },
-  h1: { fontSize: 22, fontWeight: 700, color: '#1e3a5f', marginBottom: 4 },
-  tabs: { display: 'flex', gap: 4, borderBottom: '2px solid #e2e8f0', marginBottom: 28 },
-  tab: { padding: '10px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#64748b', border: 'none', background: 'transparent', borderBottom: '2px solid transparent', marginBottom: -2 },
-  tabActive: { color: '#1e3a5f', borderBottom: '2px solid #1e3a5f' },
-  actions: { display: 'flex', gap: 12, marginBottom: 24 },
-  btn: { background: '#1e3a5f', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14 },
-  btnGreen: { background: '#059669', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14 },
-  btnOrange: { background: '#d97706', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14 },
-  alert: { background: '#fef3c7', border: '1px solid #fcd34d', padding: '10px 14px', borderRadius: 6, fontSize: 13, marginBottom: 16 },
-  error: { background: '#fef2f2', border: '1px solid #fca5a5', padding: '10px 14px', borderRadius: 6, fontSize: 13, marginBottom: 16, color: '#dc2626' },
-  success: { background: '#f0fdf4', border: '1px solid #86efac', padding: '10px 14px', borderRadius: 6, fontSize: 13, marginBottom: 16, color: '#166534' },
-  card: { background: '#fff', borderRadius: 8, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 16 },
-  campaignName: { fontWeight: 700, fontSize: 15, color: '#1e3a5f', marginBottom: 6 },
-  metaRow: { display: 'flex', gap: 16, fontSize: 13, color: '#64748b', marginBottom: 8, flexWrap: 'wrap' },
-  badge: { display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff', background: '#64748b' },
-  badgeGreen: { display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff', background: '#059669' },
-  badgeRed: { display: 'inline-block', padding: '2px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, color: '#fff', background: '#dc2626' },
-  blockers: { background: '#fef2f2', padding: '8px 12px', borderRadius: 6, fontSize: 12, color: '#dc2626', marginTop: 6 },
-  adGroups: { marginTop: 10, paddingTop: 10, borderTop: '1px solid #f1f5f9' },
-  agRow: { fontSize: 13, color: '#374151', padding: '4px 0', borderBottom: '1px dashed #f1f5f9' },
-  summary: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 },
-  summaryCard: { background: '#fff', borderRadius: 8, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', textAlign: 'center' },
-  summaryNum: { fontSize: 28, fontWeight: 800, color: '#1e3a5f' },
-  summaryLabel: { fontSize: 12, color: '#94a3b8', marginTop: 4 },
-  textarea: { width: '100%', fontFamily: 'monospace', fontSize: 12, padding: 12, border: '1px solid #cbd5e1', borderRadius: 6, minHeight: 400, resize: 'vertical' },
+  header: { marginBottom: 28 },
+  h1: { fontSize: 24, fontWeight: 700, color: T.text, marginBottom: 4, letterSpacing: -0.4 },
+  tabs: { display: 'flex', gap: 0, borderBottom: `2px solid ${T.borderLight}`, marginBottom: 28 },
+  tab: {
+    padding: '10px 20px', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+    color: T.textGray, border: 'none', background: 'transparent',
+    borderBottom: '2px solid transparent', marginBottom: -2,
+  },
+  tabActive: { color: T.primary, borderBottom: `2px solid ${T.primary}` },
+  actions: { display: 'flex', gap: 10, marginBottom: 24 },
+  btn: {
+    background: T.primary, color: '#fff', border: 'none',
+    padding: '9px 18px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnGreen: {
+    background: T.success, color: '#fff', border: 'none',
+    padding: '9px 18px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnOutline: {
+    background: 'transparent', color: T.text, border: `1px solid ${T.border}`,
+    padding: '8px 18px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  alert: {
+    background: '#fffbeb', border: `1px solid ${T.yellow}`,
+    padding: '10px 14px', borderRadius: T.radiusSm, fontSize: 13, marginBottom: 16, color: '#713f12',
+  },
+  error: {
+    background: '#fff0f0', border: '1px solid #fca5a5',
+    padding: '10px 14px', borderRadius: T.radiusSm, fontSize: 13, marginBottom: 16, color: T.error,
+  },
+  success: {
+    background: '#f0fdf4', border: '1px solid #86efac',
+    padding: '10px 14px', borderRadius: T.radiusSm, fontSize: 13, marginBottom: 16, color: '#166534',
+  },
+  card: {
+    background: T.bgCard, borderRadius: T.radiusLg, padding: 20,
+    boxShadow: T.shadow, marginBottom: 12, border: `1px solid ${T.borderLight}`,
+  },
+  campaignName: { fontWeight: 700, fontSize: 15, color: T.text, marginBottom: 6 },
+  metaRow: { display: 'flex', gap: 16, fontSize: 13, color: T.textGray, marginBottom: 8, flexWrap: 'wrap' },
+  badge: {
+    display: 'inline-block', padding: '2px 10px', borderRadius: 20,
+    fontSize: 11, fontWeight: 700, color: '#fff', background: T.textGray,
+  },
+  badgeGreen: {
+    display: 'inline-block', padding: '2px 10px', borderRadius: 20,
+    fontSize: 11, fontWeight: 700, color: '#fff', background: T.success,
+  },
+  badgeRed: {
+    display: 'inline-block', padding: '2px 10px', borderRadius: 20,
+    fontSize: 11, fontWeight: 700, color: '#fff', background: T.error,
+  },
+  blockers: {
+    background: '#fff0f0', padding: '8px 12px',
+    borderRadius: T.radiusSm, fontSize: 12, color: T.error, marginTop: 8,
+  },
+  adGroups: { marginTop: 10, paddingTop: 10, borderTop: `1px solid ${T.borderLight}` },
+  agRow: {
+    fontSize: 13, color: T.text, padding: '6px 0',
+    borderBottom: `1px solid ${T.borderLight}`,
+  },
+  summary: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 },
+  summaryCard: {
+    background: T.bgCard, borderRadius: T.radiusLg, padding: 20,
+    boxShadow: T.shadow, textAlign: 'center', border: `1px solid ${T.borderLight}`,
+  },
+  summaryNum: { fontSize: 30, fontWeight: 800, color: T.primary },
+  summaryLabel: { fontSize: 12, color: T.textGray, marginTop: 4 },
+  textarea: {
+    width: '100%', fontFamily: 'monospace', fontSize: 12, padding: 12,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 400, resize: 'vertical',
+  },
 }
 
 type Tab = 'overview' | 'campaigns' | 'brief' | 'audit'
@@ -67,7 +114,7 @@ function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
 
       <button
         onClick={() => setExpanded(!expanded)}
-        style={{ ...s.btn, marginTop: 10, padding: '5px 12px', fontSize: 12, background: '#f1f5f9', color: '#374151' }}
+        style={{ marginTop: 10, padding: '5px 12px', fontSize: 12, background: T.bgPage, color: T.text, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 500 }}
       >
         {expanded ? '▲ Nascondi' : '▼ Ad Groups'} ({campaign.ad_groups_count})
       </button>
@@ -83,7 +130,7 @@ function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
             </div>
           ))}
           {campaign.pmax_asset_groups.map((ag, i) => (
-            <div key={`pmax-${i}`} style={{ ...s.agRow, background: '#f8fafc' }}>
+            <div key={`pmax-${i}`} style={{ ...s.agRow, background: T.secondary }}>
               <strong>Asset Group:</strong> {ag.name}
               {ag.has_missing_assets && <span style={{ color: '#dc2626' }}> ⚠ Asset mancanti</span>}
             </div>
@@ -107,11 +154,11 @@ function PlanSummary({ plan }: { plan: AccountPlanPreview }) {
           <div style={s.summaryLabel}>Campagne totali</div>
         </div>
         <div style={s.summaryCard}>
-          <div style={{ ...s.summaryNum, color: '#059669' }}>{publishable}</div>
+          <div style={{ ...s.summaryNum, color: T.success }}>{publishable}</div>
           <div style={s.summaryLabel}>Pronte per publish</div>
         </div>
         <div style={s.summaryCard}>
-          <div style={{ ...s.summaryNum, color: '#dc2626' }}>{blocked}</div>
+          <div style={{ ...s.summaryNum, color: T.error }}>{blocked}</div>
           <div style={s.summaryLabel}>Bloccate</div>
         </div>
         <div style={s.summaryCard}>
@@ -190,7 +237,7 @@ export default function ProjectDetailPage() {
     <div>
       <div style={s.header}>
         <h1 style={s.h1}>{project.name}</h1>
-        <div style={{ fontSize: 13, color: '#64748b' }}>
+        <div style={{ fontSize: 13, color: T.textGray }}>
           {project.client_slug} · {project.preset} · {project.vertical} · <strong>{project.status}</strong>
         </div>
       </div>
@@ -209,7 +256,7 @@ export default function ProjectDetailPage() {
         <button style={s.btnGreen} onClick={() => projectsApi.exportCsv(id!)} disabled={!plan}>
           Esporta CSV
         </button>
-        <button style={s.btnOrange} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
+        <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
           {publishMutation.isPending ? 'Simulando...' : 'Pubblica (Dry Run)'}
         </button>
       </div>
@@ -230,7 +277,7 @@ export default function ProjectDetailPage() {
         <div>
           {plan ? <PlanSummary plan={plan} /> : (
             <div style={s.card}>
-              <p style={{ color: '#64748b' }}>
+              <p style={{ color: T.textGray }}>
                 {project.has_brief
                   ? 'Brief caricato. Clicca "Genera Piano" per vedere il preview.'
                   : 'Carica il brief per iniziare.'}
@@ -247,14 +294,14 @@ export default function ProjectDetailPage() {
               <PlanSummary plan={plan} />
               {plan.campaigns.map(c => <CampaignCard key={c.external_key} campaign={c} />)}
             </>
-          ) : <p style={{ color: '#64748b' }}>Genera prima il piano.</p>}
+          ) : <p style={{ color: T.textGray }}>Genera prima il piano.</p>}
         </div>
       )}
 
       {activeTab === 'brief' && (
         <div>
           {project?.has_brief && briefFetching ? (
-            <p style={{ color: '#64748b' }}>Caricamento brief...</p>
+            <p style={{ color: T.textGray }}>Caricamento brief...</p>
           ) : (
             <BriefForm
               key={brief ? 'loaded' : 'new'}
@@ -277,10 +324,10 @@ export default function ProjectDetailPage() {
             <div key={entry.id} style={s.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <strong>{entry.action}</strong>
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>{new Date(entry.timestamp).toLocaleString('it-IT')}</span>
+                <span style={{ fontSize: 12, color: T.textGray }}>{new Date(entry.timestamp).toLocaleString('it-IT')}</span>
               </div>
               {entry.details && (
-                <pre style={{ fontSize: 11, color: '#64748b', marginTop: 6, whiteSpace: 'pre-wrap' }}>
+                <pre style={{ fontSize: 11, color: T.textGray, marginTop: 6, whiteSpace: 'pre-wrap' }}>
                   {JSON.stringify(entry.details, null, 2)}
                 </pre>
               )}

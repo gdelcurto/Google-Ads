@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, autofillApi, AutofillResult } from '../api/projects'
+import { T } from '../styles/theme'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -275,35 +276,37 @@ const css: Record<string, React.CSSProperties> = {
   stepLine: { flex: 1, height: 2, marginBottom: 16, marginLeft: 4, marginRight: 4 },
   stepLabel: { fontSize: 11, marginTop: 4, textAlign: 'center' },
   section: {
-    background: '#fff', borderRadius: 8, padding: 24,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 20,
+    background: T.bgCard, borderRadius: T.radiusLg, padding: 24,
+    boxShadow: T.shadow, marginBottom: 16, border: `1px solid ${T.borderLight}`,
   },
   sectionTitle: {
-    fontWeight: 700, fontSize: 15, color: '#1e3a5f',
-    marginBottom: 16, paddingBottom: 8, borderBottom: '1px solid #f1f5f9',
+    fontWeight: 700, fontSize: 15, color: T.text,
+    marginBottom: 16, paddingBottom: 8, borderBottom: `1px solid ${T.borderLight}`,
   },
   grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
   field: { marginBottom: 16 },
-  label: { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 },
-  hint: { display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 4 },
+  label: { display: 'block', fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 4 },
+  hint: { display: 'block', fontSize: 11, color: T.textGray, marginBottom: 4 },
   input: {
-    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
-    borderRadius: 6, fontSize: 14, boxSizing: 'border-box',
+    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusSm, fontSize: 14, boxSizing: 'border-box',
+    background: T.bgCard, color: T.text,
   },
   inputErr: { borderColor: '#fca5a5' },
   select: {
-    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
-    borderRadius: 6, fontSize: 14, background: '#fff', boxSizing: 'border-box',
+    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusSm, fontSize: 14, background: T.bgCard, boxSizing: 'border-box',
+    color: T.text,
   },
   textarea: {
-    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
-    borderRadius: 6, fontSize: 13, fontFamily: 'inherit',
-    resize: 'vertical', boxSizing: 'border-box',
+    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
+    borderRadius: T.radiusSm, fontSize: 13, fontFamily: 'inherit',
+    resize: 'vertical', boxSizing: 'border-box', color: T.text,
   },
-  charCount: { fontSize: 11, color: '#94a3b8', textAlign: 'right', marginTop: 2 },
+  charCount: { fontSize: 11, color: T.textGray, textAlign: 'right', marginTop: 2 },
   langCard: {
-    border: '1px solid #e2e8f0', borderRadius: 8,
-    padding: 16, marginBottom: 16, background: '#f8fafc',
+    border: `1px solid ${T.border}`, borderRadius: T.radiusLg,
+    padding: 16, marginBottom: 16, background: T.secondary,
   },
   langHeader: {
     display: 'flex', justifyContent: 'space-between',
@@ -314,70 +317,70 @@ const css: Record<string, React.CSSProperties> = {
     alignItems: 'center', marginTop: 24,
   },
   btn: {
-    background: '#1e3a5f', color: '#fff', border: 'none',
-    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+    background: T.primary, color: '#fff', border: 'none',
+    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
   },
   btnGhost: {
-    background: '#f1f5f9', color: '#374151', border: 'none',
-    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+    background: T.bgPage, color: T.text, border: `1px solid ${T.border}`,
+    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
   },
   btnGreen: {
-    background: '#059669', color: '#fff', border: 'none',
-    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+    background: T.success, color: '#fff', border: 'none',
+    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
   },
   btnRed: {
-    background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5',
+    background: 'transparent', color: T.error, border: '1px solid #fca5a5',
     padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
   },
   btnAdd: {
-    background: 'transparent', color: '#1e3a5f', border: '1px solid #1e3a5f',
-    padding: '8px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    background: 'transparent', color: T.primary, border: `1px solid ${T.primary}`,
+    padding: '8px 16px', borderRadius: T.radiusSm, cursor: 'pointer', fontSize: 13, fontWeight: 600,
   },
   errBox: {
-    background: '#fef2f2', border: '1px solid #fca5a5', padding: '12px 14px',
-    borderRadius: 6, fontSize: 13, color: '#dc2626', marginBottom: 16,
+    background: '#fff0f0', border: '1px solid #fca5a5', padding: '12px 14px',
+    borderRadius: T.radiusSm, fontSize: 13, color: T.error, marginBottom: 16,
   },
   successBox: {
     background: '#f0fdf4', border: '1px solid #86efac', padding: '12px 14px',
-    borderRadius: 6, fontSize: 13, color: '#166534', marginBottom: 16,
+    borderRadius: T.radiusSm, fontSize: 13, color: '#166534', marginBottom: 16,
   },
   reviewCode: {
-    background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6,
+    background: T.bgPage, border: `1px solid ${T.border}`, borderRadius: T.radiusSm,
     padding: 16, fontSize: 12, fontFamily: 'monospace',
     overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
   },
   autofillPanel: {
-    background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
-    border: '1px solid #bfdbfe', borderRadius: 10,
+    background: T.bgCard,
+    border: `1px solid ${T.primary}33`, borderRadius: T.radiusLg,
     padding: 20, marginBottom: 24,
   },
   autofillTitle: {
-    fontWeight: 700, fontSize: 15, color: '#1e3a5f',
+    fontWeight: 700, fontSize: 15, color: T.primary,
     marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
   },
-  autofillSubtitle: { fontSize: 12, color: '#64748b', marginBottom: 14 },
+  autofillSubtitle: { fontSize: 12, color: T.textGray, marginBottom: 14 },
   autofillRow: { display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const },
   autofillUrlInput: {
     flex: 1, minWidth: 220, padding: '9px 12px',
-    border: '1px solid #93c5fd', borderRadius: 6, fontSize: 14,
-    boxSizing: 'border-box' as const,
+    border: `1px solid ${T.border}`, borderRadius: T.radiusSm, fontSize: 14,
+    boxSizing: 'border-box' as const, background: T.bgPage,
   },
   autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
   btnAutofill: {
-    background: '#2563eb', color: '#fff', border: 'none',
-    padding: '9px 20px', borderRadius: 6, cursor: 'pointer',
+    background: T.primary, color: '#fff', border: 'none',
+    padding: '9px 20px', borderRadius: T.radiusSm, cursor: 'pointer',
     fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' as const,
   },
   autofillSuccessBox: {
     background: '#f0fdf4', border: '1px solid #86efac', padding: '10px 14px',
-    borderRadius: 6, fontSize: 13, color: '#166534', marginTop: 10,
+    borderRadius: T.radiusSm, fontSize: 13, color: '#166534', marginTop: 10,
   },
 }
 
 const langPillStyle = (active: boolean): React.CSSProperties => ({
   padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-  cursor: 'pointer', border: active ? '2px solid #1e3a5f' : '1px solid #cbd5e1',
-  background: active ? '#1e3a5f' : '#fff', color: active ? '#fff' : '#64748b',
+  cursor: 'pointer', border: active ? `2px solid ${T.primary}` : `1px solid ${T.border}`,
+  background: active ? T.primary : T.bgCard, color: active ? '#fff' : T.textGray,
 })
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -539,20 +542,20 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               <div
                 style={{
                   ...css.stepBubble,
-                  background: i < step ? '#059669' : i === step ? '#1e3a5f' : '#e2e8f0',
-                  color: i <= step ? '#fff' : '#94a3b8',
+                  background: i < step ? T.success : i === step ? T.primary : T.borderLight,
+                  color: i <= step ? '#fff' : T.textGray,
                   cursor: i < step ? 'pointer' : 'default',
                 }}
                 onClick={() => { if (i < step) { setStep(i); setErrors([]) } }}
               >
                 {i < step ? '✓' : i + 1}
               </div>
-              <div style={{ ...css.stepLabel, color: i === step ? '#1e3a5f' : '#94a3b8', fontWeight: i === step ? 700 : 400 }}>
+              <div style={{ ...css.stepLabel, color: i === step ? T.primary : T.textGray, fontWeight: i === step ? 700 : 400 }}>
                 {label}
               </div>
             </div>
             {i < STEPS.length - 1 && (
-              <div style={{ ...css.stepLine, background: i < step ? '#059669' : '#e2e8f0' }} />
+              <div style={{ ...css.stepLine, background: i < step ? T.success : T.borderLight }} />
             )}
           </div>
         ))}
@@ -606,7 +609,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 {autofillMutation.isPending ? '⏳ Analisi in corso...' : '🔍 Analizza e compila'}
               </button>
             </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: '#374151', fontWeight: 600 }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: T.text, fontWeight: 600 }}>
               Lingue da generare:
             </div>
             <div style={css.autofillLangPills}>
@@ -631,7 +634,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             </div>
             {autofillManual && (
               <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
+                <div style={{ fontSize: 12, color: T.textGray, marginBottom: 4 }}>
                   Vai sul sito dell'hotel, seleziona tutto il testo (Ctrl+A → Ctrl+C) e incollalo qui sotto.
                   Oppure copia il testo della homepage e delle pagine camere/servizi.
                 </div>
@@ -645,7 +648,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               </div>
             )}
             {autofillMutation.isPending && (
-              <div style={{ marginTop: 10, fontSize: 12, color: '#2563eb' }}>
+              <div style={{ marginTop: 10, fontSize: 12, color: T.blue }}>
                 Sto analizzando il sito e generando i contenuti con AI... può richiedere 20–40 secondi.
               </div>
             )}
@@ -1112,7 +1115,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
       {step === 4 && (
         <div style={css.section}>
           <div style={css.sectionTitle}>Revisione Brief</div>
-          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+          <p style={{ fontSize: 13, color: T.textGray, marginBottom: 12 }}>
             Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
           </p>
           <div style={css.reviewCode}>
