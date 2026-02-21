@@ -12,13 +12,25 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// Redirect to login on 401
+// Redirect to login on 401; surface FastAPI detail as error message
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
       window.location.href = '/login'
+    }
+    // Extract backend detail so React Query's onError receives a readable message
+    const detail = err.response?.data?.detail
+    if (detail) {
+      if (typeof detail === 'string') {
+        err.message = detail
+      } else if (Array.isArray(detail)) {
+        // FastAPI validation errors: [{loc, msg, type}, ...]
+        err.message = detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+      } else {
+        err.message = JSON.stringify(detail)
+      }
     }
     return Promise.reject(err)
   },
