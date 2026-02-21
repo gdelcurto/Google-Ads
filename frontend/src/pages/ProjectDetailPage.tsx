@@ -309,52 +309,59 @@ function CampaignPreviewCard({
             </div>
 
           ) : (
-            /* ── Search / Retargeting / Demand Gen — RSA preview ── */
-            /* Priority: actual RSA from plan ad_group[0] → brief lang fallback */
-            (() => {
-              const firstAg = campaign.ad_groups[0]
-              const planH = firstAg?.rsa_headlines?.length > 0 ? firstAg.rsa_headlines : null
-              const planD = firstAg?.rsa_descriptions?.length > 0 ? firstAg.rsa_descriptions : null
-              const previewH = planH || (briefLang?.headlines as string[] || [])
-              const previewD = planD || (briefLang?.descriptions as string[] || [])
-
-              if (!previewH.length) {
-                return (
-                  <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
-                    Asset non trovati per la lingua <strong>{campaign.language_code}</strong> nel brief.
-                  </div>
-                )
-              }
-              return (
-                <GoogleAdPreview
-                  lang={{
-                    headlines:    previewH,
-                    descriptions: previewD,
-                    callouts:     briefLang?.callouts  as string[] || [],
-                    sitelinks:    briefLang?.sitelinks as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
-                  }}
-                  domain={domain}
-                />
-              )
-            })()
-          )}
-
-          {/* ── Ad Groups table ── */}
-          {campaign.ad_groups.length > 0 && (
-            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderLight}`, paddingTop: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.textGray, marginBottom: 8 }}>
-                Ad Groups ({campaign.ad_groups_count})
-              </div>
-              {campaign.ad_groups.map((ag, i) => (
-                <div key={i} style={{ fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
-                  <span style={{ fontWeight: 600 }}>📁 {ag.name}</span>
-                  <span style={{ color: T.textGray }}>KW: {ag.keywords_count}</span>
-                  <span style={{ color: T.textGray }}>Annunci: {ag.ads_count}</span>
-                  {ag.audience_targeting.length > 0 && (
-                    <span style={{ color: T.textGray }}>Audience: {ag.audience_targeting.join(', ')}</span>
-                  )}
+            /* ── Search / Retargeting / Demand Gen — one RSA preview per ad group ── */
+            <div>
+              {campaign.ad_groups.length === 0 ? (
+                <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
+                  Nessun ad group trovato per questa campagna.
                 </div>
-              ))}
+              ) : (
+                campaign.ad_groups.map((ag, i) => {
+                  const agH = ag.rsa_headlines?.length > 0 ? ag.rsa_headlines : (briefLang?.headlines as string[] || [])
+                  const agD = ag.rsa_descriptions?.length > 0 ? ag.rsa_descriptions : (briefLang?.descriptions as string[] || [])
+                  const hasRsa = agH.length > 0
+
+                  return (
+                    <div key={i} style={{ marginBottom: 20 }}>
+                      {/* Ad group header */}
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const,
+                        marginBottom: 10, paddingBottom: 8, borderBottom: `1px solid ${T.borderLight}`,
+                      }}>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>📁 {ag.name}</span>
+                        <span style={{ fontSize: 11, color: T.textGray, background: T.bgMuted, padding: '2px 8px', borderRadius: 10 }}>
+                          {ag.keywords_count} keyword
+                        </span>
+                        <span style={{ fontSize: 11, color: T.textGray, background: T.bgMuted, padding: '2px 8px', borderRadius: 10 }}>
+                          {ag.ads_count} {ag.ads_count === 1 ? 'annuncio' : 'annunci'}
+                        </span>
+                        {ag.audience_targeting.length > 0 && (
+                          <span style={{ fontSize: 11, color: T.textGray }}>
+                            Audience: {ag.audience_targeting.join(', ')}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* RSA preview */}
+                      {hasRsa ? (
+                        <GoogleAdPreview
+                          lang={{
+                            headlines:    agH,
+                            descriptions: agD,
+                            callouts:     briefLang?.callouts as string[] || [],
+                            sitelinks:    briefLang?.sitelinks as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
+                          }}
+                          domain={domain}
+                        />
+                      ) : (
+                        <div style={{ padding: '10px 14px', background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 12 }}>
+                          Nessun annuncio RSA per questo ad group.
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
             </div>
           )}
         </div>
