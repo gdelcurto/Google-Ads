@@ -272,15 +272,64 @@ function ActionPlanTab({ brief }: {
   const targetRoas   = kpi.target_roas    as number | null
   const today        = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
 
-  const orderedTypes = [...campaignTypes].sort((a, b) =>
+  // ── Campaign selection & budget recalculation ─────────────────────────────
+  const [selectedTypes, setSelectedTypes] = useState<string[]>(() => [...campaignTypes])
+  const [recalcBudgets, setRecalcBudgets] = useState<Record<string, number> | null>(null)
+
+  const typesKey = campaignTypes.join(',')
+  useEffect(() => {
+    setSelectedTypes([...campaignTypes])
+    setRecalcBudgets(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typesKey])
+
+  // True when user has deselected at least one AI-suggested type
+  const isDirty = campaignTypes.some(t => !selectedTypes.includes(t))
+
+  function toggleType(type: string) {
+    setSelectedTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    )
+    setRecalcBudgets(null) // reset recalculation on each toggle
+  }
+
+  function handleRecalculate() {
+    const origSelectedSum = selectedTypes.reduce((sum, t) => sum + (byCT[t]?.total ?? 0), 0)
+    const newBudgets: Record<string, number> = {}
+    for (const t of selectedTypes) {
+      newBudgets[t] = origSelectedSum > 0
+        ? ((byCT[t]?.total ?? 0) / origSelectedSum) * totalMonthly
+        : selectedTypes.length > 0 ? totalMonthly / selectedTypes.length : 0
+    }
+    setRecalcBudgets(newBudgets)
+  }
+
+  function effectiveBudget(type: string): number {
+    if (recalcBudgets && selectedTypes.includes(type)) return recalcBudgets[type] ?? 0
+    return byCT[type]?.total ?? 0
+  }
+
+  // Total for selected types only (used in summary cards and table total row)
+  const effectiveTotalMonthly = recalcBudgets
+    ? selectedTypes.reduce((sum, t) => sum + (recalcBudgets[t] ?? 0), 0)
+    : selectedTypes.reduce((sum, t) => sum + (byCT[t]?.total ?? 0), 0)
+
+  // All AI types sorted by priority — shown in the mix table (incl. deselected)
+  const allOrderedTypes = [...campaignTypes].sort((a, b) =>
     ((CAMPAIGN_STRATEGY[a]?.priority ?? 99) - (CAMPAIGN_STRATEGY[b]?.priority ?? 99))
   )
 
-  // Budget per type sorted by priority
-  const typeRows = orderedTypes.map(t => {
-    const monthlyAmt = byCT[t]?.total ?? 0
-    const pct = totalMonthly > 0 ? (monthlyAmt / totalMonthly) * 100 : 0
-    return { type: t, monthlyAmt, pct }
+  // Only selected types sorted — used for the detail section
+  const orderedSelectedTypes = [...selectedTypes].sort((a, b) =>
+    ((CAMPAIGN_STRATEGY[a]?.priority ?? 99) - (CAMPAIGN_STRATEGY[b]?.priority ?? 99))
+  )
+
+  // Budget rows: all types, with isSelected flag and effective amounts
+  const typeRows = allOrderedTypes.map(t => {
+    const isSelected = selectedTypes.includes(t)
+    const monthlyAmt = isSelected ? effectiveBudget(t) : (byCT[t]?.total ?? 0)
+    const pct = isSelected && effectiveTotalMonthly > 0 ? (monthlyAmt / effectiveTotalMonthly) * 100 : 0
+    return { type: t, monthlyAmt, pct, isSelected }
   })
 
   // First language for sample copy
@@ -352,9 +401,9 @@ function ActionPlanTab({ brief }: {
         <div style={h2Style}>Scenario d'investimento</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 20 }}>
           {[
-            { label: 'Budget mensile', value: `€${totalMonthly.toLocaleString('it-IT')}`, sub: 'investimento totale' },
-            { label: 'Budget giornaliero', value: `€${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}`, sub: 'media al giorno' },
-            { label: 'Campagne attive', value: String(orderedTypes.length), sub: 'tipologie' },
+            { label: 'Budget mensile', value: `€${Math.round(effectiveTotalMonthly).toLocaleString('it-IT')}`, sub: 'investimento totale' },
+            { label: 'Budget giornaliero', value: `€${Math.round(effectiveTotalMonthly / 30.44).toLocaleString('it-IT')}`, sub: 'media al giorno' },
+            { label: 'Campagne attive', value: String(selectedTypes.length), sub: 'tipologie' },
             { label: 'Lingue / Mercati', value: String(languages.length), sub: languages.map(l => (l as Record<string,unknown>).code as string).join(', ') },
             ...(targetRoas ? [{ label: 'ROAS target', value: `${targetRoas}:1`, sub: 'ritorno sull\'investimento' }] : []),
             ...(targetCpa  ? [{ label: 'CPA target', value: `€${targetCpa}`, sub: 'costo per prenotazione' }] : []),
@@ -367,7 +416,7 @@ function ActionPlanTab({ brief }: {
           ))}
         </div>
         <p style={bodyText}>
-          Il piano prevede un approccio <strong>full-funnel</strong> con {orderedTypes.length} tipologie di campagna Google Ads,
+          Il piano prevede un approccio <strong>full-funnel</strong> con {selectedTypes.length} tipologie di campagna Google Ads,
           attivate in ordine di priorità d'intento: dalla protezione del brand fino alla generazione di domanda.
           L'obiettivo primario è incrementare le prenotazioni dirette riducendo la dipendenza dalle OTA (Booking.com, Expedia)
           e migliorare il ritorno sull'investimento pubblicitario.
@@ -376,11 +425,47 @@ function ActionPlanTab({ brief }: {
 
       {/* ═══ 3. MIX DI CAMPAGNE ═══ */}
       <div style={sectionStyle}>
-        <div style={h2Style}>Mix di campagne consigliato</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap' as const, gap: 10 }}>
+          <div style={h2Style}>Mix di campagne consigliato</div>
+          {isDirty && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {!recalcBudgets && (
+                <span style={{ fontSize: 12, color: T.textGray, fontFamily: 'system-ui, sans-serif' }}>
+                  {campaignTypes.length - selectedTypes.length} campagna/e esclusa/e
+                </span>
+              )}
+              <button
+                onClick={handleRecalculate}
+                style={{
+                  background: recalcBudgets ? '#f0fdf4' : T.primary,
+                  color: recalcBudgets ? '#15803d' : '#fff',
+                  border: recalcBudgets ? '1px solid #bbf7d0' : 'none',
+                  borderRadius: 6, padding: '6px 14px', fontSize: 12,
+                  fontWeight: 700, cursor: 'pointer', fontFamily: 'system-ui, sans-serif',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                {recalcBudgets ? '✓ Budget ricalcolato' : '⟳ Ricalcola budget'}
+              </button>
+              <button
+                onClick={() => { setSelectedTypes([...campaignTypes]); setRecalcBudgets(null) }}
+                style={{
+                  background: 'transparent', color: T.textGray, border: `1px solid ${T.borderLight}`,
+                  borderRadius: 6, padding: '6px 12px', fontSize: 12,
+                  fontWeight: 600, cursor: 'pointer', fontFamily: 'system-ui, sans-serif',
+                }}
+                title="Ripristina la selezione suggerita dall'AI"
+              >
+                Ripristina AI
+              </button>
+            </div>
+          )}
+        </div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: 'system-ui, sans-serif' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #111' }}>
+                <th style={{ padding: '8px 8px', width: 32 }} />
                 {['Priorità', 'Campagna', 'Funnel', 'Budget/mese', '% tot.', 'Budget/giorno'].map((h, i) => (
                   <th key={i} style={{ padding: '8px 12px', textAlign: i < 2 ? 'left' : 'center', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' as const, color: T.textGray }}>
                     {h}
@@ -389,18 +474,31 @@ function ActionPlanTab({ brief }: {
               </tr>
             </thead>
             <tbody>
-              {typeRows.map(({ type, monthlyAmt, pct }, i) => {
+              {typeRows.map(({ type, monthlyAmt, pct, isSelected }, i) => {
                 const info = CAMPAIGN_STRATEGY[type]
                 const color = TYPE_COLOR[type] || T.primary
+                const rowOpacity = isSelected ? 1 : 0.4
                 return (
-                  <tr key={type} style={{ borderBottom: '1px solid #e8e8e8', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <tr
+                    key={type}
+                    style={{ borderBottom: '1px solid #e8e8e8', background: i % 2 === 0 ? '#fff' : '#fafafa', opacity: rowOpacity, transition: 'opacity 0.15s' }}
+                  >
+                    <td style={{ padding: '8px 8px', textAlign: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleType(type)}
+                        style={{ cursor: 'pointer', width: 15, height: 15, accentColor: T.primary }}
+                        title={isSelected ? 'Deseleziona campagna' : 'Seleziona campagna'}
+                      />
+                    </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: T.textGray, fontSize: 12, fontWeight: 700 }}>
                       {info?.priority ?? i + 1}
                     </td>
                     <td style={{ padding: '12px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
-                        <strong style={{ color: '#111' }}>{info?.label ?? type}</strong>
+                        <strong style={{ color: '#111', textDecoration: isSelected ? 'none' : 'line-through' }}>{info?.label ?? type}</strong>
                       </div>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -409,48 +507,62 @@ function ActionPlanTab({ brief }: {
                       </span>
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 700, fontSize: 15 }}>
-                      €{Math.round(monthlyAmt).toLocaleString('it-IT')}
+                      {isSelected ? `€${Math.round(monthlyAmt).toLocaleString('it-IT')}` : '—'}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-                        <div style={{ width: 60, height: 6, background: '#e8e8e8', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                      {isSelected ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
+                          <div style={{ width: 60, height: 6, background: '#e8e8e8', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                          </div>
+                          <span style={{ fontSize: 12, color: T.textGray, minWidth: 32 }}>{pct.toFixed(0)}%</span>
                         </div>
-                        <span style={{ fontSize: 12, color: T.textGray, minWidth: 32 }}>{pct.toFixed(0)}%</span>
-                      </div>
+                      ) : <span style={{ color: T.textGray, fontSize: 12 }}>—</span>}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center', color: T.textGray, fontSize: 13 }}>
-                      €{Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}/g
+                      {isSelected ? `€${Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}/g` : '—'}
                     </td>
                   </tr>
                 )
               })}
               <tr style={{ borderTop: '2px solid #111', background: '#f5f5f5' }}>
-                <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 13 }}>TOTALE</td>
+                <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 13 }}>
+                  TOTALE{isDirty ? ` (${selectedTypes.length}/${campaignTypes.length} campagne)` : ''}
+                </td>
                 <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 800, fontSize: 16, color: T.primary }}>
-                  €{Math.round(totalMonthly).toLocaleString('it-IT')}
+                  €{Math.round(effectiveTotalMonthly).toLocaleString('it-IT')}
                 </td>
                 <td style={{ padding: '10px 12px', textAlign: 'center', fontWeight: 700 }}>100%</td>
                 <td style={{ padding: '10px 12px', textAlign: 'center', color: T.textGray, fontWeight: 700 }}>
-                  €{Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}/g
+                  €{Math.round(effectiveTotalMonthly / 30.44).toLocaleString('it-IT')}/g
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
+        {isDirty && !recalcBudgets && (
+          <div style={{ marginTop: 14, padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e', fontFamily: 'system-ui, sans-serif' }}>
+            Hai deselezionato {campaignTypes.length - selectedTypes.length} tipologia/e. Clicca <strong>Ricalcola budget</strong> per redistribuire il budget totale (€{Math.round(totalMonthly).toLocaleString('it-IT')}/mese) proporzionalmente tra le campagne selezionate.
+          </div>
+        )}
+        {recalcBudgets && (
+          <div style={{ marginTop: 14, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#15803d', fontFamily: 'system-ui, sans-serif' }}>
+            Budget redistribuito proporzionalmente tra {selectedTypes.length} campagne selezionate · Budget totale invariato: €{Math.round(totalMonthly).toLocaleString('it-IT')}/mese
+          </div>
+        )}
       </div>
 
       {/* ═══ 4. DETTAGLIO CAMPAGNE ═══ */}
       <div style={sectionStyle}>
         <div style={h2Style}>Dettaglio delle campagne</div>
-        {orderedTypes.map((type, idx) => {
+        {orderedSelectedTypes.map((type, idx) => {
           const info = CAMPAIGN_STRATEGY[type]
           const color = TYPE_COLOR[type] || T.primary
-          const monthly = typeRows.find(r => r.type === type)?.monthlyAmt ?? 0
+          const monthly = effectiveBudget(type)
           const sampleCopy = getTypeCopy(type)
 
           return (
-            <div key={type} style={{ marginBottom: 28, paddingBottom: 28, borderBottom: idx < orderedTypes.length - 1 ? '1px dashed #e0e0e0' : 'none' }}>
+            <div key={type} style={{ marginBottom: 28, paddingBottom: 28, borderBottom: idx < orderedSelectedTypes.length - 1 ? '1px dashed #e0e0e0' : 'none' }}>
               {/* Campaign header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 8, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0, fontFamily: 'system-ui, sans-serif' }}>
