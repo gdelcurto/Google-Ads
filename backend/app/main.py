@@ -20,8 +20,8 @@ from alembic.config import Config as AlembicConfig
 from alembic import command as alembic_command
 
 from app.config import get_settings
-from app.database import get_db
-from app.domain.models import User
+from app.database import engine, get_db, Base
+from app.domain.models import User  # noqa: F401 — registers models on Base.metadata
 from app.auth import hash_password
 
 settings = get_settings()
@@ -45,17 +45,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
-    alembic_cfg = AlembicConfig("alembic.ini")
+    # Create all tables (idempotent: skips existing tables)
     try:
-        await asyncio.wait_for(
-            asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head"),
-            timeout=20.0,
-        )
-        logger.info("Database migrations applied")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created/verified")
     except asyncio.TimeoutError:
-        logger.error("Database migration timed out after 20s — app will start anyway")
+        logger.error("Database connection timed out after 10s — app will start anyway")
     except Exception as exc:
-        logger.error(f"Database migration failed — app will start anyway: {exc}", exc_info=True)
+        logger.error(f"Database init failed — app will start anyway: {exc}", exc_info=True)
     try:
         await asyncio.wait_for(_seed_admin(), timeout=10.0)
     except asyncio.TimeoutError:
