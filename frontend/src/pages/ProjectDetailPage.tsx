@@ -299,25 +299,27 @@ function ActionPlanTab({ brief }: {
     return (firstLang.headlines as string[] | undefined)?.slice(0, 4) ?? []
   }
 
+  const SG = "'Space Grotesk', sans-serif"
+
   const docStyle: React.CSSProperties = {
-    maxWidth: 860, margin: '0 auto', fontFamily: '"Georgia", "Times New Roman", serif', color: '#1a1a1a',
+    maxWidth: 860, margin: '0 auto', fontFamily: SG, color: '#1a1a1a',
   }
   const sectionStyle: React.CSSProperties = {
     marginBottom: 36, paddingBottom: 32, borderBottom: `1px solid #e0e0e0`,
   }
   const h2Style: React.CSSProperties = {
     fontSize: 13, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' as const,
-    color: T.primary, marginBottom: 16, fontFamily: 'system-ui, sans-serif',
+    color: T.primary, marginBottom: 16, fontFamily: SG,
   }
   const bodyText: React.CSSProperties = {
-    fontSize: 14, lineHeight: 1.75, color: '#333', fontFamily: '"Georgia", serif',
+    fontSize: 14, lineHeight: 1.75, color: '#333', fontFamily: SG,
   }
 
   return (
-    <div style={docStyle}>
+    <div id="action-plan-print" style={docStyle}>
 
       {/* ── Print button ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
         <button
           style={{ ...s.btnOutline, fontSize: 13 }}
           onClick={() => window.print()}
@@ -328,21 +330,21 @@ function ActionPlanTab({ brief }: {
 
       {/* ═══ 1. INTESTAZIONE ═══ */}
       <div style={{ ...sectionStyle, textAlign: 'center', paddingBottom: 28 }}>
-        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase' as const, color: T.textGray, marginBottom: 8, fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase' as const, color: T.textGray, marginBottom: 8, fontFamily: SG }}>
           Piano Strategico Google Ads
         </div>
         <h1 style={{ fontSize: 32, fontWeight: 700, color: '#111', margin: '0 0 8px', letterSpacing: -0.5 }}>
           {brandName}
         </h1>
-        <div style={{ fontSize: 15, color: T.textGray, marginBottom: 6, fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ fontSize: 15, color: T.textGray, marginBottom: 6, fontFamily: SG }}>
           {category}{stars > 0 ? ` · ${'★'.repeat(stars)}` : ''}
           {address ? ` · ${address}` : ''}
         </div>
-        <div style={{ fontSize: 12, color: T.textGray, fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ fontSize: 12, color: T.textGray, fontFamily: SG }}>
           Preparato il {today}
           {languages.length > 0 && ` · Mercati: ${languages.map(l => (l as Record<string,unknown>).code as string).join(', ')}`}
         </div>
-        <div style={{ display: 'inline-block', marginTop: 14, padding: '4px 16px', background: '#f5f5f5', borderRadius: 20, fontSize: 11, color: T.textGray, fontFamily: 'system-ui, sans-serif', letterSpacing: 1 }}>
+        <div style={{ display: 'inline-block', marginTop: 14, padding: '4px 16px', background: '#f5f5f5', borderRadius: 20, fontSize: 11, color: T.textGray, fontFamily: SG, letterSpacing: 1 }}>
           DOCUMENTO RISERVATO — USO INTERNO E CLIENTE
         </div>
       </div>
@@ -359,7 +361,7 @@ function ActionPlanTab({ brief }: {
             ...(targetRoas ? [{ label: 'ROAS target', value: `${targetRoas}:1`, sub: 'ritorno sull\'investimento' }] : []),
             ...(targetCpa  ? [{ label: 'CPA target', value: `€${targetCpa}`, sub: 'costo per prenotazione' }] : []),
           ].map((card, i) => (
-            <div key={i} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '16px 18px', fontFamily: 'system-ui, sans-serif' }}>
+            <div key={i} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '16px 18px', fontFamily: SG }}>
               <div style={{ fontSize: 11, color: T.textGray, letterSpacing: 0.5, textTransform: 'uppercase' as const, marginBottom: 4 }}>{card.label}</div>
               <div style={{ fontSize: 24, fontWeight: 800, color: T.primary }}>{card.value}</div>
               <div style={{ fontSize: 11, color: T.textGray, marginTop: 2 }}>{card.sub}</div>
@@ -378,7 +380,7 @@ function ActionPlanTab({ brief }: {
       <div style={sectionStyle}>
         <div style={h2Style}>Mix di campagne consigliato</div>
         <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: 'system-ui, sans-serif' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: SG }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #111' }}>
                 {['Priorità', 'Campagna', 'Funnel', 'Budget/mese', '% tot.', 'Budget/giorno'].map((h, i) => (
@@ -453,18 +455,18 @@ function ActionPlanTab({ brief }: {
             <div key={type} style={{ marginBottom: 28, paddingBottom: 28, borderBottom: idx < orderedTypes.length - 1 ? '1px dashed #e0e0e0' : 'none' }}>
               {/* Campaign header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 8, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0, fontFamily: 'system-ui, sans-serif' }}>
+                <div style={{ width: 40, height: 40, borderRadius: 8, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0, fontFamily: SG }}>
                   {info?.priority ?? idx + 1}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const, marginBottom: 4 }}>
-                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111', fontFamily: 'system-ui, sans-serif' }}>
+                    <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#111', fontFamily: SG }}>
                       {info?.label ?? type}
                     </h3>
-                    <span style={{ background: info?.funnelColor ?? color, color: '#fff', borderRadius: 12, fontSize: 10, padding: '2px 10px', fontWeight: 700, fontFamily: 'system-ui, sans-serif' }}>
+                    <span style={{ background: info?.funnelColor ?? color, color: '#fff', borderRadius: 12, fontSize: 10, padding: '2px 10px', fontWeight: 700, fontFamily: SG }}>
                       {info?.funnel ?? '—'}
                     </span>
-                    <span style={{ fontSize: 13, color: T.primary, fontWeight: 700, fontFamily: 'system-ui, sans-serif' }}>
+                    <span style={{ fontSize: 13, color: T.primary, fontWeight: 700, fontFamily: SG }}>
                       €{Math.round(monthly).toLocaleString('it-IT')}/mese
                     </span>
                   </div>
@@ -475,7 +477,7 @@ function ActionPlanTab({ brief }: {
               <p style={{ ...bodyText, marginBottom: 14 }}>{info?.description ?? ''}</p>
 
               {/* Detail grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14, fontFamily: 'system-ui, sans-serif' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14, fontFamily: SG }}>
                 {[
                   { label: 'Target audience', value: info?.audience ?? '' },
                   { label: 'KPI & obiettivi', value: info?.kpi ?? '' },
@@ -491,7 +493,7 @@ function ActionPlanTab({ brief }: {
 
               {/* Sample headlines */}
               {sampleCopy.length > 0 && (
-                <div style={{ background: `${color}0d`, border: `1px solid ${color}33`, borderRadius: 8, padding: '12px 16px', fontFamily: 'system-ui, sans-serif' }}>
+                <div style={{ background: `${color}0d`, border: `1px solid ${color}33`, borderRadius: 8, padding: '12px 16px', fontFamily: SG }}>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' as const, color, marginBottom: 8 }}>
                     Messaggi chiave — {(firstLang?.code as string) || 'IT'}
                   </div>
@@ -513,7 +515,7 @@ function ActionPlanTab({ brief }: {
       {languages.length > 0 && (
         <div style={sectionStyle}>
           <div style={h2Style}>Mercati e lingue</div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: 'system-ui, sans-serif' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: SG }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #111' }}>
                 {['Lingua', 'Landing page', 'Headline campionatura', 'Brand terms'].map((h, i) => (
@@ -551,7 +553,7 @@ function ActionPlanTab({ brief }: {
       {/* ═══ 6. PROSSIMI PASSI ═══ */}
       <div style={{ ...sectionStyle, borderBottom: 'none' }}>
         <div style={h2Style}>Prossimi passi</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10, fontFamily: 'system-ui, sans-serif' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10, fontFamily: SG }}>
           {[
             { step: '01', title: 'Approvazione piano', desc: 'Revisione e firma del preventivo da parte del cliente' },
             { step: '02', title: 'Setup account Google Ads', desc: 'Configurazione customer ID, conversioni, tag, FLOODLIGHT' },
@@ -571,7 +573,7 @@ function ActionPlanTab({ brief }: {
         </div>
 
         {/* Footer */}
-        <div style={{ marginTop: 36, paddingTop: 20, borderTop: '1px solid #e8e8e8', textAlign: 'center', fontSize: 11, color: '#aaa', fontFamily: 'system-ui, sans-serif', letterSpacing: 0.5 }}>
+        <div style={{ marginTop: 36, paddingTop: 20, borderTop: '1px solid #e8e8e8', textAlign: 'center', fontSize: 11, color: '#aaa', fontFamily: SG, letterSpacing: 0.5 }}>
           Documento generato da Google Ads Planner · {brandName} · {today}
         </div>
       </div>
