@@ -1,0 +1,132 @@
+"""
+Retargeting campaign generator.
+Supports: Display, Video, Demand Gen inventory.
+Uses remarketing lists from brief audiences.
+"""
+from __future__ import annotations
+
+from typing import List
+
+from app.domain.schemas.brief import Brief, LanguagePlan, RemarketingList
+from app.domain.schemas.campaign_plan import (
+    AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
+    DisplayAd, NetworkType,
+)
+from app.generators.base import BaseGenerator
+
+
+class RetargetingGenerator(BaseGenerator):
+    """
+    Generates Display retargeting campaigns.
+    Each remarketing list becomes its own ad group for granular bidding.
+    """
+
+    CAMPAIGN_TYPE_KEY = "retargeting"
+
+    def generate(self, brief: Brief) -> List[CampaignPlan]:
+        campaigns = []
+
+        if not brief.audiences.remarketing_lists:
+            return campaigns
+
+        for lang in brief.languages:
+            budget = brief.get_budget_for(self.CAMPAIGN_TYPE_KEY, lang.code)
+            if budget <= 0:
+                continue
+
+            plan = self._generate_for_language(brief, lang)
+            campaigns.append(plan)
+
+        return campaigns
+
+    def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
+        campaign_name = self.build_campaign_name(brief, lang.code, "Retargeting", "Display")
+        external_key = self.build_external_key(brief, lang.code, "retargeting", "display")
+
+        kpi = brief.objectives.kpi
+        bid_strategy = BidStrategy.target_cpa if kpi.target_cpa_eur else BidStrategy.maximize_conversions
+
+        settings = self.build_campaign_settings(
+            brief=brief,
+            lang=lang,
+            camp_type_key=self.CAMPAIGN_TYPE_KEY,
+            network_types=[NetworkType.display],
+            bid_strategy=bid_strategy,
+            target_cpa=kpi.target_cpa_eur,
+        )
+
+        ad_groups = []
+        for rm_list in brief.audiences.remarketing_lists:
+            ag = self._build_remarketing_ad_group(brief, lang, rm_list)
+            ad_groups.append(ag)
+
+        # Add customer match ad group if configured
+        if brief.audiences.customer_match.enabled:
+            ag = self._build_customer_match_group(brief, lang)
+            ad_groups.append(ag)
+
+        blockers = []
+        for ag in ad_groups:
+            for ad in ag.display_ads:
+                if ad.has_missing_assets:
+                    blockers.append(
+                        f"Ad group '{ag.name}': asset immagine mancanti. "
+                        "Carica le creatività prima di pubblicare."
+                    )
+
+        return CampaignPlan(
+            external_key=external_key,
+            campaign_name=campaign_name,
+            campaign_type=CampaignType.display,
+            campaign_subtype="Remarketing",
+            language_code=lang.code,
+            status=CampaignStatus.paused,
+            settings=settings,
+            ad_groups=ad_groups,
+            can_publish=len(blockers) == 0,
+            publish_blockers=blockers,
+        )
+
+    def _build_remarketing_ad_group(
+        self, brief: Brief, lang: LanguagePlan, rm_list: RemarketingList
+    ) -> AdGroupPlan:
+        group_name = f"{lang.code} | Retargeting | {rm_list.name}"
+
+        # Display ads are placeholders — require actual image assets
+        display_ad = DisplayAd(
+            headlines=lang.headlines[:5],
+            descriptions=lang.descriptions[:5],
+            image_urls=["TODO: upload display ad images (300x250, 728x90, 160x600)"],
+            final_url=lang.landing_page,
+            has_missing_assets=True,
+        )
+
+        return AdGroupPlan(
+            name=group_name,
+            status=CampaignStatus.paused,
+            display_ads=[display_ad],
+            audience_targeting=[rm_list.name],
+            targeting_setting="targeting",
+        )
+
+    def _build_customer_match_group(
+        self, brief: Brief, lang: LanguagePlan
+    ) -> AdGroupPlan:
+        list_name = brief.audiences.customer_match.list_name or "CRM List"
+        group_name = f"{lang.code} | Retargeting | {list_name}"
+
+        display_ad = DisplayAd(
+            headlines=lang.headlines[:5],
+            descriptions=lang.descriptions[:5],
+            image_urls=["TODO: upload display ad images"],
+            final_url=lang.landing_page,
+            has_missing_assets=True,
+        )
+
+        return AdGroupPlan(
+            name=group_name,
+            status=CampaignStatus.paused,
+            display_ads=[display_ad],
+            audience_targeting=[list_name],
+            targeting_setting="targeting",
+        )

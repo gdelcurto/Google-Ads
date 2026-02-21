@@ -1,0 +1,188 @@
+"""Campaign generation and preview routes."""
+import json
+import logging
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth import TokenData, require_strategist_or_admin
+from app.database import get_db
+from app.domain.models import AuditLog, CampaignRecord, Project
+from app.domain.schemas.brief import Brief
+from app.domain.schemas.campaign_plan import AccountPlan
+from app.generators.orchestrator import CampaignOrchestrator
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/projects", tags=["campaigns"])
+orchestrator = CampaignOrchestrator()
+
+
+@router.post("/{project_id}/generate")
+async def generate_campaign_plan(
+    project_id: str,
+    dry_run: bool = True,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate the full campaign plan from the project's brief.
+    Returns a preview of all campaigns, ad groups, and assets.
+    """
+    project = await _get_project_or_404(project_id, db)
+
+    if not project.brief_json:
+        raise HTTPException(status_code=400, detail="Brief non caricato. Carica prima il brief.")
+
+    try:
+        brief = Brief(**json.loads(project.brief_json))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Brief non valido: {exc}")
+
+    # Get existing campaigns for idempotency
+    result = await db.execute(
+        select(CampaignRecord).where(CampaignRecord.project_id == project_id)
+    )
+    existing = [
+        {
+            "external_key": c.external_key,
+            "google_ads_campaign_id": c.google_ads_campaign_id,
+        }
+        for c in result.scalars().all()
+    ]
+
+    try:
+        plan = orchestrator.generate_plan(
+            brief=brief,
+            project_id=project_id,
+            dry_run=dry_run,
+            existing_campaigns=existing,
+        )
+    except Exception as exc:
+        logger.error(f"Generation failed for project {project_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore generazione: {exc}")
+
+    # Persist plan to project
+    project.plan_json = plan.model_dump_json()
+    project.status = "preview"
+
+    # Upsert campaign records
+    existing_keys = {c["external_key"] for c in existing}
+    for campaign in plan.campaigns:
+        if campaign.external_key not in existing_keys:
+            record = CampaignRecord(
+                project_id=project_id,
+                external_key=campaign.external_key,
+                campaign_name=campaign.campaign_name,
+                campaign_type=campaign.campaign_type.value,
+                language_code=campaign.language_code,
+                budget_daily=campaign.settings.budget_daily_eur,
+                can_publish=campaign.can_publish,
+                plan_json=campaign.model_dump_json(),
+            )
+            db.add(record)
+        else:
+            # Update existing record
+            result2 = await db.execute(
+                select(CampaignRecord).where(
+                    CampaignRecord.project_id == project_id,
+                    CampaignRecord.external_key == campaign.external_key,
+                )
+            )
+            record = result2.scalar_one_or_none()
+            if record:
+                record.budget_daily = campaign.settings.budget_daily_eur
+                record.can_publish = campaign.can_publish
+                record.plan_json = campaign.model_dump_json()
+
+    log = AuditLog(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="generate_plan",
+        entity_type="project",
+        entity_id=project_id,
+        details=json.dumps({
+            "dry_run": dry_run,
+            "campaigns_count": len(plan.campaigns),
+            "is_valid": plan.is_valid,
+            "publish_ready": plan.publish_ready,
+        }),
+    )
+    db.add(log)
+
+    return _plan_to_preview(plan)
+
+
+@router.get("/{project_id}/plan")
+async def get_plan(
+    project_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the previously generated plan for a project."""
+    project = await _get_project_or_404(project_id, db)
+    if not project.plan_json:
+        raise HTTPException(status_code=404, detail="Piano non ancora generato. Esegui /generate prima.")
+    plan = AccountPlan(**json.loads(project.plan_json))
+    return _plan_to_preview(plan)
+
+
+def _plan_to_preview(plan: AccountPlan) -> dict:
+    """Serialize plan to a UI-friendly preview structure."""
+    return {
+        "project_id": plan.project_id,
+        "client_name": plan.client_name,
+        "generated_at": plan.generated_at.isoformat(),
+        "is_valid": plan.is_valid,
+        "publish_ready": plan.publish_ready,
+        "total_campaigns": plan.total_campaigns,
+        "validation_errors": plan.validation_errors,
+        "validation_warnings": plan.validation_warnings,
+        "campaigns": [
+            {
+                "external_key": c.external_key,
+                "campaign_name": c.campaign_name,
+                "campaign_type": c.campaign_type.value,
+                "language_code": c.language_code,
+                "status": c.status.value,
+                "budget_daily_eur": c.settings.budget_daily_eur,
+                "bid_strategy": c.settings.bid_strategy.value,
+                "can_publish": c.can_publish,
+                "publish_blockers": c.publish_blockers,
+                "ad_groups_count": len(c.ad_groups),
+                "pmax_asset_groups_count": len(c.pmax_asset_groups),
+                "dry_run_diff": c.dry_run_diff,
+                "ad_groups": [
+                    {
+                        "name": ag.name,
+                        "keywords_count": len(ag.keywords),
+                        "ads_count": len(ag.ads),
+                        "display_ads_count": len(ag.display_ads),
+                        "demand_gen_ads_count": len(ag.demand_gen_ads),
+                        "audience_targeting": ag.audience_targeting,
+                    }
+                    for ag in c.ad_groups
+                ],
+                "pmax_asset_groups": [
+                    {
+                        "name": ag.name,
+                        "headlines_count": len(ag.headlines),
+                        "has_missing_assets": ag.has_missing_assets,
+                        "missing_asset_notes": ag.missing_asset_notes,
+                        "audience_signals": ag.audience_signals,
+                    }
+                    for ag in c.pmax_asset_groups
+                ],
+            }
+            for c in plan.campaigns
+        ],
+    }
+
+
+async def _get_project_or_404(project_id: str, db: AsyncSession) -> Project:
+    result = await db.execute(select(Project).where(Project.id == project_id))
+    project = result.scalar_one_or_none()
+    if not project:
+        raise HTTPException(status_code=404, detail="Progetto non trovato")
+    return project

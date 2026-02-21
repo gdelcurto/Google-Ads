@@ -1,0 +1,580 @@
+{
+  "$schema": "../backend/app/domain/schemas/brief_schema.json",
+  "version": "1.0",
+  "meta": {
+    "project_name": "Grand Hotel Roma – Setup Q2 2024",
+    "created_by": "mario.rossi@blastness.com",
+    "preset": "blastness",
+    "vertical": "city_hotel"
+  },
+  "client": {
+    "brand_name": "Grand Hotel Roma",
+    "brand_slug": "grand-hotel-roma",
+    "domain": "www.grandhotelroma.it",
+    "country": "IT",
+    "currency": "EUR",
+    "timezone": "Europe/Rome",
+    "google_ads_customer_id": "123-456-7890",
+    "google_ads_mcc_id": "000-000-0001"
+  },
+  "objectives": {
+    "primary": "direct_bookings",
+    "secondary": ["phone_calls"],
+    "kpi": {
+      "target_cpa_eur": 45.00,
+      "target_roas": 8.5,
+      "max_cpc_brand": 1.20,
+      "max_cpc_acquisition": 2.50
+    },
+    "conversions": {
+      "primary_conversion_action": "Purchase / Reservation",
+      "conversion_action_ids": ["987654321"],
+      "secondary_conversion_actions": ["Phone Call", "Contact Form"],
+      "value_per_conversion": 350.00
+    }
+  },
+  "budgets": {
+    "total_monthly_eur": 4500,
+    "by_campaign_type": {
+      "search_brand": {
+        "total": 800,
+        "by_language": {
+          "IT": 450,
+          "EN": 250,
+          "DE": 100
+        }
+      },
+      "search_acquisition": {
+        "total": 1800,
+        "by_language": {
+          "IT": 800,
+          "EN": 600,
+          "DE": 400
+        }
+      },
+      "retargeting": {
+        "total": 600,
+        "by_language": {
+          "IT": 300,
+          "EN": 200,
+          "DE": 100
+        }
+      },
+      "performance_max": {
+        "total": 900,
+        "by_language": {
+          "IT": 400,
+          "EN": 300,
+          "DE": 200
+        }
+      },
+      "demand_gen": {
+        "total": 400,
+        "by_language": {
+          "IT": 200,
+          "EN": 150,
+          "DE": 50
+        }
+      }
+    }
+  },
+  "languages": [
+    {
+      "code": "IT",
+      "name": "Italiano",
+      "google_language_id": 1004,
+      "landing_page": "https://www.grandhotelroma.it/",
+      "brand_terms": [
+        "grand hotel roma",
+        "grand hotel rome",
+        "hotel grand roma"
+      ],
+      "brand_variants": [
+        "grand hotel rome centro",
+        "grand hotel piazza venezia"
+      ],
+      "brand_exclusions": [
+        "economico",
+        "ostello",
+        "bed and breakfast",
+        "airbnb"
+      ],
+      "usp": {
+        "main": "Soggiorna nel cuore di Roma, a 5 stelle",
+        "bullets": [
+          "A 2 minuti dal Colosseo",
+          "Spa & Wellness esclusiva",
+          "Colazione inclusa",
+          "Parcheggio gratuito"
+        ]
+      },
+      "headlines": [
+        "Grand Hotel Roma Ufficiale",
+        "Hotel 5 Stelle a Roma Centro",
+        "Prenota Diretto e Risparmia",
+        "Miglior Prezzo Garantito",
+        "A Due Passi dal Colosseo",
+        "Spa Esclusiva Inclusa",
+        "Colazione Inclusa",
+        "Parcheggio Gratuito",
+        "Check-in Flessibile",
+        "Vista Panoramica su Roma",
+        "Suite Luxury Disponibili",
+        "Offerte Esclusive Online"
+      ],
+      "descriptions": [
+        "Hotel 5 stelle a Roma. Prenota sul sito ufficiale: miglior prezzo e vantaggi esclusivi.",
+        "A 2 minuti dal Colosseo, con Spa, colazione inclusa e parcheggio. Offerte speciali.",
+        "Centro storico di Roma. Prenota direttamente e ottieni upgrade gratuito su disponibilità.",
+        "Vacanza a Roma da sogno: 5 stelle, posizione centrale, servizi esclusivi. Prenota ora."
+      ],
+      "sitelinks": [
+        {
+          "text": "Offerte Speciali",
+          "description_1": "Sconti fino al 30%",
+          "description_2": "Solo sul sito ufficiale",
+          "final_url": "https://www.grandhotelroma.it/offerte"
+        },
+        {
+          "text": "Spa & Wellness",
+          "description_1": "Trattamenti esclusivi",
+          "description_2": "Prenota il tuo pacchetto",
+          "final_url": "https://www.grandhotelroma.it/spa"
+        },
+        {
+          "text": "Sale Conferenze",
+          "description_1": "Fino a 200 persone",
+          "description_2": "Ideale per eventi aziendali",
+          "final_url": "https://www.grandhotelroma.it/meeting"
+        },
+        {
+          "text": "Ristorante",
+          "description_1": "Cucina romana autentica",
+          "description_2": "Vista panoramica sulla città",
+          "final_url": "https://www.grandhotelroma.it/ristorante"
+        }
+      ],
+      "callouts": [
+        "Miglior Prezzo Garantito",
+        "Cancellazione Gratuita",
+        "Wi-Fi Gratuito",
+        "Navetta Aeroporto",
+        "Concierge 24h"
+      ],
+      "structured_snippets": [
+        {
+          "header": "Servizi",
+          "values": ["Spa", "Piscina", "Ristorante", "Bar", "Fitness Center", "Sala Conferenze"]
+        },
+        {
+          "header": "Tipo di camera",
+          "values": ["Standard", "Superior", "Deluxe", "Junior Suite", "Suite Presidenziale"]
+        }
+      ]
+    },
+    {
+      "code": "EN",
+      "name": "English",
+      "google_language_id": 1000,
+      "landing_page": "https://www.grandhotelroma.it/en/",
+      "brand_terms": [
+        "grand hotel rome",
+        "grand hotel roma",
+        "grand rome hotel"
+      ],
+      "brand_variants": [
+        "grand hotel rome city centre",
+        "grand hotel near colosseum"
+      ],
+      "brand_exclusions": [
+        "cheap",
+        "hostel",
+        "budget",
+        "airbnb"
+      ],
+      "usp": {
+        "main": "Stay in the Heart of Rome, 5-Star Luxury",
+        "bullets": [
+          "2 minutes from the Colosseum",
+          "Exclusive Spa & Wellness",
+          "Breakfast included",
+          "Free parking"
+        ]
+      },
+      "headlines": [
+        "Grand Hotel Rome Official Site",
+        "5-Star Hotel Rome City Centre",
+        "Book Direct & Save",
+        "Best Price Guaranteed",
+        "Steps from the Colosseum",
+        "Exclusive Spa Included",
+        "Breakfast Included",
+        "Free Parking Available",
+        "Flexible Check-in",
+        "Panoramic Views of Rome",
+        "Luxury Suites Available",
+        "Exclusive Online Deals"
+      ],
+      "descriptions": [
+        "5-star hotel in Rome. Book on our website for the best price and exclusive benefits.",
+        "2 mins from the Colosseum, with Spa, breakfast and free parking. Special offers available.",
+        "Experience elegance in the historic centre. Book direct and get a free room upgrade.",
+        "Your Rome experience starts here. 5 stars, central location, exclusive services. Book now."
+      ],
+      "sitelinks": [
+        {
+          "text": "Special Offers",
+          "description_1": "Up to 30% off",
+          "description_2": "Exclusive on our website",
+          "final_url": "https://www.grandhotelroma.it/en/offers"
+        },
+        {
+          "text": "Spa & Wellness",
+          "description_1": "Exclusive treatments",
+          "description_2": "Book your package",
+          "final_url": "https://www.grandhotelroma.it/en/spa"
+        },
+        {
+          "text": "Conference Rooms",
+          "description_1": "Up to 200 guests",
+          "description_2": "Perfect for corporate events",
+          "final_url": "https://www.grandhotelroma.it/en/meeting"
+        },
+        {
+          "text": "Restaurant",
+          "description_1": "Authentic Roman cuisine",
+          "description_2": "Panoramic city views",
+          "final_url": "https://www.grandhotelroma.it/en/restaurant"
+        }
+      ],
+      "callouts": [
+        "Best Price Guaranteed",
+        "Free Cancellation",
+        "Free Wi-Fi",
+        "Airport Shuttle",
+        "24h Concierge"
+      ],
+      "structured_snippets": [
+        {
+          "header": "Amenities",
+          "values": ["Spa", "Pool", "Restaurant", "Bar", "Fitness Center", "Conference Room"]
+        },
+        {
+          "header": "Room types",
+          "values": ["Standard", "Superior", "Deluxe", "Junior Suite", "Presidential Suite"]
+        }
+      ]
+    },
+    {
+      "code": "DE",
+      "name": "Deutsch",
+      "google_language_id": 1001,
+      "landing_page": "https://www.grandhotelroma.it/de/",
+      "brand_terms": [
+        "grand hotel rom",
+        "grand hotel roma",
+        "grand hotel rome"
+      ],
+      "brand_variants": [
+        "grand hotel rom stadtzentrum",
+        "grand hotel nahe kolosseum"
+      ],
+      "brand_exclusions": [
+        "günstig",
+        "billig",
+        "hostel",
+        "budget"
+      ],
+      "usp": {
+        "main": "Im Herzen Roms – 5-Sterne-Luxus",
+        "bullets": [
+          "2 Minuten vom Kolosseum",
+          "Exklusiver Spa & Wellness",
+          "Frühstück inklusive",
+          "Kostenlose Parkplätze"
+        ]
+      },
+      "headlines": [
+        "Grand Hotel Rom Offiziell",
+        "5-Sterne-Hotel in Rom Zentrum",
+        "Direkt buchen und sparen",
+        "Bestpreisgarantie",
+        "Nahe am Kolosseum",
+        "Exklusiver Spa inklusive",
+        "Frühstück Inklusive",
+        "Kostenloser Parkplatz",
+        "Flexibler Check-in",
+        "Panoramablick auf Rom",
+        "Luxussuiten verfügbar",
+        "Exklusive Online-Angebote"
+      ],
+      "descriptions": [
+        "5-Sterne-Hotel in Rom. Auf unserer Website buchen für Bestpreisgarantie.",
+        "2 Minuten vom Kolosseum, mit Spa, Frühstück inklusive und kostenlosem Parkplatz.",
+        "Eleganz im historischen Zentrum. Direkt buchen und kostenloses Upgrade erhalten.",
+        "Ihr Rom-Erlebnis beginnt hier. 5 Sterne, zentrale Lage, exklusive Services. Jetzt buchen."
+      ],
+      "sitelinks": [
+        {
+          "text": "Sonderangebote",
+          "description_1": "Bis zu 30% Rabatt",
+          "description_2": "Exklusiv auf unserer Website",
+          "final_url": "https://www.grandhotelroma.it/de/angebote"
+        },
+        {
+          "text": "Spa & Wellness",
+          "description_1": "Exklusive Behandlungen",
+          "description_2": "Ihr Paket buchen",
+          "final_url": "https://www.grandhotelroma.it/de/spa"
+        }
+      ],
+      "callouts": [
+        "Bestpreisgarantie",
+        "Kostenlose Stornierung",
+        "Kostenloses WLAN",
+        "Flughafenshuttle",
+        "24h Concierge"
+      ],
+      "structured_snippets": [
+        {
+          "header": "Ausstattung",
+          "values": ["Spa", "Pool", "Restaurant", "Bar", "Fitness Center"]
+        }
+      ]
+    }
+  ],
+  "geo_targeting": {
+    "target_countries": ["IT", "DE", "AT", "CH", "GB", "US"],
+    "target_regions": [],
+    "target_cities": [],
+    "exclusions": {
+      "countries": [],
+      "regions": [],
+      "cities": []
+    },
+    "radius_targets": []
+  },
+  "seasonality": {
+    "enabled": true,
+    "peak_periods": [
+      {"start": "2024-04-01", "end": "2024-06-30", "label": "Primavera", "budget_multiplier": 1.3},
+      {"start": "2024-08-01", "end": "2024-08-31", "label": "Alta Estate", "budget_multiplier": 1.5},
+      {"start": "2024-12-20", "end": "2025-01-06", "label": "Natale-Capodanno", "budget_multiplier": 1.4}
+    ],
+    "low_periods": [
+      {"start": "2024-11-01", "end": "2024-11-30", "label": "Bassa Stagione", "budget_multiplier": 0.7}
+    ],
+    "ad_schedule": {
+      "enabled": false,
+      "schedule": []
+    }
+  },
+  "audiences": {
+    "remarketing_lists": [
+      {
+        "name": "All Website Visitors 30d",
+        "type": "website_visitors",
+        "lookback_days": 30,
+        "source": "google_tag"
+      },
+      {
+        "name": "Booking Page Visitors 14d",
+        "type": "website_visitors",
+        "lookback_days": 14,
+        "source": "google_tag",
+        "url_contains": "/prenota"
+      },
+      {
+        "name": "Abandoned Booking 7d",
+        "type": "website_visitors",
+        "lookback_days": 7,
+        "source": "google_tag",
+        "url_contains": "/checkout"
+      }
+    ],
+    "customer_match": {
+      "enabled": true,
+      "list_name": "CRM Past Guests",
+      "source": "crm_export"
+    },
+    "in_market_segments": [
+      "Travel & Tourism/Hotels & Accommodations",
+      "Travel & Tourism/Luxury Travel",
+      "Travel & Tourism/Business Travel"
+    ],
+    "custom_intent": [
+      "hotel roma centro 5 stelle",
+      "luxury hotel rome booking",
+      "hotel vicino colosseo"
+    ]
+  },
+  "hotel_specifics": {
+    "category": "city_hotel",
+    "stars": 5,
+    "rooms": 180,
+    "location": {
+      "address": "Via Nazionale 1, Roma",
+      "coordinates": {"lat": 41.8967, "lng": 12.4822},
+      "landmarks_nearby": ["Colosseo", "Foro Romano", "Piazza Venezia", "Termini"],
+      "distance_to_landmarks": {
+        "Colosseo": "5 min a piedi",
+        "Termini": "10 min a piedi"
+      }
+    },
+    "room_categories": [
+      "Standard",
+      "Superior",
+      "Deluxe",
+      "Junior Suite",
+      "Suite Presidenziale"
+    ],
+    "services": [
+      "Spa & Wellness",
+      "Piscina",
+      "Ristorante Gastronomico",
+      "Bar",
+      "Sala Fitness",
+      "Sale Conferenze",
+      "Concierge",
+      "Navetta Aeroporto"
+    ],
+    "strengths": [
+      "Posizione centralissima",
+      "Ristrutturato nel 2023",
+      "Certificato Green Key",
+      "Chef stellato Michelin"
+    ],
+    "booking_engine_url": "https://www.grandhotelroma.it/prenota",
+    "hotel_id_google": "ChIJabcdef123456"
+  },
+  "policy_constraints": [
+    "Non usare 'il migliore' o 'numero uno' senza evidenza verificabile",
+    "Non promettere prezzi specifici negli annunci",
+    "Non usare claim di salute non documentati",
+    "Verificare compliance GDPR per customer match"
+  ],
+  "acquisition_keywords": {
+    "IT": {
+      "themes": {
+        "location": [
+          "hotel roma centro",
+          "hotel centro storico roma",
+          "hotel piazza venezia",
+          "hotel vicino colosseo"
+        ],
+        "category": [
+          "hotel 5 stelle roma",
+          "hotel lusso roma",
+          "hotel luxury roma centro"
+        ],
+        "intent": [
+          "prenota hotel roma",
+          "offerte hotel roma",
+          "hotel roma offerta"
+        ],
+        "occasion": [
+          "hotel romantico roma",
+          "weekend roma hotel",
+          "luna di miele roma hotel"
+        ]
+      },
+      "negative_keywords": [
+        "ostello",
+        "bed and breakfast",
+        "b&b",
+        "airbnb",
+        "economico",
+        "gratis",
+        "gratuito",
+        "hostel"
+      ]
+    },
+    "EN": {
+      "themes": {
+        "location": [
+          "hotel rome city centre",
+          "hotel near colosseum",
+          "rome historic centre hotel",
+          "central rome hotel"
+        ],
+        "category": [
+          "5 star hotel rome",
+          "luxury hotel rome",
+          "rome luxury hotel"
+        ],
+        "intent": [
+          "book hotel rome",
+          "rome hotel deals",
+          "rome hotel booking"
+        ],
+        "occasion": [
+          "romantic hotel rome",
+          "rome weekend hotel",
+          "honeymoon hotel rome"
+        ]
+      },
+      "negative_keywords": [
+        "hostel",
+        "cheap",
+        "budget",
+        "free",
+        "airbnb",
+        "bed and breakfast"
+      ]
+    },
+    "DE": {
+      "themes": {
+        "location": [
+          "hotel rom stadtzentrum",
+          "hotel nahe kolosseum",
+          "rom hotel historisches zentrum"
+        ],
+        "category": [
+          "5 sterne hotel rom",
+          "luxushotel rom",
+          "rom luxus hotel"
+        ],
+        "intent": [
+          "hotel rom buchen",
+          "rom hotel angebote",
+          "rom unterkunft buchen"
+        ],
+        "occasion": [
+          "romantisches hotel rom",
+          "wochenende rom hotel",
+          "flitterwochen hotel rom"
+        ]
+      },
+      "negative_keywords": [
+        "hostel",
+        "billig",
+        "günstig",
+        "kostenlos",
+        "airbnb"
+      ]
+    }
+  },
+  "naming_convention": {
+    "separator": " | ",
+    "components": ["lang", "type", "subtype", "match_type"],
+    "example": "IT | Search | Brand | Exact"
+  },
+  "labels": [
+    "blastness_setup",
+    "blastness_grand-hotel-roma",
+    "blastness_q2-2024",
+    "vertical_city_hotel"
+  ],
+  "utm_config": {
+    "source": "google",
+    "medium": "{network}",
+    "campaign": "{campaignid}",
+    "content": "{adgroupid}",
+    "term": "{keyword}",
+    "custom_params": {
+      "device": "{device}",
+      "matchtype": "{matchtype}"
+    },
+    "preset_tag": "blastness"
+  }
+}
