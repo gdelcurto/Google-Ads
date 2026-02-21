@@ -127,6 +127,36 @@ class UspInfo(BaseModel):
     bullets: List[str] = Field(default_factory=list)
 
 
+class PerTypeAssets(BaseModel):
+    """
+    Per-campaign-type RSA copy for a language.
+
+    When configured, these headlines/descriptions override the generic pool
+    for the specific campaign type, allowing each type to have tailored messaging:
+    - brand_assets      → branded copy ("Hotel XYZ Ufficiale", "Miglior Tariffa")
+    - acquisition_assets→ generic/category copy ("Hotel Roma Centro", "4 Stelle")
+    - retargeting_assets→ urgency copy ("Completa la prenotazione", "Offerta riservata")
+    """
+    headlines: List[str] = Field(
+        default_factory=list,
+        description="RSA headlines for this campaign type (max 30 chars each, up to 15)",
+    )
+    descriptions: List[str] = Field(
+        default_factory=list,
+        description="RSA descriptions for this campaign type (max 90 chars each, up to 4)",
+    )
+
+    @model_validator(mode="after")
+    def validate_char_limits(self) -> "PerTypeAssets":
+        for h in self.headlines:
+            if len(h) > 30:
+                raise ValueError(f"Headline too long (max 30 chars): '{h}'")
+        for d in self.descriptions:
+            if len(d) > 90:
+                raise ValueError(f"Description too long (max 90 chars): '{d}'")
+        return self
+
+
 class LanguagePlan(BaseModel):
     code: str = Field(..., min_length=2, max_length=5, description="e.g. IT, EN, FR-CH")
     name: str
@@ -141,6 +171,28 @@ class LanguagePlan(BaseModel):
     sitelinks: List[Sitelink] = Field(default_factory=list)
     callouts: List[str] = Field(default_factory=list)
     structured_snippets: List[StructuredSnippet] = Field(default_factory=list)
+    # ── Per-type copy overrides ────────────────────────────────────────────
+    brand_assets: Optional[PerTypeAssets] = Field(
+        None,
+        description=(
+            "Brand-specific RSA copy (brand name + direct booking messaging). "
+            "Overrides generic headlines for Brand Search campaigns."
+        ),
+    )
+    acquisition_assets: Optional[PerTypeAssets] = Field(
+        None,
+        description=(
+            "Acquisition-specific RSA copy (no brand name — category/location/USP). "
+            "Overrides generic headlines for Acquisition campaigns."
+        ),
+    )
+    retargeting_assets: Optional[PerTypeAssets] = Field(
+        None,
+        description=(
+            "Retargeting-specific RSA copy (urgency/personalization for returning visitors). "
+            "Overrides generic headlines for Retargeting campaigns."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_rsa_limits(self) -> "LanguagePlan":

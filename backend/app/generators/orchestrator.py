@@ -8,14 +8,29 @@ import json
 import logging
 from typing import List, Optional
 
+from app.agents import AGENTS
 from app.domain.schemas.brief import Brief
-from app.domain.schemas.campaign_plan import AccountPlan, CampaignPlan
+from app.domain.schemas.campaign_plan import AccountPlan, CampaignPlan, CampaignType
 from app.generators.acquisition_search import AcquisitionSearchGenerator
 from app.generators.brand_search import BrandSearchGenerator
 from app.generators.demand_gen import DemandGenGenerator
 from app.generators.performance_max import PerformanceMaxGenerator
 from app.generators.retargeting import RetargetingGenerator
 from app.validators.brief_validator import BriefValidator
+
+
+def _campaign_type_key(c: CampaignPlan) -> str:
+    """Map a generated CampaignPlan back to its CampaignTypeKey (agent key)."""
+    tv = c.campaign_type.value
+    if tv == CampaignType.performance_max.value:
+        return "performance_max"
+    if tv == CampaignType.demand_gen.value:
+        return "demand_gen"
+    if tv == CampaignType.display.value:
+        return "retargeting"
+    if tv == CampaignType.search.value:
+        return "search_brand" if c.campaign_subtype == "Brand" else "search_acquisition"
+    return ""
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +98,19 @@ class CampaignOrchestrator:
         # Step 4: Global negative keywords (across all campaigns)
         global_negatives = self._build_global_negatives(brief)
 
-        # Step 5: Dry run diff (only set if not already set by idempotency)
+        # Step 5: Agent copy validation — one check per (language × campaign_type)
+        agent_warnings: list[str] = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for c in all_campaigns:
+            tk = _campaign_type_key(c)
+            pair = (c.language_code, tk)
+            if tk and pair not in seen_pairs:
+                seen_pairs.add(pair)
+                lang = brief.get_language(c.language_code)
+                if lang and tk in AGENTS:
+                    agent_warnings.extend(AGENTS[tk].validate_copy(lang))
+
+        # Step 6: Dry run diff (only set if not already set by idempotency)
         if dry_run:
             for campaign in all_campaigns:
                 if campaign.dry_run_diff is None:
@@ -103,7 +130,7 @@ class CampaignOrchestrator:
             brief_version=brief.version,
             campaigns=all_campaigns,
             global_negative_keywords=global_negatives,
-            validation_warnings=validation.warning_messages,
+            validation_warnings=validation.warning_messages + agent_warnings,
             validation_errors=validation.error_messages,
             is_valid=validation.is_valid,
             publish_ready=validation.is_valid and all(c.can_publish for c in all_campaigns),

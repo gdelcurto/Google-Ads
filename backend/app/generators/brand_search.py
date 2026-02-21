@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from typing import List
 
+from app.agents.brand import BrandAgent
 from app.domain.schemas.brief import Brief, LanguagePlan
 from app.domain.schemas.campaign_plan import (
     AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
     Keyword, MatchType, NetworkType,
 )
 from app.generators.base import BaseGenerator
+
+_agent = BrandAgent()
 
 
 class BrandSearchGenerator(BaseGenerator):
@@ -110,6 +113,8 @@ class BrandSearchGenerator(BaseGenerator):
             final_url=lang.landing_page,
             tracking_template=tracking_template,
             pinned_headlines=[(lang.brand_terms[0], 1)] if lang.brand_terms else None,
+            headlines=_agent.get_headlines(lang),
+            descriptions=_agent.get_descriptions(lang),
         )
 
         return AdGroupPlan(
@@ -138,6 +143,8 @@ class BrandSearchGenerator(BaseGenerator):
             lang=lang,
             final_url=lang.landing_page,
             tracking_template=tracking_template,
+            headlines=_agent.get_headlines(lang),
+            descriptions=_agent.get_descriptions(lang),
         )
 
         return AdGroupPlan(

@@ -36,6 +36,8 @@ export interface AdGroupPreview {
   keywords_count: number
   ads_count: number
   audience_targeting: string[]
+  rsa_headlines: string[]
+  rsa_descriptions: string[]
 }
 
 export interface PMaxAssetGroupPreview {

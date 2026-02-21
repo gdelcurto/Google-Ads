@@ -310,22 +310,33 @@ function CampaignPreviewCard({
 
           ) : (
             /* ── Search / Retargeting / Demand Gen — RSA preview ── */
-            briefLang ? (
-              <GoogleAdPreview
-                lang={{
-                  headlines:    briefLang.headlines    as string[] || [],
-                  descriptions: briefLang.descriptions as string[] || [],
-                  callouts:     briefLang.callouts     as string[] || [],
-                  sitelinks:    briefLang.sitelinks    as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
-                }}
-                domain={domain}
-              />
-            ) : (
-              <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
-                Asset non trovati per la lingua <strong>{campaign.language_code}</strong> nel brief.
-                Assicurati che la lingua sia configurata nel brief.
-              </div>
-            )
+            /* Priority: actual RSA from plan ad_group[0] → brief lang fallback */
+            (() => {
+              const firstAg = campaign.ad_groups[0]
+              const planH = firstAg?.rsa_headlines?.length > 0 ? firstAg.rsa_headlines : null
+              const planD = firstAg?.rsa_descriptions?.length > 0 ? firstAg.rsa_descriptions : null
+              const previewH = planH || (briefLang?.headlines as string[] || [])
+              const previewD = planD || (briefLang?.descriptions as string[] || [])
+
+              if (!previewH.length) {
+                return (
+                  <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
+                    Asset non trovati per la lingua <strong>{campaign.language_code}</strong> nel brief.
+                  </div>
+                )
+              }
+              return (
+                <GoogleAdPreview
+                  lang={{
+                    headlines:    previewH,
+                    descriptions: previewD,
+                    callouts:     briefLang?.callouts  as string[] || [],
+                    sitelinks:    briefLang?.sitelinks as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
+                  }}
+                  domain={domain}
+                />
+              )
+            })()
           )}
 
           {/* ── Ad Groups table ── */}

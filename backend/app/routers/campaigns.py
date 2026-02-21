@@ -190,6 +190,9 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
                         "display_ads_count": len(ag.display_ads),
                         "demand_gen_ads_count": len(ag.demand_gen_ads),
                         "audience_targeting": ag.audience_targeting,
+                        # RSA copy: actual headlines/descriptions from the generated plan
+                        "rsa_headlines": [ph.text for ph in ag.ads[0].headlines] if ag.ads else [],
+                        "rsa_descriptions": list(ag.ads[0].descriptions) if ag.ads else [],
                     }
                     for ag in c.ad_groups
                 ],

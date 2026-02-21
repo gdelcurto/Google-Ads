@@ -10,12 +10,15 @@ from __future__ import annotations
 
 from typing import Dict, List
 
+from app.agents.acquisition import AcquisitionAgent
 from app.domain.schemas.brief import Brief, LanguagePlan
 from app.domain.schemas.campaign_plan import (
     AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
     Keyword, MatchType, NetworkType,
 )
 from app.generators.base import BaseGenerator
+
+_agent = AcquisitionAgent()
 
 
 class AcquisitionSearchGenerator(BaseGenerator):
@@ -134,6 +137,8 @@ class AcquisitionSearchGenerator(BaseGenerator):
             lang=lang,
             final_url=lang.landing_page,
             tracking_template=tracking_template,
+            headlines=_agent.get_headlines(lang),
+            descriptions=_agent.get_descriptions(lang),
         )
 
         return AdGroupPlan(
@@ -149,7 +154,13 @@ class AcquisitionSearchGenerator(BaseGenerator):
         self, brief: Brief, lang: LanguagePlan, tracking_template: str, asset_pack
     ) -> AdGroupPlan:
         group_name = f"{lang.code} | Acquisition | General"
-        rsa = self.build_rsa(lang=lang, final_url=lang.landing_page, tracking_template=tracking_template)
+        rsa = self.build_rsa(
+            lang=lang,
+            final_url=lang.landing_page,
+            tracking_template=tracking_template,
+            headlines=_agent.get_headlines(lang),
+            descriptions=_agent.get_descriptions(lang),
+        )
         return AdGroupPlan(
             name=group_name,
             status=CampaignStatus.enabled,

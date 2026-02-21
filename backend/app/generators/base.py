@@ -82,21 +82,30 @@ class BaseGenerator:
         final_url: str,
         tracking_template: str,
         pinned_headlines: Optional[List[tuple]] = None,
+        headlines: Optional[List[str]] = None,
+        descriptions: Optional[List[str]] = None,
     ) -> RSAd:
         """
         Build RSA from brief language plan.
-        pinned_headlines: list of (text, pin_position) tuples for brand name pinning.
+
+        - headlines / descriptions: type-specific copy override (from campaign agent).
+          When provided, these replace lang.headlines / lang.descriptions.
+          Use CampaignAgent.get_headlines(lang) to resolve the right source.
+        - pinned_headlines: list of (text, pin_position) tuples for brand name pinning.
         """
+        h_source = headlines if headlines is not None else lang.headlines
+        d_source = descriptions if descriptions is not None else lang.descriptions
+
         pin_map = {text: pos for text, pos in (pinned_headlines or [])}
 
-        headlines = []
-        for h in lang.headlines[:15]:
+        rsa_headlines = []
+        for h in h_source[:15]:
             pin = pin_map.get(h)
-            headlines.append(PinnedHeadline(text=h, pin_position=pin))
+            rsa_headlines.append(PinnedHeadline(text=h, pin_position=pin))
 
         return RSAd(
-            headlines=headlines,
-            descriptions=lang.descriptions[:4],
+            headlines=rsa_headlines,
+            descriptions=d_source[:4],
             final_url=final_url,
             tracking_template=tracking_template,
             path_1=_slugify(lang.code, max_len=15),
