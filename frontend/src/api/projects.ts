@@ -96,6 +96,37 @@ export const projectsApi = {
     api.get<unknown[]>(`/projects/${id}/audit`).then((r) => r.data),
 }
 
+export interface AutofillResult {
+  brand_name: string
+  brand_slug: string
+  domain: string
+  country: string
+  hotel_category: string
+  stars: number
+  rooms: number | null
+  address: string
+  services: string[]
+  strengths: string[]
+  booking_engine_url: string
+  target_countries?: string[]
+  languages: {
+    code: string
+    name: string
+    google_language_id: number
+    landing_page: string
+    brand_terms: string[]
+    usp_main: string
+    headlines: string[]
+    descriptions: string[]
+    callouts: string[]
+  }[]
+}
+
+export const autofillApi = {
+  fromUrl: (url: string, languages: string[]) =>
+    api.post<AutofillResult>('/autofill', { url, languages }).then((r) => r.data),
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<{ access_token: string; user: { role: string; email: string; full_name: string } }>(

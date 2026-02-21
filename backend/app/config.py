@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     google_translate_api_key: str = ""
     deepl_api_key: str = ""
 
+    # Anthropic (for AI auto-fill brief from hotel website)
+    anthropic_api_key: str = ""
+
     # CORS
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 

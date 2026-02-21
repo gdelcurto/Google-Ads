@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi } from '../api/projects'
+import { projectsApi, autofillApi, AutofillResult } from '../api/projects'
 
 // ── types ─────────────────────────────────────────────────────────────────────
 
@@ -346,6 +346,37 @@ const css: Record<string, React.CSSProperties> = {
     padding: 16, fontSize: 12, fontFamily: 'monospace',
     overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
   },
+  autofillPanel: {
+    background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
+    border: '1px solid #bfdbfe', borderRadius: 10,
+    padding: 20, marginBottom: 24,
+  },
+  autofillTitle: {
+    fontWeight: 700, fontSize: 15, color: '#1e3a5f',
+    marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
+  },
+  autofillSubtitle: { fontSize: 12, color: '#64748b', marginBottom: 14 },
+  autofillRow: { display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const },
+  autofillUrlInput: {
+    flex: 1, minWidth: 220, padding: '9px 12px',
+    border: '1px solid #93c5fd', borderRadius: 6, fontSize: 14,
+    boxSizing: 'border-box' as const,
+  },
+  autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
+  langPill: (active: boolean): React.CSSProperties => ({
+    padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+    cursor: 'pointer', border: active ? '2px solid #1e3a5f' : '1px solid #cbd5e1',
+    background: active ? '#1e3a5f' : '#fff', color: active ? '#fff' : '#64748b',
+  }),
+  btnAutofill: {
+    background: '#2563eb', color: '#fff', border: 'none',
+    padding: '9px 20px', borderRadius: 6, cursor: 'pointer',
+    fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' as const,
+  },
+  autofillSuccessBox: {
+    background: '#f0fdf4', border: '1px solid #86efac', padding: '10px 14px',
+    borderRadius: 6, fontSize: 13, color: '#166534', marginTop: 10,
+  },
 }
 
 // ── component ─────────────────────────────────────────────────────────────────
@@ -367,6 +398,56 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   )
   const [errors, setErrors] = useState<string[]>([])
   const [saveSuccess, setSaveSuccess] = useState(false)
+
+  // ── Auto-fill state ────────────────────────────────────────────────────────
+  const [autofillUrl, setAutofillUrl] = useState('')
+  const [autofillLangs, setAutofillLangs] = useState<string[]>(['IT', 'EN'])
+  const [autofillSuccess, setAutofillSuccess] = useState(false)
+
+  const autofillMutation = useMutation({
+    mutationFn: () => autofillApi.fromUrl(autofillUrl.trim(), autofillLangs),
+    onSuccess: (data: AutofillResult) => {
+      // Populate form fields with AI-extracted data
+      setForm(prev => ({
+        ...prev,
+        brand_name: data.brand_name || prev.brand_name,
+        brand_slug: data.brand_slug || prev.brand_slug,
+        domain: data.domain || prev.domain,
+        country: data.country || prev.country,
+        hotel_category: data.hotel_category || prev.hotel_category,
+        stars: data.stars != null ? String(data.stars) : prev.stars,
+        rooms: data.rooms != null ? String(data.rooms) : prev.rooms,
+        address: data.address || prev.address,
+        services: (data.services || []).join('\n'),
+        strengths: (data.strengths || []).join('\n'),
+        booking_engine_url: data.booking_engine_url || prev.booking_engine_url,
+        target_countries: (data.target_countries || []).join('\n') || prev.target_countries,
+        project_name: prev.project_name || `${data.brand_name} — Google Ads`,
+      }))
+      // Populate language assets
+      if (data.languages && data.languages.length > 0) {
+        setLangs(data.languages.map(l => ({
+          code: l.code,
+          name: l.name,
+          google_language_id: String(l.google_language_id || ''),
+          landing_page: l.landing_page || '',
+          brand_terms: (l.brand_terms || []).join('\n'),
+          usp_main: l.usp_main || '',
+          headlines: (l.headlines || []).join('\n'),
+          descriptions: (l.descriptions || []).join('\n'),
+          callouts: (l.callouts || []).join('\n'),
+        })))
+      }
+      setAutofillSuccess(true)
+    },
+    onError: (e: Error) => setErrors([`Auto-fill: ${e.message}`]),
+  })
+
+  const toggleAutofillLang = (code: string) => {
+    setAutofillLangs(prev =>
+      prev.includes(code) ? prev.filter(l => l !== code) : [...prev, code]
+    )
+  }
 
   const saveMutation = useMutation({
     mutationFn: (brief: Record<string, unknown>) => projectsApi.uploadBrief(projectId, brief),
@@ -488,6 +569,58 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
       {/* ── STEP 0 — Info Base ── */}
       {step === 0 && (
         <>
+          {/* ── Auto-fill Panel ── */}
+          <div style={css.autofillPanel}>
+            <div style={css.autofillTitle}>
+              <span>✨</span> Auto-compila dal sito dell'hotel
+            </div>
+            <div style={css.autofillSubtitle}>
+              Inserisci l'URL del sito dell'hotel: l'AI analizzerà il sito e compilerà automaticamente
+              tutti i campi del brief (testi, headline, descrizioni, callout per ogni lingua).
+            </div>
+            <div style={css.autofillRow}>
+              <input
+                style={css.autofillUrlInput}
+                type="url"
+                value={autofillUrl}
+                onChange={e => { setAutofillUrl(e.target.value); setAutofillSuccess(false) }}
+                placeholder="https://www.nomedelhotel.it"
+                disabled={autofillMutation.isPending}
+              />
+              <button
+                style={{ ...css.btnAutofill, opacity: autofillMutation.isPending || !autofillUrl.trim() ? 0.6 : 1 }}
+                onClick={() => { setErrors([]); setAutofillSuccess(false); autofillMutation.mutate() }}
+                disabled={autofillMutation.isPending || !autofillUrl.trim()}
+              >
+                {autofillMutation.isPending ? '⏳ Analisi in corso...' : '🔍 Analizza e compila'}
+              </button>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: '#374151', fontWeight: 600 }}>
+              Lingue da generare:
+            </div>
+            <div style={css.autofillLangPills}>
+              {['IT', 'EN', 'DE', 'FR', 'ES', 'NL', 'PT'].map(code => (
+                <span
+                  key={code}
+                  style={css.langPill(autofillLangs.includes(code))}
+                  onClick={() => !autofillMutation.isPending && toggleAutofillLang(code)}
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+            {autofillMutation.isPending && (
+              <div style={{ marginTop: 10, fontSize: 12, color: '#2563eb' }}>
+                Sto analizzando il sito e generando i contenuti con AI... può richiedere 20–40 secondi.
+              </div>
+            )}
+            {autofillSuccess && (
+              <div style={css.autofillSuccessBox}>
+                ✅ Campi compilati con successo! Scorri il form per rivedere e correggere i dati generati.
+              </div>
+            )}
+          </div>
+
           <div style={css.section}>
             <div style={css.sectionTitle}>Informazioni Progetto</div>
             <div style={css.grid2}>

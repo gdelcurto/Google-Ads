@@ -92,13 +92,14 @@ app.add_middleware(
 )
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
-from app.routers import auth, campaigns, export, projects, templates
+from app.routers import auth, autofill, campaigns, export, projects, templates
 
 app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(campaigns.router)
 app.include_router(export.router)
 app.include_router(templates.router)
+app.include_router(autofill.router)
 
 
 @app.get("/api/health")

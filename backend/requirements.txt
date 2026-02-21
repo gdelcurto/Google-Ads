@@ -22,8 +22,11 @@ email-validator==2.1.1 # richiesto da pydantic[email] per EmailStr
 # v29+ supporta Python 3.13+
 google-ads==29.1.0
 
-# HTTP client (for translation providers)
+# HTTP client (for translation providers and website scraping)
 httpx==0.27.0
+
+# AI — auto-fill brief from hotel website
+anthropic>=0.40.0
 
 # Logging
 structlog==24.1.0
