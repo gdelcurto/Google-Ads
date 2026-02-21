@@ -84,6 +84,7 @@ class BaseGenerator:
         pinned_headlines: Optional[List[tuple]] = None,
         headlines: Optional[List[str]] = None,
         descriptions: Optional[List[str]] = None,
+        ad_group_index: int = 0,
     ) -> RSAd:
         """
         Build RSA from brief language plan.
@@ -92,11 +93,30 @@ class BaseGenerator:
           When provided, these replace lang.headlines / lang.descriptions.
           Use CampaignAgent.get_headlines(lang) to resolve the right source.
         - pinned_headlines: list of (text, pin_position) tuples for brand name pinning.
+        - ad_group_index: 0-based index of the ad group within the campaign.
+          When > 0, the headline pool is rotated deterministically so each ad
+          group shows a different creative variation (different subset of headlines).
+          The pinned headline (if any) is always kept at position 1.
         """
-        h_source = headlines if headlines is not None else lang.headlines
+        h_source = list(headlines if headlines is not None else lang.headlines)
+
+        # Rotate the headline pool for each ad group so previews differ.
+        # Rotation step = 1/3 of pool size, minimum 1, ensuring meaningful shift.
+        if ad_group_index > 0 and len(h_source) > 3:
+            n = len(h_source)
+            step = max(1, n // 3)
+            offset = (ad_group_index * step) % n
+            # Keep any pinned headline first to avoid losing it in the rotation.
+            pin_map_lookup = {text: pos for text, pos in (pinned_headlines or [])}
+            pinned_texts = [t for t in h_source if t in pin_map_lookup]
+            unpinned = [t for t in h_source if t not in pin_map_lookup]
+            rotated_unpinned = unpinned[offset % len(unpinned):] + unpinned[:offset % len(unpinned)] if unpinned else []
+            h_source = pinned_texts + rotated_unpinned
+        else:
+            pin_map_lookup = {text: pos for text, pos in (pinned_headlines or [])}
 
         # Merge per-type descriptions with generic pool to always meet RSAd min (2).
-        # Per-type descriptions take priority; generic ones are appended as fallback.
+        # Rotate descriptions too so each ad group emphasises different selling points.
         if descriptions is not None:
             merged = list(descriptions)
             for d in lang.descriptions:
@@ -104,13 +124,15 @@ class BaseGenerator:
                     merged.append(d)
             d_source = merged
         else:
-            d_source = lang.descriptions
+            d_source = list(lang.descriptions)
 
-        pin_map = {text: pos for text, pos in (pinned_headlines or [])}
+        if ad_group_index > 0 and len(d_source) > 2:
+            d_offset = ad_group_index % len(d_source)
+            d_source = d_source[d_offset:] + d_source[:d_offset]
 
         rsa_headlines = []
         for h in h_source[:15]:
-            pin = pin_map.get(h)
+            pin = pin_map_lookup.get(h)
             rsa_headlines.append(PinnedHeadline(text=h, pin_position=pin))
 
         return RSAd(

@@ -69,12 +69,12 @@ class AcquisitionSearchGenerator(BaseGenerator):
         negative_brand_kws = self._build_brand_negatives(lang)
 
         ad_groups = []
-        for theme_name, keywords_raw in themes.items():
+        for ag_index, (theme_name, keywords_raw) in enumerate(themes.items()):
             if not keywords_raw:
                 continue
             ag = self._build_theme_ad_group(
                 brief, lang, theme_name, keywords_raw,
-                tracking_template, asset_pack,
+                tracking_template, asset_pack, ag_index,
             )
             ad_groups.append(ag)
 
@@ -124,6 +124,7 @@ class AcquisitionSearchGenerator(BaseGenerator):
         keywords_raw: List[str],
         tracking_template: str,
         asset_pack,
+        ag_index: int = 0,
     ) -> AdGroupPlan:
         group_name = f"{lang.code} | Acquisition | {theme_name.title()}"
 
@@ -139,6 +140,7 @@ class AcquisitionSearchGenerator(BaseGenerator):
             tracking_template=tracking_template,
             headlines=_agent.get_headlines(lang),
             descriptions=_agent.get_descriptions(lang),
+            ad_group_index=ag_index,
         )
 
         return AdGroupPlan(

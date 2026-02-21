@@ -56,13 +56,13 @@ class RetargetingGenerator(BaseGenerator):
         )
 
         ad_groups = []
-        for rm_list in brief.audiences.remarketing_lists:
-            ag = self._build_remarketing_ad_group(brief, lang, rm_list)
+        for ag_index, rm_list in enumerate(brief.audiences.remarketing_lists):
+            ag = self._build_remarketing_ad_group(brief, lang, rm_list, ag_index)
             ad_groups.append(ag)
 
         # Add customer match ad group if configured
         if brief.audiences.customer_match.enabled:
-            ag = self._build_customer_match_group(brief, lang)
+            ag = self._build_customer_match_group(brief, lang, len(ad_groups))
             ad_groups.append(ag)
 
         blockers = []
@@ -88,14 +88,24 @@ class RetargetingGenerator(BaseGenerator):
         )
 
     def _build_remarketing_ad_group(
-        self, brief: Brief, lang: LanguagePlan, rm_list: RemarketingList
+        self, brief: Brief, lang: LanguagePlan, rm_list: RemarketingList, ag_index: int = 0
     ) -> AdGroupPlan:
         group_name = f"{lang.code} | Retargeting | {rm_list.name}"
 
+        # Rotate headline pool so each ad group shows a different creative variation.
+        h_all = list(lang.headlines)
+        if ag_index > 0 and len(h_all) > 3:
+            offset = (ag_index * max(1, len(h_all) // 3)) % len(h_all)
+            h_all = h_all[offset:] + h_all[:offset]
+        d_all = list(lang.descriptions)
+        if ag_index > 0 and len(d_all) > 2:
+            d_offset = ag_index % len(d_all)
+            d_all = d_all[d_offset:] + d_all[:d_offset]
+
         # Display ads are placeholders — require actual image assets
         display_ad = DisplayAd(
-            headlines=lang.headlines[:5],
-            descriptions=lang.descriptions[:5],
+            headlines=h_all[:5],
+            descriptions=d_all[:5],
             image_urls=["TODO: upload display ad images (300x250, 728x90, 160x600)"],
             final_url=lang.landing_page,
             has_missing_assets=True,
@@ -110,14 +120,23 @@ class RetargetingGenerator(BaseGenerator):
         )
 
     def _build_customer_match_group(
-        self, brief: Brief, lang: LanguagePlan
+        self, brief: Brief, lang: LanguagePlan, ag_index: int = 0
     ) -> AdGroupPlan:
         list_name = brief.audiences.customer_match.list_name or "CRM List"
         group_name = f"{lang.code} | Retargeting | {list_name}"
 
+        h_all = list(lang.headlines)
+        if ag_index > 0 and len(h_all) > 3:
+            offset = (ag_index * max(1, len(h_all) // 3)) % len(h_all)
+            h_all = h_all[offset:] + h_all[:offset]
+        d_all = list(lang.descriptions)
+        if ag_index > 0 and len(d_all) > 2:
+            d_offset = ag_index % len(d_all)
+            d_all = d_all[d_offset:] + d_all[:d_offset]
+
         display_ad = DisplayAd(
-            headlines=lang.headlines[:5],
-            descriptions=lang.descriptions[:5],
+            headlines=h_all[:5],
+            descriptions=d_all[:5],
             image_urls=["TODO: upload display ad images"],
             final_url=lang.landing_page,
             has_missing_assets=True,

@@ -115,6 +115,7 @@ class BrandSearchGenerator(BaseGenerator):
             pinned_headlines=[(lang.brand_terms[0], 1)] if lang.brand_terms else None,
             headlines=_agent.get_headlines(lang),
             descriptions=_agent.get_descriptions(lang),
+            ad_group_index=0,
         )
 
         return AdGroupPlan(
@@ -145,6 +146,7 @@ class BrandSearchGenerator(BaseGenerator):
             tracking_template=tracking_template,
             headlines=_agent.get_headlines(lang),
             descriptions=_agent.get_descriptions(lang),
+            ad_group_index=1,
         )
 
         return AdGroupPlan(
