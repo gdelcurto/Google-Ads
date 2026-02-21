@@ -123,8 +123,8 @@ export interface AutofillResult {
 }
 
 export const autofillApi = {
-  fromUrl: (url: string, languages: string[]) =>
-    api.post<AutofillResult>('/autofill', { url, languages }).then((r) => r.data),
+  fromUrl: (url: string, languages: string[], content?: string) =>
+    api.post<AutofillResult>('/autofill', { url, languages, content }).then((r) => r.data),
 }
 
 export const authApi = {

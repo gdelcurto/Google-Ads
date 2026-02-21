@@ -404,9 +404,15 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [autofillUrl, setAutofillUrl] = useState('')
   const [autofillLangs, setAutofillLangs] = useState<string[]>(['IT', 'EN'])
   const [autofillSuccess, setAutofillSuccess] = useState(false)
+  const [autofillManual, setAutofillManual] = useState(false)
+  const [autofillContent, setAutofillContent] = useState('')
 
   const autofillMutation = useMutation({
-    mutationFn: () => autofillApi.fromUrl(autofillUrl.trim(), autofillLangs),
+    mutationFn: () => autofillApi.fromUrl(
+      autofillUrl.trim(),
+      autofillLangs,
+      autofillManual && autofillContent.trim() ? autofillContent.trim() : undefined,
+    ),
     onSuccess: (data: AutofillResult) => {
       // Populate form fields with AI-extracted data
       setForm(prev => ({
@@ -441,7 +447,11 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
       }
       setAutofillSuccess(true)
     },
-    onError: (e: Error) => setErrors([`Auto-fill: ${e.message}`]),
+    onError: (e: Error) => {
+      setErrors([`Auto-fill: ${e.message}`])
+      // Se il fetch automatico fallisce, apri la modalità manuale
+      if (!autofillManual) setAutofillManual(true)
+    },
   })
 
   const toggleAutofillLang = (code: string) => {
@@ -610,6 +620,30 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 </span>
               ))}
             </div>
+            {/* Modalità manuale: incolla il testo del sito */}
+            <div style={{ marginTop: 10 }}>
+              <button
+                style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+                onClick={() => setAutofillManual(v => !v)}
+              >
+                {autofillManual ? '▲ Nascondi modalità manuale' : '▼ Il server non riesce a raggiungere il sito? Incolla il testo manualmente'}
+              </button>
+            </div>
+            {autofillManual && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>
+                  Vai sul sito dell'hotel, seleziona tutto il testo (Ctrl+A → Ctrl+C) e incollalo qui sotto.
+                  Oppure copia il testo della homepage e delle pagine camere/servizi.
+                </div>
+                <textarea
+                  style={{ width: '100%', minHeight: 120, fontSize: 12, padding: 8, border: '1px solid #d1d5db', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box' }}
+                  placeholder="Incolla qui il contenuto del sito web dell'hotel..."
+                  value={autofillContent}
+                  onChange={e => setAutofillContent(e.target.value)}
+                  disabled={autofillMutation.isPending}
+                />
+              </div>
+            )}
             {autofillMutation.isPending && (
               <div style={{ marginTop: 10, fontSize: 12, color: '#2563eb' }}>
                 Sto analizzando il sito e generando i contenuti con AI... può richiedere 20–40 secondi.

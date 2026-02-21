@@ -137,9 +137,10 @@ async def _fetch_pages(base_url: str) -> str:
     base = base_url.rstrip('/')
     candidates = [base_url, f"{base}/camere", f"{base}/rooms", f"{base}/servizi", f"{base}/about"]
     collected: list[str] = []
+    errors: list[str] = []
 
     async with httpx.AsyncClient(
-        timeout=12.0,
+        timeout=15.0,
         follow_redirects=True,
         verify=False,
         headers=headers,
@@ -153,14 +154,19 @@ async def _fetch_pages(base_url: str) -> str:
                         collected.append(f"[{url}]\n{text}")
                         if len('\n\n'.join(collected)) > 14000:
                             break
-            except Exception:
+                else:
+                    errors.append(f"{url} → HTTP {resp.status_code}")
+            except Exception as exc:
+                errors.append(f"{url} → {type(exc).__name__}: {exc}")
                 continue
 
     if not collected:
-        raise HTTPException(
-            status_code=422,
-            detail="Impossibile recuperare il sito web. Verifica l'URL e che sia raggiungibile.",
-        )
+        detail = "Impossibile recuperare il sito web dal server. "
+        if errors:
+            detail += "Dettagli: " + " | ".join(errors)
+        detail += " Usa la modalità manuale: incolla il testo del sito nell'apposita area."
+        logger.warning(f"_fetch_pages failed for {base_url}: {errors}")
+        raise HTTPException(status_code=422, detail=detail)
     return '\n\n'.join(collected)[:14000]
 
 
@@ -178,6 +184,7 @@ def _truncate_assets(data: dict) -> dict:
 class AutofillRequest(BaseModel):
     url: str
     languages: List[str] = ["IT", "EN"]
+    content: Optional[str] = None  # manual fallback: paste website text directly
 
 
 @router.post("")
@@ -188,6 +195,7 @@ async def autofill_from_url(
     """
     Fetch a hotel website and use Claude to generate a complete brief draft.
     Returns structured data ready to pre-populate the brief form.
+    If `content` is provided, the HTTP fetch is skipped and that text is used directly.
     """
     settings = get_settings()
 
@@ -201,9 +209,13 @@ async def autofill_from_url(
     if not langs:
         raise HTTPException(status_code=422, detail="Almeno una lingua richiesta")
 
-    # 1. Fetch the website
-    logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
-    content = await _fetch_pages(payload.url)
+    # 1. Fetch the website (or use manually provided content)
+    if payload.content and payload.content.strip():
+        logger.info(f"Autofill: using manual content for {payload.url}, langs={langs}")
+        content = payload.content.strip()[:14000]
+    else:
+        logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
+        content = await _fetch_pages(payload.url)
 
     # 2. Call Claude
     user_prompt = USER_PROMPT_TEMPLATE.format(
