@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import urllib.parse
 from typing import List, Optional
 
 import httpx
@@ -183,8 +184,98 @@ def _strip_html(html: str) -> str:
     return html[:10000]
 
 
+# Keywords that signal a page is relevant for hotel content analysis.
+# Each tuple: (substring_to_match, score_weight)
+_RELEVANCE_KW: list[tuple[str, int]] = [
+    # Rooms / accommodation — highest priority
+    ('camer',        4), ('room',         4), ('stanz',        4),
+    ('suite',        4), ('zimmer',       4), ('chambre',      4),
+    ('alloggi',      3), ('accommod',     3), ('schlafzimmer', 3),
+    # Services / facilities
+    ('servizi',      3), ('service',      3), ('facilit',      3),
+    ('ameniti',      3), ('dotazioni',    3),
+    # Wellness / food
+    ('wellness',     3), ('spa',          3), ('piscin',       3),
+    ('pool',         3), ('ristoran',     3), ('restauran',    3),
+    ('colazion',     2), ('breakfast',    2), ('bar',          1),
+    # Offers / packages
+    ('offert',       2), ('offer',        2), ('pacchett',     2),
+    ('package',      2), ('promo',        2), ('deal',         2),
+    # About / story
+    ('about',        2), ('chi-siamo',    2), ('chi_siamo',    2),
+    ('struttura',    2), ('storia',       2), ('about-us',     2),
+    # Experience / activities
+    ('esperien',     2), ('attivit',      2), ('activit',      2),
+    ('experi',       2),
+    # Low-value pages to de-rank (negative scores)
+    ('privacy',     -5), ('cookie',      -5), ('legal',       -5),
+    ('gdpr',        -5), ('booking',     -3), ('reserv',      -3),
+    ('prenot',      -3), ('login',       -5), ('admin',       -5),
+    ('sitemap',     -5), ('cart',        -5), ('checkout',    -5),
+    ('feed',        -5), ('rss',         -5), ('wp-',         -5),
+]
+
+
+def _score_link(path: str, anchor: str) -> int:
+    """Score a URL path + anchor text by relevance to hotel content."""
+    combined = path.lower() + ' ' + anchor.lower()
+    return sum(w for kw, w in _RELEVANCE_KW if kw in combined)
+
+
+def _extract_relevant_links(html: str, base_url: str, max_links: int = 4) -> list[str]:
+    """
+    Parse <a href> tags from homepage HTML, keep only same-domain HTML links,
+    score each by content relevance, return the top `max_links` URLs.
+    """
+    parsed_base = urllib.parse.urlparse(base_url)
+    base_domain = parsed_base.netloc
+
+    link_re = re.compile(
+        r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    seen: set[str] = {base_url}
+    scored: list[tuple[int, str]] = []
+
+    for href, anchor_html in link_re.findall(html):
+        href = href.strip()
+
+        # Skip non-navigational schemes
+        if re.match(r'^(javascript|mailto|tel|data|#)', href, re.I):
+            continue
+        # Skip non-HTML assets
+        if re.search(r'\.(pdf|jpe?g|png|gif|svg|webp|css|js|xml|zip|mp4)(\?|$)', href, re.I):
+            continue
+
+        full_url = urllib.parse.urljoin(base_url, href)
+        parsed = urllib.parse.urlparse(full_url)
+
+        # Internal links only (same domain, http/https)
+        if parsed.scheme not in ('http', 'https') or parsed.netloc != base_domain:
+            continue
+
+        # Normalize: strip query string and fragment
+        clean = urllib.parse.urlunparse(parsed._replace(query='', fragment=''))
+        if clean in seen:
+            continue
+        seen.add(clean)
+
+        anchor_text = re.sub(r'<[^>]+>', ' ', anchor_html).strip()
+        score = _score_link(parsed.path, anchor_text)
+        if score > 0:
+            scored.append((score, clean))
+
+    # Return top URLs by descending score
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [url for _, url in scored[:max_links]]
+
+
 async def _fetch_pages(base_url: str) -> str:
-    """Fetch homepage and one subpage. Return combined plain text."""
+    """
+    Fetch the hotel homepage, extract internal links, pick the most relevant
+    subpages (rooms, services, spa, offers…) and return combined plain text.
+    """
     if not base_url.startswith(('http://', 'https://')):
         base_url = 'https://' + base_url
 
@@ -198,10 +289,9 @@ async def _fetch_pages(base_url: str) -> str:
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     }
 
-    base = base_url.rstrip('/')
-    candidates = [base_url, f"{base}/camere", f"{base}/rooms", f"{base}/servizi", f"{base}/about"]
     collected: list[str] = []
     errors: list[str] = []
+    homepage_html = ''
 
     async with httpx.AsyncClient(
         timeout=15.0,
@@ -209,20 +299,40 @@ async def _fetch_pages(base_url: str) -> str:
         verify=False,
         headers=headers,
     ) as client:
-        for url in candidates[:3]:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200 and 'text/html' in resp.headers.get('content-type', ''):
-                    text = _strip_html(resp.text)
-                    if len(text) > 200:
-                        collected.append(f"[{url}]\n{text}")
-                        if len('\n\n'.join(collected)) > 14000:
-                            break
-                else:
-                    errors.append(f"{url} → HTTP {resp.status_code}")
-            except Exception as exc:
-                errors.append(f"{url} → {type(exc).__name__}: {exc}")
-                continue
+
+        # ── Step 1: homepage ─────────────────────────────────────────────────
+        try:
+            resp = await client.get(base_url)
+            ct = resp.headers.get('content-type', '')
+            if resp.status_code == 200 and 'text/html' in ct:
+                homepage_html = resp.text
+                text = _strip_html(homepage_html)
+                if len(text) > 200:
+                    collected.append(f"[{base_url}]\n{text}")
+            else:
+                errors.append(f"{base_url} → HTTP {resp.status_code}")
+        except Exception as exc:
+            errors.append(f"{base_url} → {type(exc).__name__}: {exc}")
+
+        # ── Step 2: discover and fetch relevant subpages ─────────────────────
+        if homepage_html:
+            subpages = _extract_relevant_links(homepage_html, base_url, max_links=4)
+            logger.info(f"Autofill discovered {len(subpages)} relevant subpages: {subpages}")
+
+            for url in subpages:
+                if len('\n\n'.join(collected)) >= 14000:
+                    break
+                try:
+                    resp = await client.get(url)
+                    ct = resp.headers.get('content-type', '')
+                    if resp.status_code == 200 and 'text/html' in ct:
+                        text = _strip_html(resp.text)
+                        if len(text) > 200:
+                            collected.append(f"[{url}]\n{text}")
+                    else:
+                        errors.append(f"{url} → HTTP {resp.status_code}")
+                except Exception as exc:
+                    errors.append(f"{url} → {type(exc).__name__}: {exc}")
 
     if not collected:
         detail = "Impossibile recuperare il sito web dal server. "
@@ -231,7 +341,10 @@ async def _fetch_pages(base_url: str) -> str:
         detail += " Usa la modalità manuale: incolla il testo del sito nell'apposita area."
         logger.warning(f"_fetch_pages failed for {base_url}: {errors}")
         raise HTTPException(status_code=422, detail=detail)
-    return '\n\n'.join(collected)[:14000]
+
+    result = '\n\n'.join(collected)[:14000]
+    logger.info(f"_fetch_pages: {len(collected)} pages, {len(result)} chars total")
+    return result
 
 
 def _trim_to_word(text: str, max_chars: int) -> str:
