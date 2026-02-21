@@ -932,6 +932,52 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
     onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })
 
+  // ── Recalculate budget using AI ratios after user deselects campaign types ──
+  const backendToFrontendMap: Record<string, string> = {
+    search_brand: 'brand', search_acquisition: 'acquisition',
+    performance_max: 'pmax', retargeting: 'retargeting', demand_gen: 'demand_gen',
+  }
+  const frontendToBackendMap: Record<string, string> = {
+    brand: 'search_brand', acquisition: 'search_acquisition',
+    pmax: 'performance_max', retargeting: 'retargeting', demand_gen: 'demand_gen',
+  }
+
+  // Types the AI suggested (frontend keys) — null if AI hasn't run yet
+  const aiSuggestedKeys = strategyResult
+    ? new Set(strategyResult.recommended_types.map(t => backendToFrontendMap[t] || t))
+    : null
+
+  // Show the recalculate button when AI suggested at least one type that the user has now deselected
+  const canRecalculate = aiSuggestedKeys !== null &&
+    [...aiSuggestedKeys].some(k => !selectedTypes.has(k))
+
+  const handleRecalculateBudget = () => {
+    const total = parseFloat(form.total_monthly_eur) || (strategyResult?.suggested_total_monthly_eur ?? 0)
+    if (!total || !strategyResult) return
+    // Accumulate AI-split ratios only for currently selected types
+    let totalRatio = 0
+    const ratios: Record<string, number> = {}
+    for (const ct of CAMPAIGN_TYPES) {
+      if (!selectedTypes.has(ct.key)) continue
+      const bk = frontendToBackendMap[ct.key] || ct.key
+      const r = strategyResult.budget_split[bk] ?? 0
+      ratios[ct.key] = r
+      totalRatio += r
+    }
+    const activeLangs = langs.map(l => l.code.toUpperCase()).filter(Boolean)
+    const nLangs = Math.max(activeLangs.length, 1)
+    const newBudget: Record<string, Record<string, string>> = {}
+    for (const ct of CAMPAIGN_TYPES) {
+      if (!selectedTypes.has(ct.key)) continue
+      const ratio = totalRatio > 0 ? (ratios[ct.key] / totalRatio) : (1 / selectedTypes.size)
+      const dailyPerLang = (total * ratio) / nLangs / 30.44
+      newBudget[ct.key] = Object.fromEntries(
+        activeLangs.map(c => [c, String(Math.round(dailyPerLang * 100) / 100)])
+      )
+    }
+    setBudgetByTypeLang(prev => ({ ...prev, ...newBudget }))
+  }
+
   const toggleAutofillLang = (code: string) => {
     setAutofillLangs(prev =>
       prev.includes(code) ? prev.filter(l => l !== code) : [...prev, code]
@@ -1504,13 +1550,24 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           <div style={css.section}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...css.sectionTitle }}>
               <span>Budget campagne (€/giorno per lingua)</span>
-              <button
-                style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px', marginLeft: 12, flexShrink: 0 }}
-                onClick={() => budgetStrategyMutation.mutate()}
-                disabled={budgetStrategyMutation.isPending}
-              >
-                {budgetStrategyMutation.isPending ? '⏳ Analisi in corso...' : '✨ Suggerisci Strategia AI'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                {canRecalculate && (
+                  <button
+                    style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px', background: T.primary }}
+                    onClick={handleRecalculateBudget}
+                    title="Ridistribuisce il budget totale tra le campagne selezionate mantenendo le proporzioni AI"
+                  >
+                    ⟳ Ricalcola budget
+                  </button>
+                )}
+                <button
+                  style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px' }}
+                  onClick={() => budgetStrategyMutation.mutate()}
+                  disabled={budgetStrategyMutation.isPending}
+                >
+                  {budgetStrategyMutation.isPending ? '⏳ Analisi in corso...' : '✨ Suggerisci Strategia AI'}
+                </button>
+              </div>
             </div>
             {/* Optional total budget hint — shown only if already populated */}
             {form.total_monthly_eur && parseFloat(form.total_monthly_eur) > 0 && (
@@ -1548,7 +1605,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                                 const next = new Set(selectedTypes)
                                 if (e.target.checked) next.add(ct.key); else next.delete(ct.key)
                                 setSelectedTypes(next)
-                                redistributeBudget(next)
+                                // When AI suggestion is active, let the user click "Ricalcola Budget"
+                                // instead of auto-redistributing with fixed weights
+                                if (!strategyResult) redistributeBudget(next)
                               }}
                               style={{ width: 15, height: 15, accentColor: T.primary, cursor: 'pointer', flexShrink: 0 }}
                             />
