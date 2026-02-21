@@ -363,11 +363,6 @@ const css: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box' as const,
   },
   autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
-  langPill: (active: boolean): React.CSSProperties => ({
-    padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-    cursor: 'pointer', border: active ? '2px solid #1e3a5f' : '1px solid #cbd5e1',
-    background: active ? '#1e3a5f' : '#fff', color: active ? '#fff' : '#64748b',
-  }),
   btnAutofill: {
     background: '#2563eb', color: '#fff', border: 'none',
     padding: '9px 20px', borderRadius: 6, cursor: 'pointer',
@@ -378,6 +373,12 @@ const css: Record<string, React.CSSProperties> = {
     borderRadius: 6, fontSize: 13, color: '#166534', marginTop: 10,
   },
 }
+
+const langPillStyle = (active: boolean): React.CSSProperties => ({
+  padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+  cursor: 'pointer', border: active ? '2px solid #1e3a5f' : '1px solid #cbd5e1',
+  background: active ? '#1e3a5f' : '#fff', color: active ? '#fff' : '#64748b',
+})
 
 // ── component ─────────────────────────────────────────────────────────────────
 
@@ -602,7 +603,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               {['IT', 'EN', 'DE', 'FR', 'ES', 'NL', 'PT'].map(code => (
                 <span
                   key={code}
-                  style={css.langPill(autofillLangs.includes(code))}
+                  style={langPillStyle(autofillLangs.includes(code))}
                   onClick={() => !autofillMutation.isPending && toggleAutofillLang(code)}
                 >
                   {code}
