@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
 import BriefForm from '../components/BriefForm'
+import { GoogleAdPreview } from '../components/GoogleAdPreview'
 import { T } from '../styles/theme'
 
 const s: Record<string, React.CSSProperties> = {
@@ -80,7 +81,7 @@ const s: Record<string, React.CSSProperties> = {
   },
 }
 
-type Tab = 'overview' | 'campaigns' | 'brief' | 'audit' | 'plan_json'
+type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'plan_json' | 'audit'
 
 function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
   const [expanded, setExpanded] = useState(false)
@@ -188,6 +189,7 @@ export default function ProjectDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [planJsonText, setPlanJsonText] = useState('')
+  const [previewLangIdx, setPreviewLangIdx] = useState(0)
   const qc = useQueryClient()
 
   const { data: project } = useQuery({
@@ -205,7 +207,7 @@ export default function ProjectDetailPage() {
   const { data: brief, isFetching: briefFetching } = useQuery({
     queryKey: ['brief', id],
     queryFn: () => projectsApi.getBrief(id!),
-    enabled: activeTab === 'brief' && (project?.has_brief ?? false),
+    enabled: (activeTab === 'brief' || activeTab === 'preview') && (project?.has_brief ?? false),
     retry: false,
   })
 
@@ -288,15 +290,16 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'brief', 'plan_json', 'audit'] as Tab[]).map(t => (
+        {(['overview', 'campaigns', 'preview', 'brief', 'plan_json', 'audit'] as Tab[]).map(t => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview' ? 'Overview'
+            {t === 'overview'   ? 'Overview'
               : t === 'campaigns' ? 'Campagne'
-              : t === 'brief' ? 'Brief'
+              : t === 'preview'   ? 'Anteprima'
+              : t === 'brief'     ? 'Brief'
               : t === 'plan_json' ? 'Modifica Piano'
               : 'Audit Log'}
           </button>
@@ -327,6 +330,78 @@ export default function ProjectDetailPage() {
           ) : <p style={{ color: T.textGray }}>Genera prima il piano.</p>}
         </div>
       )}
+
+      {activeTab === 'preview' && (() => {
+        const briefLangs = (brief as any)?.languages as any[] | undefined
+        const briefDomain = (brief as any)?.client?.domain || (brief as any)?.hotel?.domain || ''
+        return (
+          <div>
+            <p style={{ fontSize: 13, color: T.textGray, marginBottom: 16 }}>
+              Simulazione di come apparirà il tuo annuncio RSA su Google. Google ottimizza
+              automaticamente la combinazione di headline e descrizioni in base alle performance.
+            </p>
+
+            {!project.has_brief ? (
+              <div style={s.card}>
+                <p style={{ color: T.textGray }}>Carica prima il brief per visualizzare l'anteprima.</p>
+              </div>
+            ) : briefFetching ? (
+              <p style={{ color: T.textGray }}>Caricamento brief...</p>
+            ) : briefLangs && briefLangs.length > 0 ? (
+              <>
+                {/* Language pill tabs */}
+                <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+                  {briefLangs.map((lang: any, i: number) => (
+                    <button
+                      key={i}
+                      onClick={() => setPreviewLangIdx(i)}
+                      style={{
+                        padding: '6px 18px', border: 'none', borderRadius: 20, cursor: 'pointer',
+                        fontSize: 13, fontWeight: previewLangIdx === i ? 700 : 400,
+                        background: previewLangIdx === i ? T.primary : T.bgMuted,
+                        color: previewLangIdx === i ? '#fff' : T.textGray,
+                        transition: 'all .15s',
+                      }}
+                    >
+                      {lang.code}{lang.name ? ` — ${lang.name}` : ''}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Preview for selected language */}
+                {(() => {
+                  const lang = briefLangs[previewLangIdx]
+                  if (!lang) return null
+                  let domain = briefDomain
+                  if (!domain && lang.landing_page) {
+                    try { domain = new URL(lang.landing_page).hostname } catch { /* ok */ }
+                  }
+                  return (
+                    <GoogleAdPreview
+                      lang={{
+                        headlines: lang.headlines || [],
+                        descriptions: lang.descriptions || [],
+                        callouts: lang.callouts || [],
+                        sitelinks: lang.sitelinks || [],
+                      }}
+                      domain={domain}
+                    />
+                  )
+                })()}
+              </>
+            ) : (
+              <div style={s.card}>
+                <p style={{ color: T.textGray }}>
+                  Nessuna lingua configurata nel brief.{' '}
+                  <button style={{ ...s.btn, fontSize: 12, padding: '4px 12px' }} onClick={() => setActiveTab('brief')}>
+                    Vai al Brief
+                  </button>
+                </p>
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {activeTab === 'brief' && (
         <div>
