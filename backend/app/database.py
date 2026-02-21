@@ -12,10 +12,13 @@ settings = get_settings()
 # Ensure data directory exists
 Path("data").mkdir(exist_ok=True)
 
+_is_postgres = "postgresql" in settings.database_url or "postgres://" in settings.database_url
+_connect_args = {"check_same_thread": False} if "sqlite" in settings.database_url else ({"ssl": "require"} if _is_postgres else {})
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.app_debug,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    connect_args=_connect_args,
 )
 
 AsyncSessionLocal = async_sessionmaker(

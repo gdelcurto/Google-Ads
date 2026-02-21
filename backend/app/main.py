@@ -46,9 +46,17 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
     alembic_cfg = AlembicConfig("alembic.ini")
-    await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
-    logger.info("Database migrations applied")
-    await _seed_admin()
+    try:
+        await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
+        logger.info("Database migrations applied")
+    except Exception as exc:
+        logger.error(f"Database migration failed: {exc}", exc_info=True)
+        raise
+    try:
+        await _seed_admin()
+    except Exception as exc:
+        logger.error(f"Admin seed failed: {exc}", exc_info=True)
+        raise
     logger.info(
         f"Google Ads Campaigns API started "
         f"[env={settings.app_env}] [debug={settings.app_debug}]"
