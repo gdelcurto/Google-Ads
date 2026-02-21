@@ -119,8 +119,8 @@ class BriefValidator:
                 field="budgets",
             )
 
-        required_types = [t.value for t in CampaignTypeKey]
-        for camp_type in required_types:
+        requested_types = [t.value for t in brief.campaign_types]
+        for camp_type in requested_types:
             if camp_type not in brief.budgets.by_campaign_type:
                 result.add_warning(
                     "BUDGET_MISSING_TYPE",

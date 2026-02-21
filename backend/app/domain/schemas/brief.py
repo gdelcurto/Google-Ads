@@ -9,6 +9,16 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
+# Default budget split across campaign types (weights, not percentages).
+# Applied when by_campaign_type is not manually specified.
+DEFAULT_BUDGET_SPLIT: Dict[str, float] = {
+    "search_brand": 0.20,
+    "search_acquisition": 0.35,
+    "performance_max": 0.30,
+    "retargeting": 0.10,
+    "demand_gen": 0.05,
+}
+
 
 # ─── Enums ──────────────────────────────────────────────────────────────────
 
@@ -240,6 +250,14 @@ class Brief(BaseModel):
     client: ClientInfo
     objectives: ObjectivesInfo
     budgets: BudgetPlan
+    campaign_types: List[CampaignTypeKey] = Field(
+        default_factory=lambda: list(CampaignTypeKey),
+        description=(
+            "Campaign types to generate. "
+            "If budgets.by_campaign_type is empty, the total monthly budget is "
+            "automatically distributed across these types using DEFAULT_BUDGET_SPLIT."
+        ),
+    )
     languages: List[LanguagePlan] = Field(..., min_length=1)
     geo_targeting: GeoTargeting = Field(default_factory=GeoTargeting)
     seasonality: Optional[SeasonalityInfo] = None
@@ -250,6 +268,47 @@ class Brief(BaseModel):
     naming_convention: NamingConvention = Field(default_factory=NamingConvention)
     labels: List[str] = Field(default_factory=list)
     utm_config: UtmConfig = Field(default_factory=UtmConfig)
+
+    @model_validator(mode="after")
+    def auto_distribute_budget(self) -> "Brief":
+        """
+        If by_campaign_type is empty, auto-distribute total_monthly_eur across
+        campaign_types using DEFAULT_BUDGET_SPLIT weights.
+        Retargeting / demand_gen are skipped when no remarketing lists are defined.
+        """
+        if self.budgets.by_campaign_type:
+            return self  # Manual allocation — do not override
+
+        total = self.budgets.total_monthly_eur
+        if total <= 0 or not self.languages:
+            return self
+
+        lang_codes = [lang.code for lang in self.languages]
+
+        # Determine which types can actually run
+        active_types: List[CampaignTypeKey] = []
+        for ct in self.campaign_types:
+            if ct in (CampaignTypeKey.retargeting, CampaignTypeKey.demand_gen):
+                if not self.audiences.remarketing_lists:
+                    continue  # Cannot run without audience lists
+            active_types.append(ct)
+
+        if not active_types:
+            return self
+
+        # Normalize weights to active types only
+        raw_weights = {ct: DEFAULT_BUDGET_SPLIT.get(ct.value, 1.0) for ct in active_types}
+        total_weight = sum(raw_weights.values())
+
+        for ct in active_types:
+            type_total = round(total * raw_weights[ct] / total_weight, 2)
+            per_lang = round(type_total / len(lang_codes), 2)
+            self.budgets.by_campaign_type[ct.value] = BudgetByLanguage(
+                total=type_total,
+                by_language={code: per_lang for code in lang_codes},
+            )
+
+        return self
 
     @model_validator(mode="after")
     def validate_budget_languages_match(self) -> "Brief":
