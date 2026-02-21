@@ -739,26 +739,53 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           retargeting_headlines: '',
           retargeting_descriptions: '',
         })))
-        // Auto-generate sitelinks for each language in parallel
+        // Auto-generate sitelinks + per-type RSA copy for each language in parallel
         setAutoSlPending(true)
-        Promise.allSettled(data.languages.map((l, idx) =>
-          autofillApi.suggestSitelinks({
-            brand_name: data.brand_name,
-            hotel_category: data.hotel_category || 'city_hotel',
-            stars: data.stars || 3,
-            language_code: l.code,
-            landing_page: l.landing_page || `https://${data.domain}`,
-            domain: data.domain || undefined,
-            services: data.services || [],
-            strengths: data.strengths || [],
-            booking_engine_url: data.booking_engine_url || undefined,
-          }).then(slData => {
-            setLangs(prev => prev.map((lang, i) => i === idx
-              ? { ...lang, sitelinks: slData.sitelinks }
-              : lang
-            ))
-          })
-        )).finally(() => setAutoSlPending(false))
+        const commonArgs = {
+          brand_name: data.brand_name,
+          hotel_category: data.hotel_category || 'city_hotel',
+          stars: data.stars || 3,
+          domain: data.domain || undefined,
+          services: data.services || [],
+          strengths: data.strengths || [],
+        }
+        Promise.allSettled(data.languages.flatMap((l, idx) => {
+          const langArgs = { ...commonArgs, language_code: l.code, usp_main: l.usp_main || undefined }
+          return [
+            // Sitelinks
+            autofillApi.suggestSitelinks({
+              ...langArgs,
+              landing_page: l.landing_page || `https://${data.domain}`,
+              booking_engine_url: data.booking_engine_url || undefined,
+            }).then(slData => {
+              setLangs(prev => prev.map((lang, i) => i === idx
+                ? { ...lang, sitelinks: slData.sitelinks }
+                : lang
+              ))
+            }),
+            // Brand copy
+            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'brand' }).then(copyData => {
+              setLangs(prev => prev.map((lang, i) => i === idx
+                ? { ...lang, brand_headlines: copyData.headlines.join('\n'), brand_descriptions: copyData.descriptions.join('\n') }
+                : lang
+              ))
+            }),
+            // Acquisition copy
+            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'acquisition' }).then(copyData => {
+              setLangs(prev => prev.map((lang, i) => i === idx
+                ? { ...lang, acquisition_headlines: copyData.headlines.join('\n'), acquisition_descriptions: copyData.descriptions.join('\n') }
+                : lang
+              ))
+            }),
+            // Retargeting copy
+            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'retargeting' }).then(copyData => {
+              setLangs(prev => prev.map((lang, i) => i === idx
+                ? { ...lang, retargeting_headlines: copyData.headlines.join('\n'), retargeting_descriptions: copyData.descriptions.join('\n') }
+                : lang
+              ))
+            }),
+          ]
+        })).finally(() => setAutoSlPending(false))
       }
       setAutofillSuccess(true)
     },
@@ -1773,7 +1800,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           </p>
           {autoSlPending && (
             <div style={{ fontSize: 12, color: T.blue, marginBottom: 12 }}>
-              ⏳ Generazione automatica sitelink in corso...
+              ⏳ Generazione automatica sitelink e copy per tipo in corso...
             </div>
           )}
           {/* Language tabs */}

@@ -209,6 +209,18 @@ class SitelinksRequest(BaseModel):
     booking_engine_url: Optional[str] = None
 
 
+class TypeCopyRequest(BaseModel):
+    campaign_type: str          # "brand" | "acquisition" | "retargeting"
+    brand_name: str
+    hotel_category: str
+    stars: int
+    language_code: str
+    domain: Optional[str] = None
+    usp_main: Optional[str] = None
+    services: Optional[List[str]] = None
+    strengths: Optional[List[str]] = None
+
+
 @router.post("/keywords")
 async def suggest_keywords(
     payload: KeywordsRequest,
@@ -465,3 +477,144 @@ async def autofill_from_url(
 
     logger.info(f"Autofill OK: {data.get('brand_name')} — {len(data.get('languages', []))} langs")
     return data
+
+
+_TYPE_COPY_PROMPTS: dict[str, dict] = {
+    "brand": {
+        "label": "Brand Search",
+        "headline_rules": (
+            "- DEVE contenere il nome del brand/hotel in almeno 1 headline (pinnato in posizione 1)\n"
+            "- Altre headline: vantaggi prenotazione diretta (Sito Ufficiale, Miglior Tariffa Garantita, "
+            "Prenota Direttamente, Cancellazione Gratuita, Sconto Esclusivo Online)\n"
+            "- NO termini generici di categoria (es. 'Hotel Roma Centro') — quelli vanno in Acquisition\n"
+            "- NO keyword insertion ({KeyWord})"
+        ),
+        "description_rules": (
+            "- Rinforza il vantaggio della prenotazione diretta\n"
+            "- Menziona il nome del brand\n"
+            "- CTA chiara (es. 'Prenota ora sul sito ufficiale')"
+        ),
+    },
+    "acquisition": {
+        "label": "Acquisition Search",
+        "headline_rules": (
+            "- NO brand name — questo è per utenti che NON conoscono ancora l'hotel\n"
+            "- Usa termini di categoria, posizione, stelle, USP generici\n"
+            "- Esempi: 'Hotel 4 Stelle Roma Centro', 'Colazione Inclusa', 'Vista Mare Panoramica', "
+            "'Piscina Riscaldata', 'Posizione Centrale'\n"
+            "- Ogni headline deve comunicare un beneficio specifico e reale"
+        ),
+        "description_rules": (
+            "- Descrivi l'hotel senza usare il nome brand\n"
+            "- Usa USP reali (posizione, servizi, stelle, offerte)\n"
+            "- CTA verso prenotazione (es. 'Prenota online e risparmia fino al 20%')"
+        ),
+    },
+    "retargeting": {
+        "label": "Retargeting / Display",
+        "headline_rules": (
+            "- Copy urgency/personalizzata per visitatori che hanno già visto il sito\n"
+            "- Usa segnali di ritorno: 'Completa la Prenotazione', 'Offerta Riservata a Te', "
+            "'Torna e Risparmia', 'Ultimi Posti Disponibili', 'Offerta Esclusiva'\n"
+            "- Crea senso di scarsità o esclusività\n"
+            "- Puoi includere il brand name"
+        ),
+        "description_rules": (
+            "- Richiama la visita precedente al sito\n"
+            "- Offri un incentivo al ritorno (tariffa esclusiva, offerta limitata)\n"
+            "- Urgency ma non aggressivo — tono premuroso"
+        ),
+    },
+}
+
+
+@router.post("/type-copy")
+async def suggest_type_copy(
+    payload: TypeCopyRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+):
+    """
+    Generate per-type RSA headlines and descriptions for a hotel using Claude.
+    campaign_type: "brand" | "acquisition" | "retargeting"
+    Returns { headlines: [...], descriptions: [...] } ready to populate the brief form.
+    """
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+
+    camp_type = payload.campaign_type.lower()
+    if camp_type not in _TYPE_COPY_PROMPTS:
+        raise HTTPException(status_code=422, detail=f"campaign_type deve essere: brand, acquisition, retargeting")
+
+    meta = _TYPE_COPY_PROMPTS[camp_type]
+    lang_code = payload.language_code.upper()
+    lang_name = LANG_NAMES.get(lang_code, lang_code)
+    services_txt = ", ".join(payload.services or []) or "non specificati"
+    strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
+    usp_txt = payload.usp_main or "non specificata"
+
+    prompt = f"""Sei un esperto Google Ads certificato per hotel e turismo.
+Genera RSA copy per campagne {meta['label']} in lingua {lang_name}.
+
+Hotel: {payload.brand_name}
+Categoria: {payload.hotel_category} — {payload.stars} stelle
+Dominio: {payload.domain or 'non specificato'}
+USP principale: {usp_txt}
+Servizi: {services_txt}
+Punti di forza: {strengths_txt}
+Lingua output: {lang_name} ({lang_code})
+
+REGOLE HEADLINE (max 30 caratteri ciascuna, spazi inclusi — CRITICO):
+{meta['headline_rules']}
+
+REGOLE DESCRIZIONI (max 90 caratteri ciascuna, spazi inclusi — CRITICO):
+{meta['description_rules']}
+
+Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
+{{
+  "headlines": [
+    "Headline 1 max 30 car",
+    "Headline 2 max 30 car",
+    "Headline 3 max 30 car",
+    "Headline 4 max 30 car",
+    "Headline 5 max 30 car",
+    "Headline 6 max 30 car",
+    "Headline 7 max 30 car",
+    "Headline 8 max 30 car"
+  ],
+  "descriptions": [
+    "Descrizione 1 di massimo novanta caratteri totali inclusi spazi.",
+    "Descrizione 2 di massimo novanta caratteri totali inclusi spazi."
+  ]
+}}"""
+
+    try:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+    except Exception as exc:
+        logger.error(f"TypeCopy suggestion failed ({camp_type}): {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
+
+    try:
+        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+        if json_match:
+            raw = json_match.group(1)
+        else:
+            start, end = raw.find('{'), raw.rfind('}')
+            if start != -1 and end != -1:
+                raw = raw[start:end + 1]
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.error(f"TypeCopy JSON parse error: {exc}\nRaw: {raw[:500]}")
+        raise HTTPException(status_code=500, detail="Risposta AI non parsabile. Riprova.")
+
+    headlines = [h[:30] for h in data.get("headlines", []) if isinstance(h, str) and h.strip()]
+    descriptions = [d[:90] for d in data.get("descriptions", []) if isinstance(d, str) and d.strip()]
+
+    return {"headlines": headlines, "descriptions": descriptions}

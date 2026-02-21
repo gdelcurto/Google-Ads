@@ -175,6 +175,19 @@ export const autofillApi = {
     api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[] }>(
       '/autofill/sitelinks', data
     ).then((r) => r.data),
+
+  suggestTypeCopy: (data: {
+    campaign_type: 'brand' | 'acquisition' | 'retargeting'
+    brand_name: string
+    hotel_category: string
+    stars: number
+    language_code: string
+    domain?: string
+    usp_main?: string
+    services?: string[]
+    strengths?: string[]
+  }) =>
+    api.post<{ headlines: string[]; descriptions: string[] }>('/autofill/type-copy', data).then((r) => r.data),
 }
 
 export const authApi = {
