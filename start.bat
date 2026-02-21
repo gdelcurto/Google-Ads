@@ -68,6 +68,14 @@ if not exist "node_modules" (
     call npm install --silent
 )
 
+echo [INFO] Build frontend...
+call npm run build
+if errorlevel 1 (
+    echo [ERRORE] Build frontend fallita
+    pause
+    exit /b 1
+)
+
 REM ── Avvio servizi ───────────────────────────────────────────
 echo.
 echo [INFO] Avvio backend su http://localhost:8000 ...
@@ -78,22 +86,19 @@ start "Backend - Google Ads" cmd /k ".venv\Scripts\uvicorn app.main:app --host 0
 echo [INFO] Attesa avvio backend...
 timeout /t 4 /nobreak >nul
 
-echo [INFO] Avvio frontend su http://localhost:5173 ...
-cd /d "%FRONTEND%"
-start "Frontend - Google Ads" cmd /k "npm run dev"
-
 REM ── Riepilogo ───────────────────────────────────────────────
 echo.
 echo  ================================================
 echo   App avviata con successo!
 echo  ================================================
 echo.
-echo   Backend API  -^>  http://localhost:8000
-echo   Swagger docs -^>  http://localhost:8000/api/docs
-echo   Frontend     -^>  http://localhost:5173
+echo   Apri il browser su:
 echo.
+echo   http://localhost:8000
+echo.
+echo   Swagger docs -^>  http://localhost:8000/api/docs
 echo   Login: admin@blastness.com / admin123
 echo.
-echo   Chiudi le finestre "Backend" e "Frontend" per fermare.
+echo   Chiudi la finestra "Backend" per fermare.
 echo.
 pause

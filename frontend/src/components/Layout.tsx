@@ -1,4 +1,4 @@
-import { Outlet, Link, useNavigate } from 'react-router-dom'
+import { Outlet, Link, useNavigate, Navigate } from 'react-router-dom'
 
 const s: Record<string, React.CSSProperties> = {
   shell: { minHeight: '100vh', display: 'flex', flexDirection: 'column' },
@@ -21,8 +21,7 @@ export default function Layout() {
   const token = localStorage.getItem('token')
 
   if (!token) {
-    navigate('/login')
-    return null
+    return <Navigate to="/login" replace />
   }
 
   const logout = () => {
