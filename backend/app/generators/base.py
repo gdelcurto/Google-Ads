@@ -94,7 +94,17 @@ class BaseGenerator:
         - pinned_headlines: list of (text, pin_position) tuples for brand name pinning.
         """
         h_source = headlines if headlines is not None else lang.headlines
-        d_source = descriptions if descriptions is not None else lang.descriptions
+
+        # Merge per-type descriptions with generic pool to always meet RSAd min (2).
+        # Per-type descriptions take priority; generic ones are appended as fallback.
+        if descriptions is not None:
+            merged = list(descriptions)
+            for d in lang.descriptions:
+                if d not in merged:
+                    merged.append(d)
+            d_source = merged
+        else:
+            d_source = lang.descriptions
 
         pin_map = {text: pos for text, pos in (pinned_headlines or [])}
 
