@@ -30,22 +30,56 @@ LANG_NAMES: dict[str, str] = {
 }
 
 SYSTEM_PROMPT = """\
-Sei un esperto certificato Google Ads per hotel e turismo.
-Analizzi il contenuto di siti web di hotel e generi dati strutturati per campagne Google Ads.
+Sei un copywriter Google Ads certificato, specializzato in hotel e hospitality da oltre 10 anni.
+Conosci a fondo la psicologia del viaggiatore, le dinamiche del funnel alberghiero e le best
+practice RSA per battere le OTA (Booking, Expedia) nelle aste di brand e acquisizione.
 
-REGOLE ASSOLUTE (non derogabili):
-1. HEADLINE: massimo 30 caratteri ciascuna, spazi inclusi. Conta ogni carattere.
-   Esempi OK: "Prenota Diretto Online" (22), "Hotel 4 Stelle Roma" (20)
-   Esempi ERRATI: "Prenota sul Sito Ufficiale e Risparmia" (troppo lungo)
-2. DESCRIZIONI: massimo 90 caratteri ciascuna, spazi inclusi.
-3. CALLOUT: massimo 25 caratteri ciascuno, spazi inclusi.
-4. Genera solo contenuti REALI trovati nel sito. Non inventare servizi non menzionati.
-5. Le headline devono avere un beneficio o CTA chiaro, specifico per quell'hotel.
-6. Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo.
+═══ PRINCIPI DEL COPY ALBERGHIERO DI QUALITÀ ═══
+
+SPECIFICITÀ PRIMA DI TUTTO
+  ✗ "Ottimo hotel con servizi"          → generico, zero conversioni
+  ✓ "Rooftop Pool con Vista sul Duomo"  → specifico, evocativo, desiderabile
+  ✗ "Hotel di lusso a Roma"             → scontato
+  ✓ "5 Min dal Colosseo a Piedi"        → distanza concreta, non km astratti
+
+BENEFICIO, NON CARATTERISTICA
+  ✗ "Piscina riscaldata disponibile"    → caratteristica
+  ✓ "Piscina Riscaldata Tutto l'Anno"   → beneficio fruibile sempre
+  ✗ "Colazione servita ogni mattina"    → ovvio
+  ✓ "Colazione Buffet Inclusa nel Prezzo" → beneficio economico esplicito
+
+OFFERTA DIRETTA vs OTA
+  ✓ "Miglior Tariffa Garantita"         → promessa forte e verificabile (24 chars)
+  ✓ "Prenota Senza Commissioni"         → beneficio economico diretto (24 chars)
+  ✓ "Check-in Anticipato Incluso"       → vantaggio esclusivo del diretto (28 chars)
+  ✓ "Sconto 10% sul Sito Ufficiale"     → incentivo quantificato (30 chars)
+
+═══ REGOLE ASSOLUTE SUI CARATTERI ═══
+
+Conta OGNI carattere (lettere, spazi, apostrofi, trattini) prima di rispondere.
+NON troncare le parole: se una parola non entra per intero entro il limite, NON includerla.
+
+  HEADLINE   → massimo 30 caratteri  ("Hotel 4 Stelle Roma" = 20 ✓)
+  DESCRIZIONI → massimo 90 caratteri
+  CALLOUT     → massimo 25 caratteri  ("Cancellazione Gratis" = 20 ✓)
+  SITELINK testo       → massimo 25 caratteri
+  SITELINK descrizione → massimo 35 caratteri ciascuna
+
+Come verificare (esempio):
+  "Prenota Diretto Online" → P-r-e-n-o-t-a(7) SPACE(8) D-i-r-e-t-t-o(15) SPACE(16) O-n-l-i-n-e(22) = 22 ✓
+  "Prenota sul Sito Ufficiale e Risparmia" = 39 caratteri ✗ — troppo lungo
+
+═══ CONTENUTO AUTENTICO ═══
+
+Genera solo servizi, caratteristiche e USP REALI trovati nel testo fornito.
+Non inventare: non aggiungere spa se non è menzionata, non promettere vista mare se non c'è.
+Usa i dettagli specifici dell'hotel per differenziarlo dalla concorrenza generica.
+
+Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo prima o dopo.
 """
 
 USER_PROMPT_TEMPLATE = """\
-Analizza il seguente sito web di un hotel e genera un brief strutturato per Google Ads.
+Analizza il sito web di un hotel e genera un brief strutturato per campagne Google Ads.
 
 URL: {url}
 Lingue richieste: {languages}
@@ -54,7 +88,36 @@ Lingue richieste: {languages}
 {content}
 --- FINE CONTENUTO ---
 
-Genera il JSON con questa struttura esatta:
+═══ ISTRUZIONI PER IL COPY ═══
+
+HEADLINES (≤ 30 caratteri ciascuna):
+- Genera almeno 8 headline diverse che coprono questi 4 temi:
+  1. Brand/identità (es. "[Nome Hotel] Ufficiale", "4 Stelle sul Lago di Como")
+  2. Prenotazione diretta (es. "Miglior Tariffa Garantita", "Prenota Senza Commissioni")
+  3. Servizi/USP specifici (es. "Spa e Piscina Infinity", "Colazione Buffet Inclusa")
+  4. Posizione/accesso (es. "50m dalla Spiaggia", "Centro Storico a Piedi")
+- Usa dati REALI dal sito: posizione precisa, servizi effettivi, caratteristiche uniche
+- Ogni headline = un argomento di vendita indipendente, non variazioni dello stesso
+- VERIFICA: conta i caratteri di ogni headline prima di includerla
+
+DESCRIZIONI (≤ 90 caratteri ciascuna):
+- Prima descrizione: beneficio principale + CTA (es. "Prenota ora e goditi la vista mozzafiato. Tariffa migliore sul sito ufficiale.")
+- Seconda descrizione: USP diversa + urgency/rassicurazione (es. "Camera con terrazza e colazione inclusa. Cancellazione gratuita fino a 24h prima.")
+- Sii specifico: cita servizi reali, non generalità
+
+CALLOUT (≤ 25 caratteri ciascuno):
+- Fatti concreti, non aggettivi — "Piscina Riscaldata" batte "Servizi Eccellenti"
+- Varia i temi: prezzo, flessibilità, servizi, posizione
+
+USP_MAIN (≤ 90 caratteri):
+- La proposta di valore unica che distingue questo hotel dalla concorrenza
+- Deve rispondere a: "Perché scegliere questo hotel rispetto a tutti gli altri?"
+
+BRAND TERMS:
+- Esattamente come gli utenti cercano su Google (nome ufficiale, abbreviazioni comuni, varianti)
+
+═══ OUTPUT JSON ═══
+
 {{
   "brand_name": "Nome commerciale dell'hotel",
   "brand_slug": "nome-in-slug",
@@ -64,8 +127,8 @@ Genera il JSON con questa struttura esatta:
   "stars": 4,
   "rooms": null,
   "address": "Via Esempio 1, 00100 Roma",
-  "services": ["Piscina", "Spa", "Ristorante"],
-  "strengths": ["Posizione centrale", "Vista panoramica"],
+  "services": ["Piscina", "Spa", "Ristorante", "Navetta Aeroporto"],
+  "strengths": ["50m dalla spiaggia", "Vista panoramica sul golfo", "Parcheggio gratuito"],
   "booking_engine_url": "https://www.dominio.it/prenota",
   "target_countries": ["IT", "DE", "GB"],
   "languages": [
@@ -74,36 +137,37 @@ Genera il JSON con questa struttura esatta:
       "name": "Italiano",
       "google_language_id": 1004,
       "landing_page": "https://www.dominio.it/",
-      "brand_terms": ["nome hotel", "variante 1", "variante 2"],
-      "usp_main": "Proposta di valore unica max 90 caratteri",
+      "brand_terms": ["Grand Hotel Bellevue", "Hotel Bellevue Roma", "Bellevue Hotel"],
+      "usp_main": "Hotel 4 stelle a 2 min dal Colosseo, colazione inclusa e miglior tariffa garantita.",
       "headlines": [
-        "Max 30 Caratteri Ciascuna",
-        "Prenota Diretto Online",
+        "Grand Hotel Bellevue Roma",
         "Miglior Tariffa Garantita",
-        "Posizione Centrale",
-        "Colazione Inclusa",
+        "2 Min dal Colosseo",
+        "Colazione Buffet Inclusa",
+        "Prenota Senza Commissioni",
+        "Suite con Vista Panoramica",
         "Cancellazione Gratuita",
-        "Wi-Fi Gratuito",
-        "Navetta Aeroporto"
+        "Check-in Early Incluso"
       ],
       "descriptions": [
-        "Descrizione di max 90 caratteri con beneficio principale e call to action chiaro.",
-        "Seconda descrizione con altri vantaggi e differenziatori reali dell'hotel. Max 90."
+        "Hotel 4 stelle nel cuore di Roma, a 2 minuti dal Colosseo. Prenota diretto e risparmia.",
+        "Colazione inclusa ogni mattina, terrazza panoramica e parcheggio. Cancellazione gratis."
       ],
       "callouts": [
-        "Miglior Prezzo",
+        "Miglior Prezzo Online",
+        "Colazione Inclusa",
         "Cancellazione Gratis",
-        "Wi-Fi Gratuito",
-        "Check-in Flessibile"
+        "Parcheggio Gratuito",
+        "Check-in Anticipato"
       ]
     }}
   ]
 }}
 
 Genera {n_langs} oggetti nella lista "languages", uno per ciascuna lingua: {languages}.
-Per ogni lingua, scrivi headline, descrizioni e callout nella lingua corretta.
-Brand terms: come gli utenti cercano l'hotel su Google in quella lingua.
-Callouts: sintetici, fatti concreti dell'hotel.
+Per ogni lingua scrivi headline, descrizioni e callout NELLA LINGUA CORRETTA.
+Adatta le espressioni culturalmente (non tradurre letteralmente: "Miglior Tariffa Garantita"
+in tedesco diventa "Bestpreisgarantie", non "Beste Preis Garantiert").
 """
 
 
@@ -170,14 +234,35 @@ async def _fetch_pages(base_url: str) -> str:
     return '\n\n'.join(collected)[:14000]
 
 
+def _trim_to_word(text: str, max_chars: int) -> str:
+    """Trim text to max_chars without cutting mid-word.
+
+    If the text fits, return it unchanged.
+    If the character at position max_chars is inside a word (not a space/boundary),
+    backtrack to the last space so no word is split.
+    A very long single word with no spaces is trimmed at the hard limit as last resort.
+    """
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars]
+    # Check if we're mid-word: next character exists and is not a space
+    if max_chars < len(text) and text[max_chars] != ' ':
+        space = cut.rfind(' ')
+        if space > 0:
+            return cut[:space]
+        # No space found — single overlong token, trim at hard limit
+        return cut
+    return cut.rstrip()
+
+
 def _truncate_assets(data: dict) -> dict:
-    """Post-process: hard-truncate headlines/descriptions/callouts to Google Ads limits."""
+    """Post-process: trim headlines/descriptions/callouts to Google Ads limits (word-safe)."""
     for lang in data.get('languages', []):
-        lang['headlines'] = [h[:30] for h in lang.get('headlines', [])]
-        lang['descriptions'] = [d[:90] for d in lang.get('descriptions', [])]
-        lang['callouts'] = [c[:25] for c in lang.get('callouts', [])]
+        lang['headlines'] = [_trim_to_word(h, 30) for h in lang.get('headlines', [])]
+        lang['descriptions'] = [_trim_to_word(d, 90) for d in lang.get('descriptions', [])]
+        lang['callouts'] = [_trim_to_word(c, 25) for c in lang.get('callouts', [])]
         if lang.get('usp_main'):
-            lang['usp_main'] = lang['usp_main'][:90]
+            lang['usp_main'] = _trim_to_word(lang['usp_main'], 90)
     return data
 
 
@@ -322,7 +407,10 @@ async def suggest_sitelinks(
     strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
     booking_url = payload.booking_engine_url or payload.landing_page
 
-    prompt = f"""Sei un esperto Google Ads per hotel. Genera esattamente 5 sitelink per Google Ads.
+    prompt = f"""Sei un copywriter Google Ads specializzato in hotel. Genera esattamente 5 sitelink.
+
+I sitelink appaiono sotto l'annuncio principale e portano l'utente direttamente alle sezioni
+più rilevanti del sito. Devono essere specifici, utili e cliccabili.
 
 Hotel: {payload.brand_name}
 Categoria: {payload.hotel_category} — {payload.stars} stelle
@@ -332,29 +420,39 @@ Booking engine: {booking_url}
 Servizi: {services_txt}
 Punti di forza: {strengths_txt}
 
-REGOLE ASSOLUTE:
-- text: MASSIMO 25 caratteri, spazi inclusi. Conta ogni carattere.
-- description_1: MASSIMO 35 caratteri, spazi inclusi.
-- description_2: MASSIMO 35 caratteri, spazi inclusi.
-- final_url: URL reale basata sulla landing page (modifica il path, non inventare domini)
+REGOLE CARATTERI (verifica ogni campo prima di rispondere):
+- text: ≤ 25 caratteri, spazi inclusi
+- description_1: ≤ 35 caratteri, spazi inclusi
+- description_2: ≤ 35 caratteri, spazi inclusi
+NON troncare le parole: se non entra per intero, elimina l'ultima parola.
+
+REGOLE CONTENUTO:
+- final_url: URL reale basata sulla landing page (modifica solo il path, non inventare domini)
 - Scrivi text, description_1, description_2 in {lang_name}
-- Temi suggeriti: prenotazione diretta, offerte speciali, camere, servizi, posizione/attrazioni
+- Ogni sitelink copre un tema DIVERSO — non ripetere variazioni dello stesso:
+  1. Prenotazione diretta (booking engine) → vantaggi tariffa/cancellazione
+  2. Offerte/pacchetti → risparmio o esperienza inclusa
+  3. Camere/suite → caratteristiche specifiche basate sui servizi reali
+  4. Servizi hotel → SPA, piscina, ristorante (usa quelli effettivi)
+  5. Location/come arrivare → posizione, distanze, navetta
+- Le descrizioni devono essere argomenti di vendita, non semplici descrizioni della pagina
+  ✗ "Pagina camere del nostro hotel" → ✓ "Camere con vista lago e terrazza privata"
 
 Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
 [
-  {{"text": "Prenota Ora", "description_1": "Miglior tariffa garantita", "description_2": "Cancellazione gratuita inclusa", "final_url": "{booking_url}"}},
-  {{"text": "Offerte Speciali", "description_1": "Pacchetti esclusivi per soggiorni", "description_2": "Risparmia prenotando online", "final_url": "{payload.landing_page}/offerte"}},
-  {{"text": "Le Nostre Camere", "description_1": "Camere eleganti e confortevoli", "description_2": "Vista panoramica e servizi top", "final_url": "{payload.landing_page}/camere"}},
-  {{"text": "Servizi Hotel", "description_1": "SPA, ristorante e molto altro", "description_2": "Tutto per il tuo relax", "final_url": "{payload.landing_page}/servizi"}},
-  {{"text": "Come Raggiungerci", "description_1": "Posizione centrale e accessibile", "description_2": "Navetta aeroporto disponibile", "final_url": "{payload.landing_page}/contatti"}}
+  {{"text": "Prenota Direttamente", "description_1": "Miglior tariffa garantita", "description_2": "Cancellazione gratuita inclusa", "final_url": "{booking_url}"}},
+  {{"text": "Offerte e Pacchetti", "description_1": "Soggiorni con colazione inclusa", "description_2": "Risparmia prenotando sul sito", "final_url": "{payload.landing_page}/offerte"}},
+  {{"text": "Le Nostre Camere", "description_1": "Suite con vista panoramica", "description_2": "Arredi di design e comfort top", "final_url": "{payload.landing_page}/camere"}},
+  {{"text": "Spa e Piscina", "description_1": "Relax con trattamenti esclusivi", "description_2": "Piscina riscaldata tutto l'anno", "final_url": "{payload.landing_page}/spa"}},
+  {{"text": "Come Raggiungerci", "description_1": "Centro città, 3 min dalla stazione", "description_2": "Navetta aeroporto disponibile", "final_url": "{payload.landing_page}/contatti"}}
 ]"""
 
     try:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
+            model="claude-sonnet-4-6",
+            max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -377,15 +475,15 @@ Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
         logger.error(f"Sitelinks JSON parse error: {exc}\nRaw: {raw[:500]}")
         raise HTTPException(status_code=500, detail="Risposta AI non parsabile. Riprova.")
 
-    # Hard-enforce character limits
+    # Enforce character limits (word-safe — never cut mid-word)
     result = []
     for sl in sitelinks:
         if not isinstance(sl, dict) or not sl.get("text"):
             continue
         result.append({
-            "text": str(sl.get("text", ""))[:25],
-            "description_1": str(sl.get("description_1", ""))[:35],
-            "description_2": str(sl.get("description_2", ""))[:35],
+            "text": _trim_to_word(str(sl.get("text", "")), 25),
+            "description_1": _trim_to_word(str(sl.get("description_1", "")), 35),
+            "description_2": _trim_to_word(str(sl.get("description_2", "")), 35),
             "final_url": str(sl.get("final_url", payload.landing_page)),
         })
 
@@ -482,47 +580,101 @@ async def autofill_from_url(
 _TYPE_COPY_PROMPTS: dict[str, dict] = {
     "brand": {
         "label": "Brand Search",
+        "context": (
+            "CONTESTO PSICOLOGICO: questi utenti cercano già il nome esatto dell'hotel su Google.\n"
+            "Sanno chi sei. Il pericolo reale è che Booking.com o Expedia intercettino la loro ricerca\n"
+            "con brand bidding, portandoli a prenotare su OTA (con commissione del 15-25%).\n"
+            "Il tuo obiettivo: convincerli a prenotare DIRETTAMENTE dal sito ufficiale,\n"
+            "comunicando i vantaggi esclusivi che le OTA non possono offrire."
+        ),
         "headline_rules": (
-            "- DEVE contenere il nome del brand/hotel in almeno 1 headline (pinnato in posizione 1)\n"
-            "- Altre headline: vantaggi prenotazione diretta (Sito Ufficiale, Miglior Tariffa Garantita, "
-            "Prenota Direttamente, Cancellazione Gratuita, Sconto Esclusivo Online)\n"
-            "- NO termini generici di categoria (es. 'Hotel Roma Centro') — quelli vanno in Acquisition\n"
-            "- NO keyword insertion ({KeyWord})"
+            "- HEADLINE 1 (pinnata): DEVE contenere il nome brand/hotel\n"
+            "  ✓ 'Hotel Bellevue Ufficiale' | '[Brand] Sito Ufficiale' | 'Grand Hotel [Nome]'\n"
+            "- HEADLINE 2–4: vantaggi esclusivi prenotazione diretta\n"
+            "  ✓ 'Miglior Tariffa Garantita'  (24 chars)\n"
+            "  ✓ 'Prenota Senza Commissioni'  (24 chars)\n"
+            "  ✓ 'Check-in Anticipato Gratis' (26 chars)\n"
+            "  ✓ 'Cancellazione Flessibile'   (24 chars)\n"
+            "  ✓ 'Sconto 10% Solo Online'     (21 chars)\n"
+            "- HEADLINE 5–8: benefici specifici dell'hotel (non generici)\n"
+            "  ✓ 'Colazione Buffet Inclusa' | 'Suite con Vista Mare' | 'Parcheggio Gratuito'\n"
+            "- NO termini generici di categoria (quelli vanno in Acquisition)\n"
+            "- NO keyword insertion ({KeyWord})\n"
+            "- Varia i temi: credenziale ufficiale → risparmio → flessibilità → USP hotel"
         ),
         "description_rules": (
-            "- Rinforza il vantaggio della prenotazione diretta\n"
-            "- Menziona il nome del brand\n"
-            "- CTA chiara (es. 'Prenota ora sul sito ufficiale')"
+            "- Prima descrizione: promessa diretta + CTA\n"
+            "  ✓ 'Prenota sul sito ufficiale: miglior tariffa e vantaggi esclusivi garantiti.'\n"
+            "- Seconda descrizione: USP hotel + rassicurazione (benefici che le OTA non danno)\n"
+            "  ✓ '[Brand]: colazione inclusa, early check-in e cancellazione gratuita. Prenota ora.'\n"
+            "- Menziona il nome brand almeno una volta\n"
+            "- Comunica urgency morbida: 'Prenota ora', 'Disponibilità limitata'"
         ),
     },
     "acquisition": {
         "label": "Acquisition Search",
+        "context": (
+            "CONTESTO PSICOLOGICO: questi utenti NON conoscono l'hotel. Stanno cercando\n"
+            "una struttura per una destinazione o tipologia (es. 'hotel 4 stelle Roma centro',\n"
+            "'resort con spa toscana'). Compaiono nella SERP insieme a decine di altri hotel\n"
+            "e alle OTA. Il tuo obiettivo: farsi scegliere tra tutti, mostrando i differenziatori\n"
+            "più rilevanti per chi cerca quella tipologia di hotel in quella destinazione."
+        ),
         "headline_rules": (
-            "- NO brand name — questo è per utenti che NON conoscono ancora l'hotel\n"
-            "- Usa termini di categoria, posizione, stelle, USP generici\n"
-            "- Esempi: 'Hotel 4 Stelle Roma Centro', 'Colazione Inclusa', 'Vista Mare Panoramica', "
-            "'Piscina Riscaldata', 'Posizione Centrale'\n"
-            "- Ogni headline deve comunicare un beneficio specifico e reale"
+            "- NESSUN nome brand — questi utenti non lo conoscono ancora\n"
+            "- Ogni headline è un argomento di vendita INDIPENDENTE — varia i temi:\n"
+            "  → Categoria + stelle + città: 'Hotel 4 Stelle Roma Centro' (24 chars)\n"
+            "  → Posizione concreta in tempo: '3 Min dalla Stazione' (20 chars)\n"
+            "  → Servizio visibile/desiderabile: 'Piscina Infinity sul Tetto' (25 chars)\n"
+            "  → Beneficio incluso: 'Colazione Buffet Ogni Giorno' (28 chars)\n"
+            "  → Elemento sensoriale/evocativo: 'Vista Panoramica sulla Laguna' (29 chars)\n"
+            "  → Praticità: 'Parcheggio Gratuito Incluso' (27 chars)\n"
+            "  → Flessibilità: 'Cancellazione Gratuita' (22 chars)\n"
+            "- Usa aggettivi SPECIFICI e VERIFICABILI, non generici\n"
+            "  ✗ 'Hotel di Qualità' → ✓ 'Hotel 4 Stelle Fronte Mare'\n"
+            "  ✗ 'Servizi Eccellenti' → ✓ 'Spa, Piscina e Ristorante'\n"
+            "- Parla dei BENEFICI per l'ospite, non delle caratteristiche dell'hotel"
         ),
         "description_rules": (
-            "- Descrivi l'hotel senza usare il nome brand\n"
-            "- Usa USP reali (posizione, servizi, stelle, offerte)\n"
-            "- CTA verso prenotazione (es. 'Prenota online e risparmia fino al 20%')"
+            "- Prima descrizione: identifica la struttura + USP principale + CTA con incentivo\n"
+            "  ✓ 'Hotel 4 stelle nel cuore di Firenze, a 5 min dal Duomo. Prenota online e risparmia.'\n"
+            "- Seconda descrizione: dipingi l'esperienza + rassicurazione prenotazione\n"
+            "  ✓ 'Spa, piscina riscaldata e terrazza con vista sulle colline. Tariffa migliore online.'\n"
+            "- NO nome brand\n"
+            "- CTA con beneficio quantificato dove possibile: 'risparmia fino al 20%', 'dal sito ufficiale'"
         ),
     },
     "retargeting": {
-        "label": "Retargeting / Display",
+        "label": "Retargeting",
+        "context": (
+            "CONTESTO PSICOLOGICO: questi utenti hanno già visitato il sito ma NON hanno prenotato.\n"
+            "Conoscono l'hotel, erano interessati, ma qualcosa li ha fermati: prezzo, incertezza,\n"
+            "distrazione, confronto con altre strutture. Non sono 'freddi' — sono 'tiepidi'.\n"
+            "Il tuo obiettivo: riattivare l'interesse con urgency autentica, rassicurazione\n"
+            "e/o un incentivo al ritorno. Tono: premuroso e invitante, mai aggressivo o insistente."
+        ),
         "headline_rules": (
-            "- Copy urgency/personalizzata per visitatori che hanno già visto il sito\n"
-            "- Usa segnali di ritorno: 'Completa la Prenotazione', 'Offerta Riservata a Te', "
-            "'Torna e Risparmia', 'Ultimi Posti Disponibili', 'Offerta Esclusiva'\n"
-            "- Crea senso di scarsità o esclusività\n"
-            "- Puoi includere il brand name"
+            "- Richiama IMPLICITAMENTE la visita precedente (senza dirlo esplicitamente)\n"
+            "  ✓ 'Completa la Prenotazione' (24 chars) — diretto, non aggressivo\n"
+            "  ✓ 'Tariffa Riservata per Te' (24 chars) — personalizzazione percepita\n"
+            "  ✓ 'La Tua Camera Ti Aspetta' (24 chars) — calore, senso di attesa\n"
+            "- Urgency autentica (non inventata, non allarmista)\n"
+            "  ✓ 'Ultime Camere Disponibili' (25 chars) — scarsità reale\n"
+            "  ✓ 'Offerta Valida Ancora Oggi' (26 chars — usa 25 chars: 'Offerta Valida per Oggi')\n"
+            "  ✓ 'Prenota, Cancelli Gratis'  (24 chars) — rimuovi l'ostacolo della paura\n"
+            "- Incentivo al ritorno\n"
+            "  ✓ 'Sconto Esclusivo per Oggi' (25 chars)\n"
+            "  ✓ 'Torna e Risparmia il 10%'  (24 chars)\n"
+            "- Puoi includere il nome brand per rafforzare il riconoscimento\n"
+            "- EVITA toni aggressivi o pressanti: 'ULTIMA OCCASIONE!!!' è controproducente"
         ),
         "description_rules": (
-            "- Richiama la visita precedente al sito\n"
-            "- Offri un incentivo al ritorno (tariffa esclusiva, offerta limitata)\n"
-            "- Urgency ma non aggressivo — tono premuroso"
+            "- Prima descrizione: rassicura + incentiva con tono caldo\n"
+            "  ✓ 'Le date che cercavi sono ancora disponibili. Prenota ora con cancellazione gratuita.'\n"
+            "- Seconda descrizione: ricorda i benefici + CTA con senso di opportunità\n"
+            "  ✓ '[Brand]: colazione inclusa e miglior tariffa garantita. Non aspettare, prenota oggi.'\n"
+            "- Rimuovi gli ostacoli alla prenotazione: menziona cancellazione gratis, flessibilità\n"
+            "- Senso di opportunità (non di minaccia): 'ancora disponibile', 'prenota oggi'"
         ),
     },
 }
@@ -553,9 +705,13 @@ async def suggest_type_copy(
     strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
     usp_txt = payload.usp_main or "non specificata"
 
-    prompt = f"""Sei un esperto Google Ads certificato per hotel e turismo.
-Genera RSA copy per campagne {meta['label']} in lingua {lang_name}.
+    prompt = f"""Sei un copywriter Google Ads specializzato in hotel e hospitality.
+Genera RSA copy ad alto impatto per campagne {meta['label']} in lingua {lang_name}.
 
+═══ CONTESTO CAMPAGNA ═══
+{meta['context']}
+
+═══ DATI HOTEL ═══
 Hotel: {payload.brand_name}
 Categoria: {payload.hotel_category} — {payload.stars} stelle
 Dominio: {payload.domain or 'non specificato'}
@@ -564,27 +720,32 @@ Servizi: {services_txt}
 Punti di forza: {strengths_txt}
 Lingua output: {lang_name} ({lang_code})
 
-REGOLE HEADLINE (max 30 caratteri ciascuna, spazi inclusi — CRITICO):
+═══ REGOLE HEADLINE (≤ 30 caratteri — VERIFICA OGNI STRINGA) ═══
 {meta['headline_rules']}
 
-REGOLE DESCRIZIONI (max 90 caratteri ciascuna, spazi inclusi — CRITICO):
+Come verificare: conta ogni carattere inclusi spazi e apostrofi.
+"Miglior Tariffa Garantita" = 25 chars ✓ | "Prenota sul Sito Ufficiale" = 26 chars ✓
+NON troncare le parole: se una parola non entra per intero, eliminala.
+
+═══ REGOLE DESCRIZIONI (≤ 90 caratteri — VERIFICA OGNI STRINGA) ═══
 {meta['description_rules']}
 
+═══ OUTPUT ═══
 Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
 {{
   "headlines": [
-    "Headline 1 max 30 car",
-    "Headline 2 max 30 car",
-    "Headline 3 max 30 car",
-    "Headline 4 max 30 car",
-    "Headline 5 max 30 car",
-    "Headline 6 max 30 car",
-    "Headline 7 max 30 car",
-    "Headline 8 max 30 car"
+    "headline specifica per questo hotel",
+    "beneficio diretto e verificabile",
+    "USP concreta non generica",
+    "posizione o servizio reale",
+    "vantaggio prenotazione diretta",
+    "elemento esclusivo o urgency",
+    "headline variante sul tema 2",
+    "headline variante sul tema 3"
   ],
   "descriptions": [
-    "Descrizione 1 di massimo novanta caratteri totali inclusi spazi.",
-    "Descrizione 2 di massimo novanta caratteri totali inclusi spazi."
+    "Prima descrizione ≤90 chars: beneficio principale + CTA chiara e specifica per questo hotel.",
+    "Seconda descrizione ≤90 chars: USP diversa + rassicurazione o incentivo concreto al soggiorno."
   ]
 }}"""
 
@@ -592,8 +753,8 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
+            model="claude-sonnet-4-6",
+            max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -614,7 +775,7 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
         logger.error(f"TypeCopy JSON parse error: {exc}\nRaw: {raw[:500]}")
         raise HTTPException(status_code=500, detail="Risposta AI non parsabile. Riprova.")
 
-    headlines = [h[:30] for h in data.get("headlines", []) if isinstance(h, str) and h.strip()]
-    descriptions = [d[:90] for d in data.get("descriptions", []) if isinstance(d, str) and d.strip()]
+    headlines = [_trim_to_word(h, 30) for h in data.get("headlines", []) if isinstance(h, str) and h.strip()]
+    descriptions = [_trim_to_word(d, 90) for d in data.get("descriptions", []) if isinstance(d, str) and d.strip()]
 
     return {"headlines": headlines, "descriptions": descriptions}

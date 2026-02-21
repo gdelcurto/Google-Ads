@@ -145,6 +145,19 @@ const DEFAULT_LANG: LangState = {
 
 const toLines = (s: string) => s.split('\n').map(l => l.trim()).filter(Boolean)
 
+/** Trim text to max chars without cutting mid-word. Drops the last partial word. */
+const trimToWord = (s: string, max: number): string => {
+  if (s.length <= max) return s
+  const cut = s.slice(0, max)
+  // If the character immediately after max is not a space, we're mid-word
+  if (max < s.length && s[max] !== ' ') {
+    const space = cut.lastIndexOf(' ')
+    if (space > 0) return cut.slice(0, space)
+    return cut // single very long word — no choice but to trim
+  }
+  return cut.trimEnd()
+}
+
 function getUserEmail(): string {
   try {
     const token = localStorage.getItem('token')
@@ -419,24 +432,24 @@ function buildBrief(
       sitelinks: l.sitelinks
         .filter(sl => sl.text.trim())
         .map(sl => ({
-          text: sl.text.slice(0, 25),
-          description_1: sl.description_1.slice(0, 35),
-          description_2: sl.description_2.slice(0, 35),
+          text: trimToWord(sl.text, 25),
+          description_1: trimToWord(sl.description_1, 35),
+          description_2: trimToWord(sl.description_2, 35),
           final_url: sl.final_url || l.landing_page,
         })),
       callouts: toLines(l.callouts),
       structured_snippets: [],
       brand_assets: toLines(l.brand_headlines).length > 0 ? {
-        headlines: toLines(l.brand_headlines).map(h => h.slice(0, 30)),
-        descriptions: toLines(l.brand_descriptions).map(d => d.slice(0, 90)),
+        headlines: toLines(l.brand_headlines).map(h => trimToWord(h, 30)),
+        descriptions: toLines(l.brand_descriptions).map(d => trimToWord(d, 90)),
       } : null,
       acquisition_assets: toLines(l.acquisition_headlines).length > 0 ? {
-        headlines: toLines(l.acquisition_headlines).map(h => h.slice(0, 30)),
-        descriptions: toLines(l.acquisition_descriptions).map(d => d.slice(0, 90)),
+        headlines: toLines(l.acquisition_headlines).map(h => trimToWord(h, 30)),
+        descriptions: toLines(l.acquisition_descriptions).map(d => trimToWord(d, 90)),
       } : null,
       retargeting_assets: toLines(l.retargeting_headlines).length > 0 ? {
-        headlines: toLines(l.retargeting_headlines).map(h => h.slice(0, 30)),
-        descriptions: toLines(l.retargeting_descriptions).map(d => d.slice(0, 90)),
+        headlines: toLines(l.retargeting_headlines).map(h => trimToWord(h, 30)),
+        descriptions: toLines(l.retargeting_descriptions).map(d => trimToWord(d, 90)),
       } : null,
     })),
     geo_targeting: {
