@@ -1,7 +1,7 @@
 # Core
-fastapi==0.110.1
-uvicorn[standard]==0.29.0
-python-multipart==0.0.9
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
 
 # Database
 sqlalchemy==2.0.29
@@ -9,8 +9,8 @@ alembic==1.13.1
 aiosqlite==0.20.0
 
 # Validation & Serialization
-pydantic==2.7.1
-pydantic-settings==2.2.1
+pydantic==2.11.1        # 2.11+ ha wheel cp314 per Python 3.14
+pydantic-settings==2.7.1
 
 # Auth
 PyJWT==2.9.0           # python-jose sostituito: no Rust/cryptography richiesto per HS256
