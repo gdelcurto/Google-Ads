@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, autofillApi, AutofillResult } from '../api/projects'
 import { T } from '../styles/theme'
@@ -72,7 +72,7 @@ const LANG_IDS: Record<string, number> = {
   PL: 1030, SV: 1040, NO: 1013, DA: 1009, FI: 1011,
 }
 
-const STEPS = ['Info Base', 'Obiettivi & Budget', 'Lingue & Asset', 'Hotel & Geo', 'Revisione']
+const STEPS = ['Info Base', 'Obiettivi & Budget', 'Lingue & Asset', 'Hotel & Geo', 'Anteprima', 'Revisione']
 
 const CAMPAIGN_TYPES = [
   { key: 'brand',       label: 'Brand',           backendKey: 'search_brand' },
@@ -532,6 +532,163 @@ const langPillStyle = (active: boolean): React.CSSProperties => ({
   background: active ? T.primary : T.bgCard, color: active ? '#fff' : T.textGray,
 })
 
+// ── Google Ads Preview ────────────────────────────────────────────────────────
+
+function GoogleAdPreview({ lang, domain }: { lang: LangState; domain: string }) {
+  const headlines = toLines(lang.headlines)
+  const descriptions = toLines(lang.descriptions)
+  const callouts = toLines(lang.callouts)
+
+  const displayH = headlines.slice(0, 3)
+  const displayD = descriptions.slice(0, 2)
+
+  let displayDomain = domain
+  if (!displayDomain && lang.landing_page) {
+    try { displayDomain = new URL(lang.landing_page).hostname } catch { /* ignore */ }
+  }
+  if (!displayDomain) displayDomain = 'www.hotel.com'
+
+  const adGreen = '#188038'
+  const adBlue = '#1a0dab'
+  const adGray = '#4d5156'
+  const adBorder = '#e0e0e0'
+
+  const charCountStyle = (val: number, max: number): React.CSSProperties => ({
+    fontSize: 11,
+    color: val > max ? '#dc2626' : '#9ca3af',
+    marginLeft: 4,
+  })
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 24, alignItems: 'start' }}>
+      {/* Left: preview */}
+      <div>
+        <div style={{ fontFamily: 'Arial, sans-serif', background: '#fff', border: `1px solid ${adBorder}`, borderRadius: 8, padding: '16px 20px', maxWidth: 620 }}>
+          {/* Ad label + URL */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ border: `1px solid ${adGreen}`, color: adGreen, borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700, letterSpacing: 0.3 }}>
+              Annuncio
+            </span>
+            <span style={{ color: '#202124', fontSize: 13 }}>{displayDomain}</span>
+          </div>
+
+          {/* Headlines */}
+          <div style={{ color: adBlue, fontSize: 20, fontWeight: 400, marginBottom: 6, lineHeight: 1.35 }}>
+            {displayH.length > 0
+              ? displayH.join(' | ')
+              : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Headline non ancora inserite</span>
+            }
+          </div>
+
+          {/* Descriptions */}
+          <div style={{ color: adGray, fontSize: 14, lineHeight: 1.55 }}>
+            {displayD.length > 0
+              ? displayD.join(' ')
+              : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Descrizioni non ancora inserite</span>
+            }
+          </div>
+
+          {/* Sitelinks */}
+          {lang.sitelinks.length > 0 && (
+            <div style={{ marginTop: 12, borderTop: `1px solid ${adBorder}`, paddingTop: 12, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 24px' }}>
+              {lang.sitelinks.slice(0, 4).map((sl, j) => (
+                <div key={j}>
+                  <div style={{ color: adBlue, fontSize: 14, fontWeight: 500 }}>{sl.text}</div>
+                  <div style={{ color: adGray, fontSize: 12, marginTop: 1 }}>{sl.description_1}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Callouts */}
+          {callouts.length > 0 && (
+            <div style={{ marginTop: 10, color: adGray, fontSize: 13 }}>
+              {callouts.slice(0, 6).join(' · ')}
+            </div>
+          )}
+        </div>
+
+        {/* Asset counts */}
+        <div style={{ display: 'flex', gap: 20, marginTop: 12, fontSize: 12, color: '#6b7280', flexWrap: 'wrap' as const }}>
+          <span>
+            Headline: <strong style={{ color: headlines.length >= 3 ? T.success : T.warning }}>
+              {headlines.length}
+            </strong>/15
+          </span>
+          <span>
+            Descrizioni: <strong style={{ color: descriptions.length >= 2 ? T.success : T.warning }}>
+              {descriptions.length}
+            </strong>/4
+          </span>
+          <span>
+            Sitelink: <strong style={{ color: lang.sitelinks.length >= 2 ? T.success : T.warning }}>
+              {lang.sitelinks.length}
+            </strong>
+          </span>
+          <span>
+            Callout: <strong style={{ color: callouts.length >= 2 ? T.success : '#6b7280' }}>
+              {callouts.length}
+            </strong>
+          </span>
+        </div>
+        {lang.sitelinks.length < 2 && (
+          <div style={{ marginTop: 8, color: T.warning, fontSize: 13 }}>
+            ⚠ Aggiungi almeno 2 sitelink (Step "Lingue & Asset" → sezione Sitelink).
+          </div>
+        )}
+      </div>
+
+      {/* Right: asset inspector */}
+      <div style={{ fontSize: 12, color: T.textGray }}>
+        <div style={{ fontWeight: 700, color: T.text, marginBottom: 8, fontSize: 13 }}>Tutti gli asset</div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontWeight: 600, color: T.text, marginBottom: 4 }}>Headline ({headlines.length})</div>
+          {headlines.length === 0
+            ? <div style={{ fontStyle: 'italic' }}>Nessuna</div>
+            : headlines.map((h, i) => (
+              <div key={i} style={{ padding: '2px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                {h}
+                <span style={charCountStyle(h.length, 30)}>{h.length}/30</span>
+              </div>
+            ))
+          }
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontWeight: 600, color: T.text, marginBottom: 4 }}>Descrizioni ({descriptions.length})</div>
+          {descriptions.length === 0
+            ? <div style={{ fontStyle: 'italic' }}>Nessuna</div>
+            : descriptions.map((d, i) => (
+              <div key={i} style={{ padding: '2px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                {d}
+                <span style={charCountStyle(d.length, 90)}>{d.length}/90</span>
+              </div>
+            ))
+          }
+        </div>
+
+        <div>
+          <div style={{ fontWeight: 600, color: T.text, marginBottom: 4 }}>Sitelink ({lang.sitelinks.length})</div>
+          {lang.sitelinks.length === 0
+            ? <div style={{ fontStyle: 'italic', color: T.warning }}>Nessuno — aggiungili nello step precedente</div>
+            : lang.sitelinks.map((sl, i) => (
+              <div key={i} style={{ padding: '4px 0', borderBottom: `1px solid ${T.borderLight}` }}>
+                <div style={{ fontWeight: 600 }}>
+                  {sl.text}
+                  <span style={charCountStyle(sl.text.length, 25)}>{sl.text.length}/25</span>
+                </div>
+                <div style={{ color: '#9ca3af' }}>{sl.description_1}</div>
+                <div style={{ color: '#9ca3af' }}>{sl.description_2}</div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 interface BriefFormProps {
@@ -563,6 +720,8 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [saveHadWarnings, setSaveHadWarnings] = useState(false)
   const [kwSuggestingLang, setKwSuggestingLang] = useState<number | null>(null)
   const [slSuggestingLang, setSlSuggestingLang] = useState<number | null>(null)
+  const [previewLangIdx, setPreviewLangIdx] = useState(0)
+  const [autoSlPending, setAutoSlPending] = useState(false)
 
   // ── Auto-fill state ────────────────────────────────────────────────────────
   const [autofillUrl, setAutofillUrl] = useState('')
@@ -611,6 +770,26 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           kw_themes: '',
           kw_negative: '',
         })))
+        // Auto-generate sitelinks for each language in parallel
+        setAutoSlPending(true)
+        Promise.allSettled(data.languages.map((l, idx) =>
+          autofillApi.suggestSitelinks({
+            brand_name: data.brand_name,
+            hotel_category: data.hotel_category || 'city_hotel',
+            stars: data.stars || 3,
+            language_code: l.code,
+            landing_page: l.landing_page || `https://${data.domain}`,
+            domain: data.domain || undefined,
+            services: data.services || [],
+            strengths: data.strengths || [],
+            booking_engine_url: data.booking_engine_url || undefined,
+          }).then(slData => {
+            setLangs(prev => prev.map((lang, i) => i === idx
+              ? { ...lang, sitelinks: slData.sitelinks }
+              : lang
+            ))
+          })
+        )).finally(() => setAutoSlPending(false))
       }
       setAutofillSuccess(true)
     },
@@ -1581,8 +1760,46 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
         </>
       )}
 
-      {/* ── STEP 4 — Revisione ── */}
+      {/* ── STEP 4 — Anteprima Google Ads ── */}
       {step === 4 && (
+        <div style={css.section}>
+          <div style={css.sectionTitle}>Anteprima Google Ads</div>
+          <p style={{ fontSize: 13, color: T.textGray, marginBottom: 16 }}>
+            Simulazione di come apparirà il tuo annuncio su Google. Google seleziona automaticamente
+            la combinazione di headline e descrizioni più performante.
+          </p>
+          {autoSlPending && (
+            <div style={{ fontSize: 12, color: T.blue, marginBottom: 12 }}>
+              ⏳ Generazione automatica sitelink in corso...
+            </div>
+          )}
+          {/* Language tabs */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' as const }}>
+            {langs.map((lang, i) => (
+              <button
+                key={i}
+                style={{
+                  padding: '6px 16px', border: 'none', borderRadius: 20, cursor: 'pointer',
+                  fontSize: 13, fontWeight: previewLangIdx === i ? 600 : 400,
+                  background: previewLangIdx === i ? T.primary : T.bgPage,
+                  color: previewLangIdx === i ? '#fff' : T.textGray,
+                  transition: 'all .15s',
+                }}
+                onClick={() => setPreviewLangIdx(i)}
+              >
+                {lang.code || `Lingua ${i + 1}`}
+                {lang.name ? ` — ${lang.name}` : ''}
+              </button>
+            ))}
+          </div>
+          {langs[previewLangIdx] && (
+            <GoogleAdPreview lang={langs[previewLangIdx]} domain={form.domain} />
+          )}
+        </div>
+      )}
+
+      {/* ── STEP 5 — Revisione ── */}
+      {step === 5 && (
         <div style={css.section}>
           <div style={css.sectionTitle}>Revisione Brief</div>
           <p style={{ fontSize: 13, color: T.textGray, marginBottom: 12 }}>
