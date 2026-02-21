@@ -1,0 +1,972 @@
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { projectsApi } from '../api/projects'
+
+// ── types ─────────────────────────────────────────────────────────────────────
+
+interface FormState {
+  project_name: string
+  preset: string
+  vertical: string
+  created_by: string
+  brand_name: string
+  brand_slug: string
+  domain: string
+  country: string
+  currency: string
+  timezone: string
+  google_ads_customer_id: string
+  primary_objective: string
+  target_cpa_eur: string
+  target_roas: string
+  max_cpc_brand: string
+  max_cpc_acquisition: string
+  primary_conversion_action: string
+  total_monthly_eur: string
+  hotel_category: string
+  stars: string
+  rooms: string
+  address: string
+  services: string
+  strengths: string
+  booking_engine_url: string
+  target_countries: string
+  target_cities: string
+}
+
+interface LangState {
+  code: string
+  name: string
+  google_language_id: string
+  landing_page: string
+  brand_terms: string
+  usp_main: string
+  headlines: string
+  descriptions: string
+  callouts: string
+}
+
+// ── constants ─────────────────────────────────────────────────────────────────
+
+const LANG_IDS: Record<string, number> = {
+  IT: 1004, EN: 1000, DE: 1001, FR: 1002, ES: 1003,
+  NL: 1010, PT: 1014, RU: 1031, ZH: 1017, JA: 1005,
+  PL: 1030, SV: 1040, NO: 1013, DA: 1009, FI: 1011,
+}
+
+const STEPS = ['Info Base', 'Obiettivi & Budget', 'Lingue & Asset', 'Hotel & Geo', 'Revisione']
+
+const DEFAULT_FORM: FormState = {
+  project_name: '',
+  preset: 'blastness',
+  vertical: 'city_hotel',
+  created_by: '',
+  brand_name: '',
+  brand_slug: '',
+  domain: '',
+  country: 'IT',
+  currency: 'EUR',
+  timezone: 'Europe/Rome',
+  google_ads_customer_id: '',
+  primary_objective: 'direct_bookings',
+  target_cpa_eur: '',
+  target_roas: '',
+  max_cpc_brand: '',
+  max_cpc_acquisition: '',
+  primary_conversion_action: 'purchase',
+  total_monthly_eur: '',
+  hotel_category: 'city_hotel',
+  stars: '3',
+  rooms: '',
+  address: '',
+  services: '',
+  strengths: '',
+  booking_engine_url: '',
+  target_countries: 'IT',
+  target_cities: '',
+}
+
+const DEFAULT_LANG: LangState = {
+  code: 'IT',
+  name: 'Italiano',
+  google_language_id: '1004',
+  landing_page: '',
+  brand_terms: '',
+  usp_main: '',
+  headlines: '',
+  descriptions: '',
+  callouts: '',
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+const toLines = (s: string) => s.split('\n').map(l => l.trim()).filter(Boolean)
+
+function getUserEmail(): string {
+  try {
+    const token = localStorage.getItem('token')
+    if (!token) return ''
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.email || payload.sub || ''
+  } catch {
+    return ''
+  }
+}
+
+function briefToForm(b: Record<string, unknown>): FormState {
+  const meta = (b.meta || {}) as Record<string, unknown>
+  const client = (b.client || {}) as Record<string, unknown>
+  const obj = (b.objectives || {}) as Record<string, unknown>
+  const kpi = (obj.kpi || {}) as Record<string, unknown>
+  const conv = (obj.conversions || {}) as Record<string, unknown>
+  const budgets = (b.budgets || {}) as Record<string, unknown>
+  const hotel = (b.hotel_specifics || {}) as Record<string, unknown>
+  const loc = (hotel.location || {}) as Record<string, unknown>
+  const geo = (b.geo_targeting || {}) as Record<string, unknown>
+  return {
+    project_name: String(meta.project_name || ''),
+    preset: String(meta.preset || 'blastness'),
+    vertical: String(meta.vertical || 'city_hotel'),
+    created_by: String(meta.created_by || ''),
+    brand_name: String(client.brand_name || ''),
+    brand_slug: String(client.brand_slug || ''),
+    domain: String(client.domain || ''),
+    country: String(client.country || 'IT'),
+    currency: String(client.currency || 'EUR'),
+    timezone: String(client.timezone || 'Europe/Rome'),
+    google_ads_customer_id: String(client.google_ads_customer_id || ''),
+    primary_objective: String(obj.primary || 'direct_bookings'),
+    target_cpa_eur: kpi.target_cpa_eur != null ? String(kpi.target_cpa_eur) : '',
+    target_roas: kpi.target_roas != null ? String(kpi.target_roas) : '',
+    max_cpc_brand: kpi.max_cpc_brand != null ? String(kpi.max_cpc_brand) : '',
+    max_cpc_acquisition: kpi.max_cpc_acquisition != null ? String(kpi.max_cpc_acquisition) : '',
+    primary_conversion_action: String(conv.primary_conversion_action || 'purchase'),
+    total_monthly_eur: budgets.total_monthly_eur != null ? String(budgets.total_monthly_eur) : '',
+    hotel_category: String(hotel.category || 'city_hotel'),
+    stars: String(hotel.stars || '3'),
+    rooms: hotel.rooms != null ? String(hotel.rooms) : '',
+    address: String(loc.address || ''),
+    services: ((hotel.services as string[]) || []).join('\n'),
+    strengths: ((hotel.strengths as string[]) || []).join('\n'),
+    booking_engine_url: String(hotel.booking_engine_url || ''),
+    target_countries: ((geo.target_countries as string[]) || []).join('\n'),
+    target_cities: ((geo.target_cities as string[]) || []).join('\n'),
+  }
+}
+
+function briefToLangs(b: Record<string, unknown>): LangState[] {
+  const langs = (b.languages as Record<string, unknown>[]) || []
+  if (!langs.length) return [{ ...DEFAULT_LANG }]
+  return langs.map(l => ({
+    code: String(l.code || ''),
+    name: String(l.name || ''),
+    google_language_id: String(l.google_language_id || ''),
+    landing_page: String(l.landing_page || ''),
+    brand_terms: ((l.brand_terms as string[]) || []).join('\n'),
+    usp_main: String(((l.usp as Record<string, unknown>)?.main) || ''),
+    headlines: ((l.headlines as string[]) || []).join('\n'),
+    descriptions: ((l.descriptions as string[]) || []).join('\n'),
+    callouts: ((l.callouts as string[]) || []).join('\n'),
+  }))
+}
+
+function buildBrief(form: FormState, langs: LangState[]): Record<string, unknown> {
+  return {
+    version: '1.0',
+    meta: {
+      project_name: form.project_name,
+      created_by: form.created_by || getUserEmail() || 'admin@blastness.com',
+      preset: form.preset,
+      vertical: form.vertical,
+    },
+    client: {
+      brand_name: form.brand_name,
+      brand_slug: form.brand_slug,
+      domain: form.domain,
+      country: form.country.toUpperCase().slice(0, 2),
+      currency: form.currency.toUpperCase().slice(0, 3),
+      timezone: form.timezone,
+      google_ads_customer_id: form.google_ads_customer_id || null,
+    },
+    objectives: {
+      primary: form.primary_objective,
+      secondary: [],
+      kpi: {
+        target_cpa_eur: form.target_cpa_eur ? parseFloat(form.target_cpa_eur) : null,
+        target_roas: form.target_roas ? parseFloat(form.target_roas) : null,
+        max_cpc_brand: form.max_cpc_brand ? parseFloat(form.max_cpc_brand) : null,
+        max_cpc_acquisition: form.max_cpc_acquisition ? parseFloat(form.max_cpc_acquisition) : null,
+      },
+      conversions: {
+        primary_conversion_action: form.primary_conversion_action || 'purchase',
+        conversion_action_ids: [],
+        secondary_conversion_actions: [],
+        value_per_conversion: null,
+      },
+    },
+    budgets: {
+      total_monthly_eur: parseFloat(form.total_monthly_eur) || 0,
+      by_campaign_type: {},
+    },
+    languages: langs.map(l => ({
+      code: l.code.toUpperCase(),
+      name: l.name,
+      google_language_id: parseInt(l.google_language_id) || LANG_IDS[l.code.toUpperCase()] || 0,
+      landing_page: l.landing_page,
+      brand_terms: toLines(l.brand_terms),
+      brand_variants: [],
+      brand_exclusions: [],
+      usp: { main: l.usp_main || '', bullets: [] },
+      headlines: toLines(l.headlines),
+      descriptions: toLines(l.descriptions),
+      sitelinks: [],
+      callouts: toLines(l.callouts),
+      structured_snippets: [],
+    })),
+    geo_targeting: {
+      target_countries: toLines(form.target_countries),
+      target_regions: [],
+      target_cities: toLines(form.target_cities),
+      exclusions: {},
+      radius_targets: [],
+    },
+    audiences: {
+      remarketing_lists: [],
+      customer_match: { enabled: false },
+      in_market_segments: [],
+      custom_intent: [],
+    },
+    hotel_specifics: {
+      category: form.hotel_category,
+      stars: parseInt(form.stars) || 3,
+      rooms: form.rooms ? parseInt(form.rooms) : null,
+      location: {
+        address: form.address,
+        coordinates: null,
+        landmarks_nearby: [],
+        distance_to_landmarks: {},
+      },
+      room_categories: [],
+      services: toLines(form.services),
+      strengths: toLines(form.strengths),
+      booking_engine_url: form.booking_engine_url,
+      hotel_id_google: null,
+    },
+    utm_config: {
+      source: 'google',
+      medium: '{network}',
+      campaign: '{campaignid}',
+      content: '{adgroupid}',
+      term: '{keyword}',
+      custom_params: {},
+      preset_tag: null,
+    },
+  }
+}
+
+// ── styles ────────────────────────────────────────────────────────────────────
+
+const css: Record<string, React.CSSProperties> = {
+  stepBubble: {
+    width: 28, height: 28, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 13, fontWeight: 700, flexShrink: 0,
+  },
+  stepLine: { flex: 1, height: 2, marginBottom: 16, marginLeft: 4, marginRight: 4 },
+  stepLabel: { fontSize: 11, marginTop: 4, textAlign: 'center' },
+  section: {
+    background: '#fff', borderRadius: 8, padding: 24,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 20,
+  },
+  sectionTitle: {
+    fontWeight: 700, fontSize: 15, color: '#1e3a5f',
+    marginBottom: 16, paddingBottom: 8, borderBottom: '1px solid #f1f5f9',
+  },
+  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
+  field: { marginBottom: 16 },
+  label: { display: 'block', fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 4 },
+  hint: { display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 4 },
+  input: {
+    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
+    borderRadius: 6, fontSize: 14, boxSizing: 'border-box',
+  },
+  inputErr: { borderColor: '#fca5a5' },
+  select: {
+    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
+    borderRadius: 6, fontSize: 14, background: '#fff', boxSizing: 'border-box',
+  },
+  textarea: {
+    width: '100%', padding: '8px 10px', border: '1px solid #cbd5e1',
+    borderRadius: 6, fontSize: 13, fontFamily: 'inherit',
+    resize: 'vertical', boxSizing: 'border-box',
+  },
+  charCount: { fontSize: 11, color: '#94a3b8', textAlign: 'right', marginTop: 2 },
+  langCard: {
+    border: '1px solid #e2e8f0', borderRadius: 8,
+    padding: 16, marginBottom: 16, background: '#f8fafc',
+  },
+  langHeader: {
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'center', marginBottom: 12,
+  },
+  nav: {
+    display: 'flex', justifyContent: 'space-between',
+    alignItems: 'center', marginTop: 24,
+  },
+  btn: {
+    background: '#1e3a5f', color: '#fff', border: 'none',
+    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnGhost: {
+    background: '#f1f5f9', color: '#374151', border: 'none',
+    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnGreen: {
+    background: '#059669', color: '#fff', border: 'none',
+    padding: '10px 24px', borderRadius: 6, cursor: 'pointer', fontWeight: 600, fontSize: 14,
+  },
+  btnRed: {
+    background: 'transparent', color: '#dc2626', border: '1px solid #fca5a5',
+    padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
+  },
+  btnAdd: {
+    background: 'transparent', color: '#1e3a5f', border: '1px solid #1e3a5f',
+    padding: '8px 16px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+  },
+  errBox: {
+    background: '#fef2f2', border: '1px solid #fca5a5', padding: '12px 14px',
+    borderRadius: 6, fontSize: 13, color: '#dc2626', marginBottom: 16,
+  },
+  successBox: {
+    background: '#f0fdf4', border: '1px solid #86efac', padding: '12px 14px',
+    borderRadius: 6, fontSize: 13, color: '#166534', marginBottom: 16,
+  },
+  reviewCode: {
+    background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6,
+    padding: 16, fontSize: 12, fontFamily: 'monospace',
+    overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
+  },
+}
+
+// ── component ─────────────────────────────────────────────────────────────────
+
+interface BriefFormProps {
+  projectId: string
+  existingBrief?: Record<string, unknown> | null
+  onSaved: () => void
+}
+
+export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFormProps) {
+  const qc = useQueryClient()
+  const [step, setStep] = useState(0)
+  const [form, setForm] = useState<FormState>(() =>
+    existingBrief ? briefToForm(existingBrief) : { ...DEFAULT_FORM, created_by: getUserEmail() }
+  )
+  const [langs, setLangs] = useState<LangState[]>(() =>
+    existingBrief ? briefToLangs(existingBrief) : [{ ...DEFAULT_LANG }]
+  )
+  const [errors, setErrors] = useState<string[]>([])
+  const [saveSuccess, setSaveSuccess] = useState(false)
+
+  const saveMutation = useMutation({
+    mutationFn: (brief: Record<string, unknown>) => projectsApi.uploadBrief(projectId, brief),
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ['brief', projectId] })
+      qc.invalidateQueries({ queryKey: ['project', projectId] })
+      if (result.validation.errors.length > 0) {
+        setErrors(result.validation.errors.map(e => e.message))
+      } else {
+        setSaveSuccess(true)
+        setTimeout(onSaved, 1200)
+      }
+    },
+    onError: (e: Error) => setErrors([e.message]),
+  })
+
+  const setField = (key: keyof FormState, val: string) =>
+    setForm(prev => ({ ...prev, [key]: val }))
+
+  const setLangField = (i: number, key: keyof LangState, val: string) =>
+    setLangs(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: val } : l))
+
+  const handleLangCode = (i: number, code: string) => {
+    const upper = code.toUpperCase()
+    const id = LANG_IDS[upper] ? String(LANG_IDS[upper]) : langs[i].google_language_id
+    setLangs(prev => prev.map((l, idx) => idx === i ? { ...l, code: upper, google_language_id: id } : l))
+  }
+
+  const addLang = () =>
+    setLangs(prev => [...prev, { code: '', name: '', google_language_id: '', landing_page: '', brand_terms: '', usp_main: '', headlines: '', descriptions: '', callouts: '' }])
+
+  const removeLang = (i: number) => setLangs(prev => prev.filter((_, idx) => idx !== i))
+
+  const validate = (): boolean => {
+    const errs: string[] = []
+    if (!form.project_name) errs.push('Nome progetto obbligatorio')
+    if (!form.brand_name) errs.push('Nome brand obbligatorio')
+    if (!form.brand_slug) errs.push('Slug brand obbligatorio')
+    if (!form.domain) errs.push('Dominio obbligatorio')
+    if (!form.total_monthly_eur || parseFloat(form.total_monthly_eur) <= 0)
+      errs.push('Budget mensile obbligatorio (> 0)')
+    if (langs.length === 0) errs.push('Almeno una lingua richiesta')
+    langs.forEach((l, i) => {
+      const n = i + 1
+      if (!l.code) errs.push(`Lingua ${n}: codice obbligatorio`)
+      if (!l.landing_page) errs.push(`Lingua ${n}: landing page obbligatoria`)
+      if (!l.brand_terms) errs.push(`Lingua ${n}: brand terms obbligatori`)
+      const hl = toLines(l.headlines)
+      if (hl.length < 3) errs.push(`Lingua ${n}: almeno 3 headline (trovate ${hl.length})`)
+      hl.forEach(h => { if (h.length > 30) errs.push(`Lingua ${n}: headline troppo lunga (max 30): "${h.slice(0, 20)}..."`) })
+      const dl = toLines(l.descriptions)
+      if (dl.length < 2) errs.push(`Lingua ${n}: almeno 2 descrizioni (trovate ${dl.length})`)
+      dl.forEach(d => { if (d.length > 90) errs.push(`Lingua ${n}: descrizione troppo lunga (max 90): "${d.slice(0, 30)}..."`) })
+    })
+    if (!form.address) errs.push('Indirizzo hotel obbligatorio')
+    if (!form.booking_engine_url) errs.push('URL booking engine obbligatorio')
+    setErrors(errs)
+    if (errs.length > 0) setStep(0)
+    return errs.length === 0
+  }
+
+  const handleSubmit = () => {
+    if (validate()) {
+      saveMutation.mutate(buildBrief(form, langs))
+    }
+  }
+
+  const goNext = () => { setStep(prev => prev + 1); setErrors([]) }
+  const goPrev = () => { setStep(prev => prev - 1); setErrors([]) }
+
+  return (
+    <div>
+      {/* ── Stepper ── */}
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 32 }}>
+        {STEPS.map((label, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', flex: i < STEPS.length - 1 ? 1 : 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div
+                style={{
+                  ...css.stepBubble,
+                  background: i < step ? '#059669' : i === step ? '#1e3a5f' : '#e2e8f0',
+                  color: i <= step ? '#fff' : '#94a3b8',
+                  cursor: i < step ? 'pointer' : 'default',
+                }}
+                onClick={() => { if (i < step) { setStep(i); setErrors([]) } }}
+              >
+                {i < step ? '✓' : i + 1}
+              </div>
+              <div style={{ ...css.stepLabel, color: i === step ? '#1e3a5f' : '#94a3b8', fontWeight: i === step ? 700 : 400 }}>
+                {label}
+              </div>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div style={{ ...css.stepLine, background: i < step ? '#059669' : '#e2e8f0' }} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Messages ── */}
+      {saveSuccess && (
+        <div style={css.successBox}>Brief salvato con successo! Reindirizzamento...</div>
+      )}
+      {errors.length > 0 && (
+        <div style={css.errBox}>
+          <strong>Errori da correggere:</strong>
+          <ul style={{ marginLeft: 16, marginTop: 4 }}>
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
+          <button
+            onClick={() => setErrors([])}
+            style={{ marginTop: 6, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 700 }}
+          >
+            ✕ Chiudi
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP 0 — Info Base ── */}
+      {step === 0 && (
+        <>
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Informazioni Progetto</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Nome progetto *</label>
+                <input
+                  style={css.input}
+                  value={form.project_name}
+                  onChange={e => setField('project_name', e.target.value)}
+                  placeholder="es. Hotel Bella Vista — Search 2024"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Email strategist</label>
+                <input
+                  style={css.input}
+                  value={form.created_by}
+                  onChange={e => setField('created_by', e.target.value)}
+                  placeholder="nome@agenzia.com"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Preset</label>
+                <select style={css.select} value={form.preset} onChange={e => setField('preset', e.target.value)}>
+                  <option value="blastness">Blastness</option>
+                  <option value="mentefredda">Mentefredda</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Tipologia struttura</label>
+                <select style={css.select} value={form.vertical} onChange={e => setField('vertical', e.target.value)}>
+                  <option value="city_hotel">City Hotel</option>
+                  <option value="resort">Resort</option>
+                  <option value="boutique">Boutique</option>
+                  <option value="business">Business</option>
+                  <option value="agriturismo">Agriturismo</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Dati Cliente</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Nome brand *</label>
+                <input
+                  style={css.input}
+                  value={form.brand_name}
+                  onChange={e => setField('brand_name', e.target.value)}
+                  placeholder="es. Hotel Bella Vista"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Brand slug *</label>
+                <span style={css.hint}>Solo lettere minuscole, numeri e trattini</span>
+                <input
+                  style={css.input}
+                  value={form.brand_slug}
+                  onChange={e => setField('brand_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+                  placeholder="hotel-bella-vista"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Dominio *</label>
+                <span style={css.hint}>Senza https://</span>
+                <input
+                  style={css.input}
+                  value={form.domain}
+                  onChange={e => setField('domain', e.target.value)}
+                  placeholder="www.hotelbella.it"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Timezone</label>
+                <input
+                  style={css.input}
+                  value={form.timezone}
+                  onChange={e => setField('timezone', e.target.value)}
+                  placeholder="Europe/Rome"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Paese (ISO 2) *</label>
+                <input
+                  style={css.input}
+                  value={form.country}
+                  onChange={e => setField('country', e.target.value.toUpperCase().slice(0, 2))}
+                  placeholder="IT"
+                  maxLength={2}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Valuta (ISO 3)</label>
+                <input
+                  style={css.input}
+                  value={form.currency}
+                  onChange={e => setField('currency', e.target.value.toUpperCase().slice(0, 3))}
+                  placeholder="EUR"
+                  maxLength={3}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Google Ads Customer ID</label>
+                <span style={css.hint}>Formato: 123-456-7890</span>
+                <input
+                  style={css.input}
+                  value={form.google_ads_customer_id}
+                  onChange={e => setField('google_ads_customer_id', e.target.value)}
+                  placeholder="123-456-7890"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── STEP 1 — Obiettivi & Budget ── */}
+      {step === 1 && (
+        <>
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Obiettivi Campagna</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Obiettivo primario *</label>
+                <select style={css.select} value={form.primary_objective} onChange={e => setField('primary_objective', e.target.value)}>
+                  <option value="direct_bookings">Prenotazioni dirette</option>
+                  <option value="lead_gen">Lead generation</option>
+                  <option value="phone_calls">Telefonate</option>
+                  <option value="brand_awareness">Brand awareness</option>
+                </select>
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Azione di conversione primaria</label>
+                <input
+                  style={css.input}
+                  value={form.primary_conversion_action}
+                  onChange={e => setField('primary_conversion_action', e.target.value)}
+                  placeholder="purchase"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={css.section}>
+            <div style={css.sectionTitle}>KPI Target (opzionali)</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Target CPA (€)</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.target_cpa_eur}
+                  onChange={e => setField('target_cpa_eur', e.target.value)}
+                  placeholder="es. 25.00"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Target ROAS</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={form.target_roas}
+                  onChange={e => setField('target_roas', e.target.value)}
+                  placeholder="es. 4.0"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Max CPC Brand (€)</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.max_cpc_brand}
+                  onChange={e => setField('max_cpc_brand', e.target.value)}
+                  placeholder="es. 1.50"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Max CPC Acquisition (€)</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.max_cpc_acquisition}
+                  onChange={e => setField('max_cpc_acquisition', e.target.value)}
+                  placeholder="es. 2.00"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Budget</div>
+            <div style={{ maxWidth: 320 }}>
+              <div style={css.field}>
+                <label style={css.label}>Budget mensile totale (€) *</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={form.total_monthly_eur}
+                  onChange={e => setField('total_monthly_eur', e.target.value)}
+                  placeholder="es. 3000"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── STEP 2 — Lingue & Asset ── */}
+      {step === 2 && (
+        <div>
+          {langs.map((lang, i) => (
+            <div key={i} style={css.langCard}>
+              <div style={css.langHeader}>
+                <strong style={{ fontSize: 15 }}>
+                  Lingua {i + 1}{lang.code ? ` — ${lang.code}` : ''}
+                  {lang.name ? ` (${lang.name})` : ''}
+                </strong>
+                {langs.length > 1 && (
+                  <button style={css.btnRed} onClick={() => removeLang(i)}>✕ Rimuovi</button>
+                )}
+              </div>
+
+              <div style={css.grid2}>
+                <div style={css.field}>
+                  <label style={css.label}>Codice lingua *</label>
+                  <span style={css.hint}>IT, EN, DE, FR, ES, NL, PT…</span>
+                  <input
+                    style={css.input}
+                    value={lang.code}
+                    onChange={e => handleLangCode(i, e.target.value)}
+                    placeholder="IT"
+                    maxLength={5}
+                  />
+                </div>
+                <div style={css.field}>
+                  <label style={css.label}>Nome lingua *</label>
+                  <input
+                    style={css.input}
+                    value={lang.name}
+                    onChange={e => setLangField(i, 'name', e.target.value)}
+                    placeholder="Italiano"
+                  />
+                </div>
+                <div style={css.field}>
+                  <label style={css.label}>Google Language ID *</label>
+                  <span style={css.hint}>IT=1004, EN=1000, DE=1001, FR=1002, ES=1003</span>
+                  <input
+                    style={css.input}
+                    type="number"
+                    value={lang.google_language_id}
+                    onChange={e => setLangField(i, 'google_language_id', e.target.value)}
+                    placeholder="1004"
+                  />
+                </div>
+                <div style={css.field}>
+                  <label style={css.label}>Landing Page URL *</label>
+                  <input
+                    style={css.input}
+                    value={lang.landing_page}
+                    onChange={e => setLangField(i, 'landing_page', e.target.value)}
+                    placeholder="https://www.hotel.it/"
+                  />
+                </div>
+              </div>
+
+              <div style={css.field}>
+                <label style={css.label}>Brand Terms * (uno per riga)</label>
+                <span style={css.hint}>Varianti del nome brand da targettizzare nelle campagne brand</span>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 80 }}
+                  value={lang.brand_terms}
+                  onChange={e => setLangField(i, 'brand_terms', e.target.value)}
+                  placeholder={'Hotel Bella Vista\nBella Vista Hotel\nHBV'}
+                />
+              </div>
+
+              <div style={css.field}>
+                <label style={css.label}>USP principale (opzionale)</label>
+                <span style={css.hint}>Proposta di valore unica — max 90 caratteri</span>
+                <input
+                  style={{ ...css.input, ...(lang.usp_main.length > 90 ? css.inputErr : {}) }}
+                  value={lang.usp_main}
+                  onChange={e => setLangField(i, 'usp_main', e.target.value)}
+                  placeholder="es. Prenota diretto e risparmia fino al 20%"
+                />
+                <div style={css.charCount}>{lang.usp_main.length} / 90</div>
+              </div>
+
+              <div style={css.field}>
+                <label style={css.label}>Headline RSA * (una per riga — min 3, max 30 caratteri ciascuna)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 130 }}
+                  value={lang.headlines}
+                  onChange={e => setLangField(i, 'headlines', e.target.value)}
+                  placeholder={'Hotel Bella Vista\nPrenota Diretto Online\nMiglior Tariffa Garantita\nVista Mare Panoramica\nPiscina Esterna Riscaldata'}
+                />
+                {toLines(lang.headlines).map((h, j) => h.length > 30 && (
+                  <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
+                    Riga {j + 1} troppo lunga ({h.length}/30): "{h.slice(0, 25)}..."
+                  </div>
+                ))}
+                <div style={css.charCount}>{toLines(lang.headlines).length} headline</div>
+              </div>
+
+              <div style={css.field}>
+                <label style={css.label}>Descrizioni RSA * (una per riga — min 2, max 90 caratteri ciascuna)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 100 }}
+                  value={lang.descriptions}
+                  onChange={e => setLangField(i, 'descriptions', e.target.value)}
+                  placeholder={'Prenota sul sito ufficiale per la migliore tariffa garantita e disdici gratis.\nCamera Superior con vista mare e colazione inclusa, posizione centrale.'}
+                />
+                {toLines(lang.descriptions).map((d, j) => d.length > 90 && (
+                  <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
+                    Riga {j + 1} troppo lunga ({d.length}/90)
+                  </div>
+                ))}
+                <div style={css.charCount}>{toLines(lang.descriptions).length} descrizioni</div>
+              </div>
+
+              <div style={css.field}>
+                <label style={css.label}>Callout (uno per riga — opzionale)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 80 }}
+                  value={lang.callouts}
+                  onChange={e => setLangField(i, 'callouts', e.target.value)}
+                  placeholder={'Cancellazione gratuita\nWi-Fi incluso\nParcheggio gratuito\nCheck-in anticipato'}
+                />
+              </div>
+            </div>
+          ))}
+          <button style={css.btnAdd} onClick={addLang}>+ Aggiungi lingua</button>
+        </div>
+      )}
+
+      {/* ── STEP 3 — Hotel & Geo ── */}
+      {step === 3 && (
+        <>
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Specifiche Hotel</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Categoria struttura *</label>
+                <select style={css.select} value={form.hotel_category} onChange={e => setField('hotel_category', e.target.value)}>
+                  <option value="city_hotel">City Hotel</option>
+                  <option value="resort">Resort</option>
+                  <option value="boutique">Boutique</option>
+                  <option value="business">Business</option>
+                  <option value="agriturismo">Agriturismo</option>
+                </select>
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Stelle (1–5) *</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={form.stars}
+                  onChange={e => setField('stars', e.target.value)}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Numero camere</label>
+                <input
+                  style={css.input}
+                  type="number"
+                  min="1"
+                  value={form.rooms}
+                  onChange={e => setField('rooms', e.target.value)}
+                  placeholder="es. 80"
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>URL Booking Engine *</label>
+                <input
+                  style={css.input}
+                  value={form.booking_engine_url}
+                  onChange={e => setField('booking_engine_url', e.target.value)}
+                  placeholder="https://booking.hotel.it/it"
+                />
+              </div>
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>Indirizzo completo *</label>
+              <input
+                style={css.input}
+                value={form.address}
+                onChange={e => setField('address', e.target.value)}
+                placeholder="Via Roma 1, 00100 Roma, Italia"
+              />
+            </div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Servizi offerti (uno per riga)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 110 }}
+                  value={form.services}
+                  onChange={e => setField('services', e.target.value)}
+                  placeholder={'Piscina esterna\nSPA e centro benessere\nRistorante gourmet\nSala conferenze\nBar'}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Punti di forza (uno per riga)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 110 }}
+                  value={form.strengths}
+                  onChange={e => setField('strengths', e.target.value)}
+                  placeholder={'Vista panoramica sul mare\nPosizione centrale\nPersonale multilingue\nFamiglie benvenute'}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Targeting Geografico</div>
+            <div style={css.grid2}>
+              <div style={css.field}>
+                <label style={css.label}>Paesi target (codice ISO 2, uno per riga)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 90 }}
+                  value={form.target_countries}
+                  onChange={e => setField('target_countries', e.target.value)}
+                  placeholder={'IT\nDE\nFR\nGB'}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Città target (una per riga — opzionale)</label>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 90 }}
+                  value={form.target_cities}
+                  onChange={e => setField('target_cities', e.target.value)}
+                  placeholder={'Milano\nRoma\nTorino'}
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── STEP 4 — Revisione ── */}
+      {step === 4 && (
+        <div style={css.section}>
+          <div style={css.sectionTitle}>Revisione Brief</div>
+          <p style={{ fontSize: 13, color: '#64748b', marginBottom: 12 }}>
+            Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
+          </p>
+          <div style={css.reviewCode}>
+            {JSON.stringify(buildBrief(form, langs), null, 2)}
+          </div>
+        </div>
+      )}
+
+      {/* ── Navigation ── */}
+      <div style={css.nav}>
+        {step > 0 ? (
+          <button style={css.btnGhost} onClick={goPrev}>← Indietro</button>
+        ) : <div />}
+
+        {step < STEPS.length - 1 ? (
+          <button style={css.btn} onClick={goNext}>Avanti →</button>
+        ) : (
+          <button style={css.btnGreen} onClick={handleSubmit} disabled={saveMutation.isPending || saveSuccess}>
+            {saveMutation.isPending ? 'Salvataggio...' : 'Salva Brief'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}

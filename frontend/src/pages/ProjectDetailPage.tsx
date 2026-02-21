@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
+import BriefForm from '../components/BriefForm'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 24 },
@@ -153,10 +154,10 @@ export default function ProjectDetailPage() {
     retry: false,
   })
 
-  const { data: brief } = useQuery({
+  const { data: brief, isFetching: briefFetching } = useQuery({
     queryKey: ['brief', id],
     queryFn: () => projectsApi.getBrief(id!),
-    enabled: activeTab === 'brief',
+    enabled: activeTab === 'brief' && (project?.has_brief ?? false),
     retry: false,
   })
 
@@ -220,7 +221,7 @@ export default function ProjectDetailPage() {
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview' ? 'Overview' : t === 'campaigns' ? 'Campagne' : t === 'brief' ? 'Brief JSON' : 'Audit Log'}
+            {t === 'overview' ? 'Overview' : t === 'campaigns' ? 'Campagne' : t === 'brief' ? 'Brief' : 'Audit Log'}
           </button>
         ))}
       </div>
@@ -252,13 +253,21 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'brief' && (
         <div>
-          {brief ? (
-            <textarea
-              style={s.textarea}
-              value={JSON.stringify(brief, null, 2)}
-              readOnly
+          {project?.has_brief && briefFetching ? (
+            <p style={{ color: '#64748b' }}>Caricamento brief...</p>
+          ) : (
+            <BriefForm
+              key={brief ? 'loaded' : 'new'}
+              projectId={id!}
+              existingBrief={brief ?? null}
+              onSaved={() => {
+                qc.invalidateQueries({ queryKey: ['project', id] })
+                qc.invalidateQueries({ queryKey: ['brief', id] })
+                setMessage({ type: 'success', text: 'Brief salvato con successo!' })
+                setActiveTab('overview')
+              }}
             />
-          ) : <p style={{ color: '#64748b' }}>Brief non ancora caricato.</p>}
+          )}
         </div>
       )}
 
