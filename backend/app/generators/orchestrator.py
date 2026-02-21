@@ -17,6 +17,7 @@ from app.generators.demand_gen import DemandGenGenerator
 from app.generators.performance_max import PerformanceMaxGenerator
 from app.generators.retargeting import RetargetingGenerator
 from app.validators.brief_validator import BriefValidator
+from app.validators.strategy_validator import StrategicValidator
 
 
 def _campaign_type_key(c: CampaignPlan) -> str:
@@ -43,6 +44,7 @@ class CampaignOrchestrator:
 
     def __init__(self):
         self.validator = BriefValidator()
+        self.strategy_validator = StrategicValidator()
         self.generators = [
             BrandSearchGenerator(),
             AcquisitionSearchGenerator(),
@@ -109,6 +111,17 @@ class CampaignOrchestrator:
                 lang = brief.get_language(c.language_code)
                 if lang and tk in AGENTS:
                     agent_warnings.extend(AGENTS[tk].validate_copy(lang))
+
+        # Step 5b: Agent strategy validation — per campaign type (budget, structure, audiences)
+        seen_types: set[str] = set()
+        for c in all_campaigns:
+            tk = _campaign_type_key(c)
+            if tk and tk not in seen_types and tk in AGENTS:
+                seen_types.add(tk)
+                agent_warnings.extend(AGENTS[tk].validate_strategy(brief))
+
+        # Step 5c: Cross-campaign strategic validation (differentiation, budget mix)
+        agent_warnings.extend(self.strategy_validator.validate(brief))
 
         # Step 6: Dry run diff (only set if not already set by idempotency)
         if dry_run:

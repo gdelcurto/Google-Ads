@@ -145,17 +145,37 @@ const DEFAULT_LANG: LangState = {
 
 const toLines = (s: string) => s.split('\n').map(l => l.trim()).filter(Boolean)
 
-/** Trim text to max chars without cutting mid-word. Drops the last partial word. */
+/**
+ * Ensure text fits within max chars without cutting words mid-way.
+ * Handles two cases:
+ * A) text longer than max: trim to last complete word before limit.
+ * B) text exactly at max and ends with a letter: LLM counted to hard limit
+ *    and may have stopped mid-word — backtrack to last word boundary.
+ */
 const trimToWord = (s: string, max: number): string => {
-  if (s.length <= max) return s
-  const cut = s.slice(0, max)
-  // If the character immediately after max is not a space, we're mid-word
-  if (max < s.length && s[max] !== ' ') {
+  const text = s.trimEnd()
+  const cut = text.slice(0, max)
+
+  if (text.length > max) {
+    // Case A: text overshoots the limit
+    if (text[max] !== ' ') {
+      const space = cut.lastIndexOf(' ')
+      if (space > 0) return cut.slice(0, space)
+      return cut
+    }
+    return cut
+  }
+
+  if (text.length === max && max >= 40 && cut.length > 0 && /[a-zA-ZÀ-ÿ]/.test(cut[cut.length - 1])) {
+    // Case B: exactly at limit, ends with a letter — might be mid-word.
+    // Only for long fields (≥40 chars): descriptions, sitelink descriptions.
+    // Headlines (30) and callouts (25) legitimately fill their limit.
     const space = cut.lastIndexOf(' ')
     if (space > 0) return cut.slice(0, space)
-    return cut // single very long word — no choice but to trim
+    return cut
   }
-  return cut.trimEnd()
+
+  return cut
 }
 
 function getUserEmail(): string {

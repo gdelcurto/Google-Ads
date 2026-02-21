@@ -1,72 +1,93 @@
 """
-Acquisition (Non-Brand) Search Campaign Agent.
+Acquisition (Non-Brand) Search Campaign Agent — Senior Google Ads Strategist: Hospitality.
 
-Philosophy: Acquisition campaigns speak to users who don't yet know the hotel.
-They are searching generically for a place to stay. The copy must compete on
-the merits of the hotel's location, category and USPs — never on brand name.
-Including the brand name in acquisition headlines causes cannibalization with
-brand campaigns and confuses intent-based bidding.
+SKILL: Acquisisci nuova domanda da utenti non ancora consapevoli del brand.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import TYPE_CHECKING, List
 
 from app.agents.base import CampaignAgent
 from app.domain.schemas.brief import LanguagePlan
+
+if TYPE_CHECKING:
+    from app.domain.schemas.brief import Brief
 
 
 class AcquisitionAgent(CampaignAgent):
     TYPE_KEY = "search_acquisition"
 
     GUIDELINES = """
-    ACQUISITION SEARCH — Rules for ad copy and keywords
-    ════════════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════
+    ACQUISITION SEARCH STRATEGIST — Hospitality Google Ads
+    ══════════════════════════════════════════════════════════════════
 
-    PURPOSE
-    Capture users who search generically for a hotel in a destination.
-    They don't know the brand yet. Win them on location, amenities, value.
+    OBIETTIVO STRATEGICO
+    Acquisire nuova domanda da utenti che NON conoscono ancora il brand.
+    Competere contro Booking, Expedia e altri hotel nella SERP mostrando
+    i differenziatori più rilevanti per chi cerca una struttura in quella
+    destinazione/categoria.
 
-    COPY RULES
-    ✅ Headlines: location + category + USPs + amenities:
-       "Hotel Roma Centro Storico", "4 Stelle Vicino al Colosseo",
-       "Colazione Inclusa", "Piscina Panoramica", "Miglior Vista sul Duomo"
-    ✅ Keyword insertion {KeyWord} is appropriate for theme-based ad groups
-    ❌ NEVER include brand name in acquisition headlines
-       → cannibalization risk (brand campaign loses to your own acquisition)
-       → budget waste on brand-intent queries in the wrong campaign
-    ❌ No "Sito Ufficiale" / "Prenota Direttamente" → brand-context messaging
+    INTENTO UTENTE
+    Ricerca categoria + destinazione. Non conosce l'hotel.
+    Cerca: "hotel 4 stelle roma centro", "hotel con spa firenze", "hotel vista mare amalfi".
+    ROAS atteso: inferiore al Brand (CPA più alto, audience fredda).
 
-    KEYWORD STRUCTURE (by theme / ad group)
-    - Location: "hotel roma centro", "hotel piazza navona", "hotel vatiano"
-    - Category: "hotel 4 stelle roma", "hotel di lusso roma"
-    - Intent: "hotel conveniente roma", "hotel con spa", "hotel per famiglie"
-    - Occasion: "hotel per anniversario", "hotel per business roma"
+    ── STRUTTURA CORRETTA ──────────────────────────────────────────
+    ✅ Campagne o ad group TEMATICI (non un unico generico):
+       • City intent: "hotel roma centro", "hotel vatiano"
+       • Categoria: "hotel 4 stelle roma", "boutique hotel toscana"
+       • Proximity: "hotel vicino stazione", "hotel centro storico"
+       • Occasion/intent: "hotel per famiglie", "hotel business roma"
+    ✅ Match types:
+       • Phrase match → controllo
+       • Broad match → discovery con negative list forte
+    ❌ NO Exact match in Acquisition → usa la Brand campaign per quello
 
-    MATCH TYPES
-    ✅ Phrase match + Broad match per keyword
-    → Phrase for control, Broad for discovery
-    ❌ No Exact match in acquisition (use Brand campaign for that precision)
+    ── NEGATIVE LIST (CRITICA) ────────────────────────────────────
+    ✅ Brand terms dell'hotel come Exact negative (shared list "Brand Negatives")
+       → previene query branded di atterrare in Acquisition (CPC sprecati)
+    ✅ Extended negatives: hostel, affitto, gratis, lavoro, airbnb,
+       recensioni, tripadvisor, booking, expedia, agoda
 
-    NEGATIVE KEYWORDS (campaign level — critical)
-    ❌ All brand terms as Exact match negative
-    → Prevents brand queries from landing in acquisition (wasted CPCs)
-    → Shared list: "Brand Negatives"
+    ── MESSAGGIO ──────────────────────────────────────────────────
+    ❌ MAI il brand name negli headline Acquisition
+       → cannibalization: la Brand campaign perde la query al tuo posto
+       → budget spreco: paghi CPC brand-intent nel contesto sbagliato
+    ✅ Ogni headline = argomento di vendita INDIPENDENTE. Varia i temi:
+       • Categoria + stelle + città: "Hotel 4 Stelle Roma Centro" (24 chars)
+       • Posizione concreta: "3 Min dalla Stazione" (20 chars)
+       • Servizio desiderabile: "Piscina Infinity sul Tetto" (25 chars)
+       • Beneficio incluso: "Colazione Buffet Ogni Giorno" (28 chars)
+       • Senso evocativo: "Vista Panoramica sulla Laguna" (29 chars)
+       • Praticità: "Parcheggio Gratuito Incluso" (27 chars)
+    ✅ Keyword insertion {KeyWord} appropriato per ad group tematici
+    ❌ NO "Sito Ufficiale" / "Prenota Direttamente" → messaging da Brand
 
-    BID STRATEGY
-    - Target CPA (if you have conversion data and a CPA target)
-    - Target ROAS (if you track booking value)
-    - Maximize Conversions (if starting fresh, limited data)
-    - max_cpc_acquisition cap applies if set
+    COPY RULE: Acquisition copy = "Categoria + USP + Esperienza"
+    Parla dell'hotel come se l'utente non lo conoscesse ancora.
 
-    CONFIGURE IN BRIEF
-    Set lang.acquisition_assets.headlines with category/location/USP copy.
-    Without acquisition_assets, the generic brief headlines are used — check
-    they don't contain the brand name.
+    ── BUDGET ─────────────────────────────────────────────────────
+    🎯 30–45% del budget totale mensile
+    La campagna con maggior peso sull'acquisizione di nuovi clienti.
+    ROAS inferiore al Brand — è normale, è il costo dell'acquisizione.
 
-    WARNING SIGNS
-    ⚠ Brand name in any headline → cannibalization, reconfigure copy
-    ⚠ No theme separation → single generic ad group = low relevance
-    ⚠ Missing acquisition_assets → may be using branded copy by mistake
+    ── KPI / BID STRATEGY ─────────────────────────────────────────
+    • Target CPA (se dati di conversione > 30/mese)
+    • Target ROAS (se tracking booking value attivo)
+    • Maximize Conversions (avvio campagna, dati limitati)
+    • max_cpc_acquisition cap applica se impostato
+
+    ── ERRORI DA BLOCCARE ─────────────────────────────────────────
+    ⛔ Brand name in qualsiasi headline → cannibalization immediata
+    ⛔ Nessuna segmentazione tematica → ad group unico generico = bassa rilevanza
+    ⛔ Stessa copy della Brand campaign → intento utente non allineato
+    ⛔ ROAS target identico al Brand → segnale che non si capisce il funnel
+    ⛔ Budget < 30% → campagna acquisizione sottopotenziata
+
+    ── DIFFERENZIAZIONE OBBLIGATORIA ──────────────────────────────
+    Acquisition ≠ Brand: copy, keyword, match type, bid strategy sono TUTTI diversi.
+    Se Acquisition e Brand sembrano simili nella logica strategica → errore.
     """
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
@@ -89,17 +110,50 @@ class AcquisitionAgent(CampaignAgent):
             if any(bt in h.lower() for bt in brand_lower):
                 warnings.append(
                     f"[Acquisition/{lang.code}] L'headline '{h}' contiene il brand name. "
-                    "Le campagne Acquisition devono usare copy generica (categoria/destinazione). "
-                    "Configurare 'acquisition_assets.headlines' con testi senza brand name, "
-                    "oppure spostare questo headline in 'brand_assets.headlines'."
+                    "Acquisition usa copy generica (categoria/destinazione/USP). "
+                    "Sposta questo headline in 'brand_assets.headlines' o rimuovi il brand name."
                 )
 
         # Warn if no type-specific assets configured
         if not (lang.acquisition_assets and lang.acquisition_assets.headlines):
             warnings.append(
-                f"[Acquisition/{lang.code}] Usando gli headline generici del brief per le campagne Acquisition. "
-                "Per copy ottimizzata, configurare 'acquisition_assets.headlines' con testi "
-                "orientati a categoria/destinazione/USP (es. 'Hotel Roma Centro', '4 Stelle Colosseo')."
+                f"[Acquisition/{lang.code}] Usando headline generici per le campagne Acquisition. "
+                "Per copy ottimizzata, configura 'acquisition_assets.headlines' con: "
+                "categoria/destinazione/USP senza brand name "
+                "(es. 'Hotel Roma Centro', '4 Stelle Colosseo', 'Colazione Inclusa')."
+            )
+
+        return warnings
+
+    def validate_strategy(self, brief: "Brief") -> List[str]:
+        warnings: List[str] = []
+        total = brief.budgets.total_monthly_eur
+        if total <= 0:
+            return warnings
+
+        entry = brief.budgets.by_campaign_type.get("search_acquisition")
+        if entry and entry.total > 0:
+            pct = entry.total / total * 100
+            if pct < 30:
+                warnings.append(
+                    f"[Acquisition] Budget {pct:.1f}% del totale (consigliato 30–45%). "
+                    "Budget Acquisition troppo basso per generare volumi di acquisizione significativi. "
+                    "Aumenta ad almeno il 30% del budget totale."
+                )
+            elif pct > 50:
+                warnings.append(
+                    f"[Acquisition] Budget {pct:.1f}% del totale (max consigliato 45%). "
+                    "Budget Acquisition molto elevato. Valuta se redistribuire verso PMax "
+                    "per copertura cross-network e reach incrementale."
+                )
+
+        # Warn if no keyword themes configured (using vertical template fallback)
+        if not brief.acquisition_keywords:
+            warnings.append(
+                "[Acquisition] Nessun keyword theme specifico configurato. "
+                "L'Acquisition usa template verticali come fallback. "
+                "Per massimizzare la rilevanza configura keyword themes specifici per questo hotel: "
+                "temi consigliati — city intent, categoria, proximity, occasion/intent."
             )
 
         return warnings

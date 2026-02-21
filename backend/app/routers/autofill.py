@@ -235,24 +235,42 @@ async def _fetch_pages(base_url: str) -> str:
 
 
 def _trim_to_word(text: str, max_chars: int) -> str:
-    """Trim text to max_chars without cutting mid-word.
+    """Ensure text fits within max_chars without cutting words mid-way.
 
-    If the text fits, return it unchanged.
-    If the character at position max_chars is inside a word (not a space/boundary),
-    backtrack to the last space so no word is split.
-    A very long single word with no spaces is trimmed at the hard limit as last resort.
+    Handles two cases:
+    A) text is LONGER than max_chars: trim to last complete word before limit.
+    B) text is EXACTLY max_chars and ends with a letter: the LLM counted to the
+       hard limit and stopped mid-word (e.g. "termale" → "termal" at char 90).
+       We backtrack to the last complete word to be safe.
+
+    A text that is strictly SHORTER than max_chars is returned unchanged.
+    A very long single word with no spaces is hard-trimmed as last resort.
     """
-    if len(text) <= max_chars:
-        return text
+    text = text.rstrip()
     cut = text[:max_chars]
-    # Check if we're mid-word: next character exists and is not a space
-    if max_chars < len(text) and text[max_chars] != ' ':
+
+    if len(text) > max_chars:
+        # Case A: text overshoots the limit
+        if text[max_chars] != ' ':
+            space = cut.rfind(' ')
+            if space > 0:
+                return cut[:space]
+            return cut  # single overlong token — unavoidable hard trim
+        return cut
+
+    if len(text) == max_chars and max_chars >= 40 and cut and cut[-1].isalpha():
+        # Case B: text is exactly at the limit and ends with a letter.
+        # Only apply for long fields (descriptions/USP ≥ 40 chars) — headlines (30)
+        # and callouts (25) legitimately end at their limit without mid-word risk.
+        # The LLM counted to the hard limit and may have stopped mid-word.
+        # Backtrack to the previous word boundary to guarantee completeness.
         space = cut.rfind(' ')
         if space > 0:
             return cut[:space]
-        # No space found — single overlong token, trim at hard limit
-        return cut
-    return cut.rstrip()
+        return cut  # single token filling entire limit — return as-is
+
+    # Text is under the limit — return unchanged
+    return cut
 
 
 def _truncate_assets(data: dict) -> dict:

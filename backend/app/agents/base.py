@@ -2,9 +2,10 @@
 Abstract base class for campaign-type-specific intelligence agents.
 
 Each agent encapsulates:
-- GUIDELINES: documented rules for this campaign type (human-readable + LLM-compatible)
+- GUIDELINES: strategic + copy rules for this campaign type (human-readable + LLM-compatible)
 - get_headlines / get_descriptions: return type-appropriate copy with fallback
-- validate_copy: returns actionable warnings when copy violates type-specific rules
+- validate_copy: warnings when copy violates type-specific rules
+- validate_strategy: warnings when brief-level strategy violates type-specific budget/structure rules
 """
 from __future__ import annotations
 
@@ -12,14 +13,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, List
 
 if TYPE_CHECKING:
-    from app.domain.schemas.brief import LanguagePlan
+    from app.domain.schemas.brief import Brief, LanguagePlan
 
 
 class CampaignAgent(ABC):
     """Base interface for all campaign-type agents."""
 
     TYPE_KEY: str   # matches CampaignTypeKey enum value (e.g. "search_brand")
-    GUIDELINES: str  # self-contained documentation for this campaign type
+    GUIDELINES: str  # self-contained strategic + copy documentation for this campaign type
 
     @abstractmethod
     def get_headlines(self, lang: "LanguagePlan") -> List[str]:
@@ -45,3 +46,12 @@ class CampaignAgent(ABC):
         An empty list means the copy is compliant with this type's rules.
         """
         ...
+
+    def validate_strategy(self, brief: "Brief") -> List[str]:
+        """
+        Validate the brief-level strategy for this campaign type.
+        Checks: budget allocation %, required structural elements, audience configuration.
+        Returns a list of strategic warning strings.
+        Subclasses should override this to add type-specific checks.
+        """
+        return []
