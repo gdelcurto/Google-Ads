@@ -50,13 +50,11 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
         logger.info("Database migrations applied")
     except Exception as exc:
-        logger.error(f"Database migration failed: {exc}", exc_info=True)
-        raise
+        logger.error(f"Database migration failed — app will start anyway: {exc}", exc_info=True)
     try:
         await _seed_admin()
     except Exception as exc:
-        logger.error(f"Admin seed failed: {exc}", exc_info=True)
-        raise
+        logger.error(f"Admin seed failed — app will start anyway: {exc}", exc_info=True)
     logger.info(
         f"Google Ads Campaigns API started "
         f"[env={settings.app_env}] [debug={settings.app_debug}]"
