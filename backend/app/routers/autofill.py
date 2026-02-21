@@ -704,10 +704,11 @@ class BudgetStrategyRequest(BaseModel):
     brand_name: str
     hotel_category: str
     stars: int
-    total_monthly_budget_eur: float
     languages: List[str]
     vertical: str = "hotel"
     country: str = "IT"
+    # Optional: if provided, used as-is; if omitted, the agent suggests one
+    total_monthly_budget_eur: float = 0.0
 
 
 class BudgetStrategyResponse(BaseModel):
@@ -716,6 +717,7 @@ class BudgetStrategyResponse(BaseModel):
     daily_by_type_lang: dict
     rationale: dict
     overall_strategy: str
+    suggested_total_monthly_eur: float
     min_budget_warning: Optional[str] = None
 
 
@@ -736,6 +738,18 @@ _FRONTEND_KEYS: dict[str, str] = {
     "retargeting": "retargeting",
     "demand_gen": "demand_gen",
 }
+
+
+def _suggest_budget(stars: int, hotel_category: str) -> float:
+    """Heuristic monthly Google Ads budget based on hotel profile."""
+    base: dict[int, float] = {1: 300, 2: 500, 3: 800, 4: 1500, 5: 3000}
+    amount = base.get(min(max(stars, 1), 5), 800)
+    cat = hotel_category.lower()
+    if any(k in cat for k in ("resort", "luxury", "palazzo")):
+        amount *= 1.4
+    elif any(k in cat for k in ("boutique", "charme", "design")):
+        amount *= 1.15
+    return round(amount / 100) * 100  # round to nearest 100
 
 
 def _select_campaign_types(total_monthly: float) -> tuple[list[str], Optional[str]]:
@@ -785,15 +799,23 @@ async def suggest_budget_strategy(
     current_user: TokenData = Depends(require_strategist_or_admin),
 ) -> BudgetStrategyResponse:
     """
-    Recommend which campaign types to activate and how to distribute the budget,
-    based on hotel context and total monthly spend.
-    Returns recommended_types, budget_split (%), daily_by_type_lang (€/day), and AI-generated rationale.
+    Suggest campaign types, budget allocation and rationale based on hotel profile.
+    If total_monthly_budget_eur is 0 / omitted, the agent calculates a recommended budget
+    from the hotel's stars and category. Returns recommended_types, budget_split (%),
+    daily_by_type_lang (€/day), AI-generated rationale, and suggested_total_monthly_eur.
     """
     settings = get_settings()
 
-    recommended, warning = _select_campaign_types(payload.total_monthly_budget_eur)
+    # Determine the working budget: use provided value or suggest one from profile
+    total_monthly = (
+        payload.total_monthly_budget_eur
+        if payload.total_monthly_budget_eur > 0
+        else _suggest_budget(payload.stars, payload.hotel_category)
+    )
+
+    recommended, warning = _select_campaign_types(total_monthly)
     split = _compute_split(recommended)
-    daily = _compute_daily(split, payload.total_monthly_budget_eur, payload.languages)
+    daily = _compute_daily(split, total_monthly, payload.languages)
 
     # Build rationale via Claude if API key is available; otherwise use static fallback
     rationale: dict[str, str] = {}
@@ -816,27 +838,31 @@ async def suggest_budget_strategy(
             "demand_gen": "Demand Gen",
         }
         langs_str = ", ".join(payload.languages)
+        budget_source = "suggerito in base al profilo hotel" if payload.total_monthly_budget_eur == 0 else "fornito dal cliente"
         types_str = "\n".join(
-            f"- {type_labels[t]}: {split[t]*100:.1f}% (€{payload.total_monthly_budget_eur * split[t]:.0f}/mese)"
+            f"- {type_labels[t]}: {split[t]*100:.1f}% (€{total_monthly * split[t]:.0f}/mese)"
             for t in recommended
         )
         prompt = f"""Sei uno stratega Google Ads specializzato in hotel e hospitality.
-Genera un piano strategico conciso per questo hotel.
+Genera un piano strategico per questo hotel basandoti sul suo profilo.
 
 HOTEL: {payload.brand_name} — {payload.hotel_category} {payload.stars} stelle
 PAESE: {payload.country}
 LINGUE: {langs_str}
-BUDGET MENSILE TOTALE: €{payload.total_monthly_budget_eur:.0f}
+BUDGET MENSILE TOTALE: €{total_monthly:.0f} ({budget_source})
 
-CAMPAGNE CONSIGLIATE:
+CAMPAGNE CONSIGLIATE (già calcolate in base al profilo):
 {types_str}
 
 Per ciascuna campagna scrivi UN PARAGRAFO di 2-3 frasi che spieghi:
-1. Perché questa campagna è strategica per questo hotel
-2. Quale obiettivo primario persegue
-3. Un tip pratico specifico per il settore alberghiero
+1. Perché questa campagna è strategica specificamente per questo tipo di hotel
+2. Quale obiettivo primario persegue nel funnel alberghiero
+3. Un consiglio pratico concreto per il settore hospitality
 
-Scrivi anche un paragrafo "overall" di 2-3 frasi che riassuma la strategia complessiva e il razionale del budget.
+Scrivi anche un paragrafo "overall" di 2-3 frasi che:
+- Spieghi il razionale del budget consigliato (€{total_monthly:.0f}/mese) per questo profilo hotel
+- Riassuma la strategia full-funnel scelta
+- Indichi la priorità di attivazione delle campagne
 
 Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
 {{
@@ -865,7 +891,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
                 rationale[t] = _STATIC_RATIONALE.get(t, "")
             overall_strategy = (
                 f"Strategia full-funnel con {len(recommended)} campagne per un budget di "
-                f"€{payload.total_monthly_budget_eur:.0f}/mese. "
+                f"€{total_monthly:.0f}/mese, adeguato a un {payload.hotel_category} {payload.stars} stelle. "
                 "Le campagne sono ordinate per priorità di intento: brand protection → acquisizione → scalabilità."
             )
     else:
@@ -873,7 +899,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
             rationale[t] = _STATIC_RATIONALE.get(t, "")
         overall_strategy = (
             f"Strategia full-funnel con {len(recommended)} campagne per un budget di "
-            f"€{payload.total_monthly_budget_eur:.0f}/mese. "
+            f"€{total_monthly:.0f}/mese, adeguato a un {payload.hotel_category} {payload.stars} stelle. "
             "Le campagne sono ordinate per priorità di intento: brand protection → acquisizione → scalabilità."
         )
 
@@ -883,6 +909,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
         daily_by_type_lang=daily,
         rationale=rationale,
         overall_strategy=overall_strategy,
+        suggested_total_monthly_eur=total_monthly,
         min_budget_warning=warning,
     )
 

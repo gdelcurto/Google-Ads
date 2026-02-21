@@ -193,10 +193,10 @@ export const autofillApi = {
     brand_name: string
     hotel_category: string
     stars: number
-    total_monthly_budget_eur: number
     languages: string[]
     vertical?: string
     country?: string
+    total_monthly_budget_eur?: number
   }) =>
     api.post<{
       recommended_types: string[]
@@ -204,6 +204,7 @@ export const autofillApi = {
       daily_by_type_lang: Record<string, Record<string, number>>
       rationale: Record<string, string>
       overall_strategy: string
+      suggested_total_monthly_eur: number
       min_budget_warning: string | null
     }>('/autofill/budget-strategy', data).then((r) => r.data),
 }

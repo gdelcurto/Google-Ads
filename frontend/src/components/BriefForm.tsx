@@ -778,6 +778,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
     daily_by_type_lang: Record<string, Record<string, number>>
     rationale: Record<string, string>
     overall_strategy: string
+    suggested_total_monthly_eur: number
     min_budget_warning: string | null
   } | null>(null)
   const [strategyPanelOpen, setStrategyPanelOpen] = useState(false)
@@ -894,23 +895,21 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
   const budgetStrategyMutation = useMutation({
     mutationFn: () => {
-      const totalBudget = parseFloat(form.total_monthly_eur) || 0
-      if (!totalBudget) throw new Error('Inserisci il budget mensile totale prima di richiedere la strategia.')
       if (!form.brand_name) throw new Error('Inserisci il nome del brand (Step 0) prima di richiedere la strategia.')
+      const existingBudget = parseFloat(form.total_monthly_eur) || 0
       return autofillApi.suggestBudgetStrategy({
         brand_name: form.brand_name,
         hotel_category: form.hotel_category || 'city_hotel',
         stars: parseInt(form.stars) || 3,
-        total_monthly_budget_eur: totalBudget,
         languages: langs.map(l => l.code.toUpperCase()).filter(Boolean),
         vertical: form.vertical || 'hotel',
         country: form.country || 'IT',
+        ...(existingBudget > 0 ? { total_monthly_budget_eur: existingBudget } : {}),
       })
     },
     onSuccess: (data) => {
       setStrategyResult(data)
       setStrategyPanelOpen(true)
-      // Map backend keys to frontend keys
       const backendToFrontend: Record<string, string> = {
         'search_brand': 'brand',
         'search_acquisition': 'acquisition',
@@ -918,8 +917,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
         'retargeting': 'retargeting',
         'demand_gen': 'demand_gen',
       }
-      // Apply recommended types to selectedTypes
       setSelectedTypes(new Set(data.recommended_types.map(t => backendToFrontend[t] || t)))
+      // Apply suggested total budget to form field
+      setField('total_monthly_eur', String(data.suggested_total_monthly_eur))
       // Apply daily budgets to budget table
       const newBudget: Record<string, Record<string, string>> = {}
       for (const [feKey, byLang] of Object.entries(data.daily_by_type_lang)) {
@@ -1006,6 +1006,29 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
   const setField = (key: keyof FormState, val: string) =>
     setForm(prev => ({ ...prev, [key]: val }))
+
+  // Redistribute total monthly budget across active campaign types when selection changes
+  const redistributeBudget = (nextTypes: Set<string>) => {
+    const totalMonthly = parseFloat(form.total_monthly_eur) || 0
+    if (!totalMonthly || nextTypes.size === 0) return
+    const backendWeights: Record<string, number> = {
+      brand: 0.12, acquisition: 0.28, pmax: 0.38, retargeting: 0.10, demand_gen: 0.12,
+    }
+    const active = CAMPAIGN_TYPES.filter(ct => nextTypes.has(ct.key))
+    const rawWeights = Object.fromEntries(active.map(ct => [ct.key, backendWeights[ct.key] ?? 0.15]))
+    const totalW = Object.values(rawWeights).reduce((s, v) => s + v, 0)
+    const activeLangs = langs.map(l => l.code.toUpperCase()).filter(Boolean)
+    const nLangs = Math.max(activeLangs.length, 1)
+    setBudgetByTypeLang(prev => {
+      const next = { ...prev }
+      for (const ct of active) {
+        const monthlyForType = totalMonthly * (rawWeights[ct.key] / totalW)
+        const dailyPerLang = monthlyForType / nLangs / 30.44
+        next[ct.key] = Object.fromEntries(activeLangs.map(c => [c, String(Math.round(dailyPerLang * 100) / 100)]))
+      }
+      return next
+    })
+  }
 
   const setLangField = (i: number, key: keyof LangState, val: string) =>
     setLangs(prev => prev.map((l, idx) => idx === i ? { ...l, [key]: val } : l))
@@ -1489,22 +1512,14 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 {budgetStrategyMutation.isPending ? '⏳ Analisi in corso...' : '✨ Suggerisci Strategia AI'}
               </button>
             </div>
-            {/* Total monthly budget input */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' as const }}>
-              <label style={{ ...css.label, margin: 0, whiteSpace: 'nowrap' as const }}>Budget mensile totale (€)</label>
-              <input
-                type="number"
-                min="0"
-                step="50"
-                style={{ ...css.input, width: 140 }}
-                value={form.total_monthly_eur}
-                onChange={e => setField('total_monthly_eur', e.target.value)}
-                placeholder="es. 2000"
-              />
-              <span style={{ fontSize: 12, color: T.textGray }}>
-                Inserisci il budget totale e clicca "Suggerisci Strategia AI" per ricevere la distribuzione consigliata.
-              </span>
-            </div>
+            {/* Optional total budget hint — shown only if already populated */}
+            {form.total_monthly_eur && parseFloat(form.total_monthly_eur) > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: T.textGray }}>
+                <span>Budget mensile:</span>
+                <strong style={{ color: T.text }}>€{parseFloat(form.total_monthly_eur).toLocaleString('it-IT')}/mese</strong>
+                <button style={{ ...css.btnRed, padding: '2px 8px', fontSize: 11 }} onClick={() => { setField('total_monthly_eur', ''); setBudgetByTypeLang({}); setStrategyResult(null); setStrategyPanelOpen(false) }}>✕ Azzera</button>
+              </div>
+            )}
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
@@ -1529,11 +1544,12 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                             <input
                               type="checkbox"
                               checked={isSel}
-                              onChange={e => setSelectedTypes(prev => {
-                                const next = new Set(prev)
+                              onChange={e => {
+                                const next = new Set(selectedTypes)
                                 if (e.target.checked) next.add(ct.key); else next.delete(ct.key)
-                                return next
-                              })}
+                                setSelectedTypes(next)
+                                redistributeBudget(next)
+                              }}
                               style={{ width: 15, height: 15, accentColor: T.primary, cursor: 'pointer', flexShrink: 0 }}
                             />
                             <span style={{ fontWeight: isSel ? 600 : 400, color: isSel ? T.text : T.textGray, whiteSpace: 'nowrap' }}>
@@ -1610,7 +1626,16 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             {strategyPanelOpen && strategyResult && (
               <div style={{ marginTop: 20, background: T.bgCard, border: `1px solid ${T.primary}33`, borderRadius: T.radiusLg, padding: 20 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: T.primary }}>Strategia consigliata dall'AI</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: T.primary, marginBottom: 4 }}>Strategia consigliata dall'AI</div>
+                    <div style={{ fontSize: 13, color: T.textGray }}>
+                      Budget mensile consigliato:{' '}
+                      <strong style={{ color: T.text, fontSize: 15 }}>
+                        €{strategyResult.suggested_total_monthly_eur.toLocaleString('it-IT')}/mese
+                      </strong>
+                      {' '}— {strategyResult.recommended_types.length} campagne attive
+                    </div>
+                  </div>
                   <button style={css.btnRed} onClick={() => setStrategyPanelOpen(false)}>✕</button>
                 </div>
                 {strategyResult.min_budget_warning && (
