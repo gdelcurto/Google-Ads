@@ -14,7 +14,7 @@ const s: Record<string, React.CSSProperties> = {
     flexShrink: 0,
     boxShadow: '2px 2px 8px -7px rgba(0,0,0,1)',
   },
-  logo: { height: 26, display: 'block', filter: 'invert(1)' },
+  logo: { height: 26, display: 'block' },
   navDivider: { width: 1, height: 20, background: T.borderLight, flexShrink: 0 },
   navLink: {
     color: T.textGray,
