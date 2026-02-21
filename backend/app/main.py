@@ -15,8 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from alembic.config import Config as AlembicConfig
+from alembic import command as alembic_command
+
 from app.config import get_settings
-from app.database import create_tables, get_db
+from app.database import get_db
 from app.domain.models import User
 from app.auth import hash_password
 
@@ -40,8 +43,10 @@ logger = logging.getLogger(__name__)
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize DB and seed admin user on startup."""
-    await create_tables()
+    """Run DB migrations then seed admin on startup."""
+    alembic_cfg = AlembicConfig("alembic.ini")
+    alembic_command.upgrade(alembic_cfg, "head")
+    logger.info("Database migrations applied")
     await _seed_admin()
     logger.info(
         f"Google Ads Campaigns API started "

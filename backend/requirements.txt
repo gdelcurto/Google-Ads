@@ -6,7 +6,8 @@ python-multipart==0.0.20
 # Database
 sqlalchemy==2.0.29
 alembic==1.13.1
-aiosqlite==0.20.0
+aiosqlite==0.20.0   # SQLite async — locale
+asyncpg==0.30.0     # PostgreSQL async — produzione (Supabase)
 
 # Validation & Serialization
 pydantic==2.11.1        # 2.11+ ha wheel cp314 per Python 3.14

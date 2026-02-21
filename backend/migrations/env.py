@@ -1,5 +1,6 @@
 """Alembic environment configuration for async SQLAlchemy."""
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -13,6 +14,19 @@ from app.domain import models  # noqa: F401 — import models to register them
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# ── Resolve DATABASE_URL ───────────────────────────────────────────────────────
+# Priority: DATABASE_URL env var > alembic.ini fallback.
+# Normalizes protocol → async driver (postgresql+asyncpg, sqlite+aiosqlite).
+_db_url = os.environ.get("DATABASE_URL") or config.get_main_option("sqlalchemy.url", "")
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+elif _db_url.startswith("postgresql://"):
+    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif _db_url.startswith("sqlite:///") and "+aiosqlite" not in _db_url:
+    _db_url = _db_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+if _db_url:
+    config.set_main_option("sqlalchemy.url", _db_url)
 
 target_metadata = Base.metadata
 
