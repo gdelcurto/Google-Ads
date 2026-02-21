@@ -250,9 +250,8 @@ const CAMPAIGN_STRATEGY: Record<string, {
   },
 }
 
-function ActionPlanTab({ brief, plan }: {
+function ActionPlanTab({ brief }: {
   brief: Record<string, unknown>
-  plan?: AccountPlanPreview
 }) {
   const client  = (brief.client           || {}) as Record<string, unknown>
   const hotel   = (brief.hotel_specifics  || {}) as Record<string, unknown>
@@ -985,7 +984,7 @@ export default function ProjectDetailPage() {
           ) : briefFetching ? (
             <p style={{ color: T.textGray }}>Caricamento brief...</p>
           ) : brief ? (
-            <ActionPlanTab brief={brief} plan={plan ?? undefined} />
+            <ActionPlanTab brief={brief} />
           ) : (
             <div style={s.card}><p style={{ color: T.textGray }}>Brief non disponibile.</p></div>
           )}
