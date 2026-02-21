@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
+    # Log DB host (no password) to verify the correct URL is being used
+    try:
+        from urllib.parse import urlparse
+        _u = urlparse(settings.database_url)
+        logger.info(f"DB connecting to: {_u.scheme}://{_u.username}@{_u.hostname}:{_u.port}{_u.path}")
+    except Exception:
+        pass
     # Create all tables (idempotent: skips existing tables)
     try:
         async with engine.begin() as conn:
