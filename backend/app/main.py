@@ -6,6 +6,9 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# Support explicit frontend path for Docker/Railway deployments
+_FRONTEND_DIST_ENV = os.getenv("FRONTEND_DIST_PATH", "")
+
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,7 +115,12 @@ async def health():
 
 
 # ─── Frontend SPA (serve React build if present) ──────────────────────────────
-_FRONTEND_DIST = Path(__file__).parent.parent.parent / "frontend" / "dist"
+# FRONTEND_DIST_PATH env var is set in Docker/Railway; local dev falls back to repo layout
+_FRONTEND_DIST = (
+    Path(_FRONTEND_DIST_ENV)
+    if _FRONTEND_DIST_ENV
+    else Path(__file__).parent.parent.parent / "frontend" / "dist"
+)
 
 if _FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
