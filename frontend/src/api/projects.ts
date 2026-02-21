@@ -86,7 +86,6 @@ export const projectsApi = {
     api.get<AccountPlanPreview>(`/projects/${id}/plan`).then((r) => r.data),
 
   exportCsv: (id: string) => {
-    const token = localStorage.getItem('token')
     window.open(`/api/projects/${id}/export/csv`, '_blank')
   },
 
