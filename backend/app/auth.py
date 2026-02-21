@@ -6,7 +6,8 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError as JWTError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 
@@ -44,14 +45,16 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def decode_token(token: str) -> TokenData:
     try:
         payload = jwt.decode(
-            token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
         )
         return TokenData(
             user_id=payload["sub"],
             email=payload["email"],
             role=payload.get("role", "strategist"),
         )
-    except JWTError:
+    except (JWTError, Exception):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token non valido o scaduto",
