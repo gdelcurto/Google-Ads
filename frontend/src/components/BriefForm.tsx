@@ -57,6 +57,14 @@ const LANG_IDS: Record<string, number> = {
 
 const STEPS = ['Info Base', 'Obiettivi & Budget', 'Lingue & Asset', 'Hotel & Geo', 'Revisione']
 
+const CAMPAIGN_TYPES = [
+  { key: 'brand',       label: 'Brand',           backendKey: 'search_brand' },
+  { key: 'acquisition', label: 'Acquisition',      backendKey: 'search_acquisition' },
+  { key: 'retargeting', label: 'Retargeting',       backendKey: 'retargeting' },
+  { key: 'pmax',        label: 'Performance Max',  backendKey: 'performance_max' },
+  { key: 'demand_gen',  label: 'Demand Gen',        backendKey: 'demand_gen' },
+] as const
+
 const DEFAULT_FORM: FormState = {
   project_name: '',
   preset: 'blastness',
@@ -155,6 +163,33 @@ function briefToForm(b: Record<string, unknown>): FormState {
   }
 }
 
+function briefToSelectedTypes(b: Record<string, unknown>): Set<string> {
+  const byCT = ((b.budgets as Record<string, unknown>)?.by_campaign_type || {}) as Record<string, unknown>
+  if (Object.keys(byCT).length === 0) return new Set(['brand', 'acquisition', 'pmax'])
+  const found = new Set<string>()
+  for (const ct of CAMPAIGN_TYPES) {
+    const entry = byCT[ct.backendKey] as Record<string, unknown> | undefined
+    const byLang = (entry?.by_language || {}) as Record<string, number>
+    if (Object.values(byLang).some(v => v > 0)) found.add(ct.key)
+  }
+  return found.size > 0 ? found : new Set(['brand', 'acquisition', 'pmax'])
+}
+
+function briefToBudgetByTypeLang(b: Record<string, unknown>): Record<string, Record<string, string>> {
+  const byCT = ((b.budgets as Record<string, unknown>)?.by_campaign_type || {}) as Record<string, unknown>
+  const result: Record<string, Record<string, string>> = {}
+  for (const ct of CAMPAIGN_TYPES) {
+    const entry = byCT[ct.backendKey] as Record<string, unknown> | undefined
+    if (!entry) continue
+    const byLang = (entry.by_language || {}) as Record<string, number>
+    result[ct.key] = {}
+    for (const [code, monthly] of Object.entries(byLang)) {
+      result[ct.key][code] = String(Math.round((monthly / 30.44) * 100) / 100)
+    }
+  }
+  return result
+}
+
 function briefToLangs(b: Record<string, unknown>): LangState[] {
   const langs = (b.languages as Record<string, unknown>[]) || []
   if (!langs.length) return [{ ...DEFAULT_LANG }]
@@ -171,7 +206,28 @@ function briefToLangs(b: Record<string, unknown>): LangState[] {
   }))
 }
 
-function buildBrief(form: FormState, langs: LangState[]): Record<string, unknown> {
+function buildBrief(
+  form: FormState,
+  langs: LangState[],
+  selectedTypes: Set<string>,
+  budgetByTypeLang: Record<string, Record<string, string>>,
+): Record<string, unknown> {
+  const activeLangCodes = langs.map(l => l.code.toUpperCase())
+  const byCampaignType: Record<string, unknown> = {}
+  let totalMonthly = 0
+  for (const ct of CAMPAIGN_TYPES) {
+    if (!selectedTypes.has(ct.key)) continue
+    const byLanguage: Record<string, number> = {}
+    let typeMonthly = 0
+    for (const code of activeLangCodes) {
+      const daily = parseFloat(budgetByTypeLang[ct.key]?.[code] ?? '0') || 0
+      const monthly = Math.round(daily * 30.44 * 100) / 100
+      byLanguage[code] = monthly
+      typeMonthly += monthly
+    }
+    byCampaignType[ct.backendKey] = { total: Math.round(typeMonthly * 100) / 100, by_language: byLanguage }
+    totalMonthly += typeMonthly
+  }
   return {
     version: '1.0',
     meta: {
@@ -205,9 +261,12 @@ function buildBrief(form: FormState, langs: LangState[]): Record<string, unknown
         value_per_conversion: null,
       },
     },
+    campaign_types: CAMPAIGN_TYPES
+      .filter(ct => selectedTypes.has(ct.key))
+      .map(ct => ct.backendKey),
     budgets: {
-      total_monthly_eur: parseFloat(form.total_monthly_eur) || 0,
-      by_campaign_type: {},
+      total_monthly_eur: Math.round(totalMonthly * 100) / 100,
+      by_campaign_type: byCampaignType,
     },
     languages: langs.map(l => ({
       code: l.code.toUpperCase(),
@@ -400,6 +459,12 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [langs, setLangs] = useState<LangState[]>(() =>
     existingBrief ? briefToLangs(existingBrief) : [{ ...DEFAULT_LANG }]
   )
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() =>
+    existingBrief ? briefToSelectedTypes(existingBrief) : new Set(['brand', 'acquisition', 'pmax'])
+  )
+  const [budgetByTypeLang, setBudgetByTypeLang] = useState<Record<string, Record<string, string>>>(() =>
+    existingBrief ? briefToBudgetByTypeLang(existingBrief) : {}
+  )
   const [errors, setErrors] = useState<string[]>([])
   const [saveSuccess, setSaveSuccess] = useState(false)
 
@@ -501,8 +566,18 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
     if (!form.brand_name) errs.push('Nome brand obbligatorio')
     if (!form.brand_slug) errs.push('Slug brand obbligatorio')
     if (!form.domain) errs.push('Dominio obbligatorio')
-    if (!form.total_monthly_eur || parseFloat(form.total_monthly_eur) <= 0)
-      errs.push('Budget mensile obbligatorio (> 0)')
+    if (selectedTypes.size === 0) {
+      errs.push('Seleziona almeno un tipo di campagna')
+    } else {
+      for (const ct of CAMPAIGN_TYPES) {
+        if (!selectedTypes.has(ct.key)) continue
+        const hasAny = langs.some(l => {
+          const v = budgetByTypeLang[ct.key]?.[l.code.toUpperCase()]
+          return v && parseFloat(v) > 0
+        })
+        if (!hasAny) errs.push(`Budget obbligatorio per "${ct.label}" (almeno una lingua)`)
+      }
+    }
     if (langs.length === 0) errs.push('Almeno una lingua richiesta')
     langs.forEach((l, i) => {
       const n = i + 1
@@ -525,7 +600,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
   const handleSubmit = () => {
     if (validate()) {
-      saveMutation.mutate(buildBrief(form, langs))
+      saveMutation.mutate(buildBrief(form, langs, selectedTypes, budgetByTypeLang))
     }
   }
 
@@ -859,21 +934,107 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           </div>
 
           <div style={css.section}>
-            <div style={css.sectionTitle}>Budget</div>
-            <div style={{ maxWidth: 320 }}>
-              <div style={css.field}>
-                <label style={css.label}>Budget mensile totale (€) *</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="0"
-                  step="50"
-                  value={form.total_monthly_eur}
-                  onChange={e => setField('total_monthly_eur', e.target.value)}
-                  placeholder="es. 3000"
-                />
-              </div>
+            <div style={css.sectionTitle}>Budget campagne (€/giorno per lingua)</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Tipo campagna
+                    </th>
+                    {langs.map(l => (
+                      <th key={l.code} style={{ textAlign: 'center', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {l.code || '—'} (€/giorno)
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {CAMPAIGN_TYPES.map(ct => {
+                    const isSel = selectedTypes.has(ct.key)
+                    return (
+                      <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                        <td style={{ padding: '8px 16px 8px 0', verticalAlign: 'middle' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSel}
+                              onChange={e => setSelectedTypes(prev => {
+                                const next = new Set(prev)
+                                if (e.target.checked) next.add(ct.key); else next.delete(ct.key)
+                                return next
+                              })}
+                              style={{ width: 15, height: 15, accentColor: T.primary, cursor: 'pointer', flexShrink: 0 }}
+                            />
+                            <span style={{ fontWeight: isSel ? 600 : 400, color: isSel ? T.text : T.textGray, whiteSpace: 'nowrap' }}>
+                              {ct.label}
+                            </span>
+                          </label>
+                        </td>
+                        {langs.map(l => {
+                          const code = l.code.toUpperCase()
+                          const val = budgetByTypeLang[ct.key]?.[code] ?? ''
+                          return (
+                            <td key={code} style={{ padding: '8px', verticalAlign: 'middle', textAlign: 'center' }}>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                disabled={!isSel}
+                                value={val}
+                                onChange={e => setBudgetByTypeLang(prev => ({
+                                  ...prev,
+                                  [ct.key]: { ...(prev[ct.key] ?? {}), [code]: e.target.value },
+                                }))}
+                                placeholder="0"
+                                style={{
+                                  ...css.input,
+                                  width: 90,
+                                  textAlign: 'right',
+                                  opacity: isSel ? 1 : 0.35,
+                                  background: isSel ? T.bgCard : T.bgMuted,
+                                  cursor: isSel ? 'text' : 'not-allowed',
+                                }}
+                              />
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
+            {/* Totals row */}
+            {selectedTypes.size > 0 && (() => {
+              const langTotals: Record<string, number> = {}
+              let grandDaily = 0
+              for (const ct of CAMPAIGN_TYPES) {
+                if (!selectedTypes.has(ct.key)) continue
+                for (const l of langs) {
+                  const code = l.code.toUpperCase()
+                  const d = parseFloat(budgetByTypeLang[ct.key]?.[code] ?? '0') || 0
+                  langTotals[code] = (langTotals[code] || 0) + d
+                  grandDaily += d
+                }
+              }
+              const grandMonthly = Math.round(grandDaily * 30.44)
+              return (
+                <div style={{ marginTop: 14, paddingTop: 12, borderTop: `2px solid ${T.borderLight}`, display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
+                  {langs.map(l => {
+                    const code = l.code.toUpperCase()
+                    return (
+                      <div key={code} style={{ fontSize: 13, color: T.textGray }}>
+                        {code} tot.: <strong style={{ color: T.text }}>€{(langTotals[code] || 0).toFixed(0)}/g</strong>
+                      </div>
+                    )
+                  })}
+                  <div style={{ marginLeft: 'auto', fontSize: 13, color: T.textGray }}>
+                    Mensile stimato: <strong style={{ color: T.primary, fontSize: 15 }}>€{grandMonthly.toLocaleString('it-IT')}</strong>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </>
       )}
@@ -1119,7 +1280,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
           </p>
           <div style={css.reviewCode}>
-            {JSON.stringify(buildBrief(form, langs), null, 2)}
+            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang), null, 2)}
           </div>
         </div>
       )}
