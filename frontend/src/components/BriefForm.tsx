@@ -247,6 +247,35 @@ function briefToRemarketingLists(b: Record<string, unknown>): RemarketingListSta
   }))
 }
 
+type TypeObjective = { primary_objective: string; primary_conversion_action: string }
+
+const DEFAULT_TYPE_OBJECTIVE: TypeObjective = {
+  primary_objective: 'direct_bookings',
+  primary_conversion_action: 'purchase',
+}
+
+const OBJECTIVE_OPTIONS = [
+  { value: 'direct_bookings', label: 'Prenotazioni dirette' },
+  { value: 'lead_gen',        label: 'Lead generation' },
+  { value: 'phone_calls',     label: 'Telefonate' },
+  { value: 'brand_awareness', label: 'Brand awareness' },
+]
+
+function briefToObjectivesByType(b: Record<string, unknown>): Record<string, TypeObjective> {
+  const perType = ((b.objectives as Record<string, unknown>)?.per_campaign_type || {}) as Record<string, Record<string, unknown>>
+  const result: Record<string, TypeObjective> = {}
+  for (const ct of CAMPAIGN_TYPES) {
+    const entry = perType[ct.backendKey]
+    if (entry) {
+      result[ct.key] = {
+        primary_objective: String(entry.primary || 'direct_bookings'),
+        primary_conversion_action: String(entry.primary_conversion_action || 'purchase'),
+      }
+    }
+  }
+  return result
+}
+
 function briefToLangs(b: Record<string, unknown>): LangState[] {
   const langs = (b.languages as Record<string, unknown>[]) || []
   if (!langs.length) return [{ ...DEFAULT_LANG }]
@@ -299,6 +328,7 @@ function buildBrief(
   selectedTypes: Set<string>,
   budgetByTypeLang: Record<string, Record<string, string>>,
   remarketingLists: RemarketingListState[],
+  objectivesByType: Record<string, TypeObjective>,
 ): Record<string, unknown> {
   const activeLangCodes = langs.map(l => l.code.toUpperCase())
   const byCampaignType: Record<string, unknown> = {}
@@ -334,7 +364,11 @@ function buildBrief(
       google_ads_customer_id: form.google_ads_customer_id || null,
     },
     objectives: {
-      primary: form.primary_objective,
+      // Global fallback: use the first selected type's objective, or the default.
+      primary: (() => {
+        const firstType = CAMPAIGN_TYPES.find(ct => selectedTypes.has(ct.key))
+        return (firstType && objectivesByType[firstType.key]?.primary_objective) || 'direct_bookings'
+      })(),
       secondary: [],
       kpi: {
         target_cpa_eur: form.target_cpa_eur ? parseFloat(form.target_cpa_eur) : null,
@@ -343,11 +377,26 @@ function buildBrief(
         max_cpc_acquisition: form.max_cpc_acquisition ? parseFloat(form.max_cpc_acquisition) : null,
       },
       conversions: {
-        primary_conversion_action: form.primary_conversion_action || 'purchase',
+        // Global fallback: first selected type's conversion action.
+        primary_conversion_action: (() => {
+          const firstType = CAMPAIGN_TYPES.find(ct => selectedTypes.has(ct.key))
+          return (firstType && objectivesByType[firstType.key]?.primary_conversion_action) || 'purchase'
+        })(),
         conversion_action_ids: [],
         secondary_conversion_actions: [],
         value_per_conversion: null,
       },
+      per_campaign_type: Object.fromEntries(
+        CAMPAIGN_TYPES
+          .filter(ct => selectedTypes.has(ct.key))
+          .map(ct => {
+            const obj = objectivesByType[ct.key] ?? DEFAULT_TYPE_OBJECTIVE
+            return [ct.backendKey, {
+              primary: obj.primary_objective,
+              primary_conversion_action: obj.primary_conversion_action || 'purchase',
+            }]
+          })
+      ),
     },
     campaign_types: CAMPAIGN_TYPES
       .filter(ct => selectedTypes.has(ct.key))
@@ -675,6 +724,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [budgetByTypeLang, setBudgetByTypeLang] = useState<Record<string, Record<string, string>>>(() =>
     existingBrief ? briefToBudgetByTypeLang(existingBrief) : {}
   )
+  const [objectivesByType, setObjectivesByType] = useState<Record<string, TypeObjective>>(() =>
+    existingBrief ? briefToObjectivesByType(existingBrief) : {}
+  )
   const [remarketingLists, setRemarketingLists] = useState<RemarketingListState[]>(() =>
     existingBrief ? briefToRemarketingLists(existingBrief) : []
   )
@@ -952,7 +1004,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
   const handleSubmit = () => {
     if (validate()) {
-      saveMutation.mutate(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists))
+      saveMutation.mutate(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists, objectivesByType))
     }
   }
 
@@ -1220,26 +1272,71 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
       {step === 1 && (
         <>
           <div style={css.section}>
-            <div style={css.sectionTitle}>Obiettivi Campagna</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Obiettivo primario *</label>
-                <select style={css.select} value={form.primary_objective} onChange={e => setField('primary_objective', e.target.value)}>
-                  <option value="direct_bookings">Prenotazioni dirette</option>
-                  <option value="lead_gen">Lead generation</option>
-                  <option value="phone_calls">Telefonate</option>
-                  <option value="brand_awareness">Brand awareness</option>
-                </select>
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Azione di conversione primaria</label>
-                <input
-                  style={css.input}
-                  value={form.primary_conversion_action}
-                  onChange={e => setField('primary_conversion_action', e.target.value)}
-                  placeholder="purchase"
-                />
-              </div>
+            <div style={css.sectionTitle}>Obiettivi per tipologia di campagna</div>
+            <div style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
+              Definisci obiettivo primario e azione di conversione per ogni tipo attivo.
+              Le campagne non selezionate nella tabella budget non vengono mostrate.
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Tipo campagna
+                    </th>
+                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Obiettivo primario *
+                    </th>
+                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                      Azione di conversione primaria
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {CAMPAIGN_TYPES.map(ct => {
+                    const isSel = selectedTypes.has(ct.key)
+                    if (!isSel) return null
+                    const obj: TypeObjective = objectivesByType[ct.key] ?? DEFAULT_TYPE_OBJECTIVE
+                    return (
+                      <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                        <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
+                          {ct.label}
+                        </td>
+                        <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                          <select
+                            style={{ ...css.select, marginBottom: 0 }}
+                            value={obj.primary_objective}
+                            onChange={e => setObjectivesByType(prev => ({
+                              ...prev,
+                              [ct.key]: { ...obj, primary_objective: e.target.value },
+                            }))}
+                          >
+                            {OBJECTIVE_OPTIONS.map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                          <input
+                            style={{ ...css.input, marginBottom: 0 }}
+                            value={obj.primary_conversion_action}
+                            onChange={e => setObjectivesByType(prev => ({
+                              ...prev,
+                              [ct.key]: { ...obj, primary_conversion_action: e.target.value },
+                            }))}
+                            placeholder="purchase"
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {[...selectedTypes].length === 0 && (
+                <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
+                  Seleziona almeno un tipo di campagna nella sezione Budget qui sotto.
+                </div>
+              )}
             </div>
           </div>
 
@@ -1847,7 +1944,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
           </p>
           <div style={css.reviewCode}>
-            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists), null, 2)}
+            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists, objectivesByType), null, 2)}
           </div>
         </div>
       )}

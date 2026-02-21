@@ -93,11 +93,30 @@ class ConversionsConfig(BaseModel):
     value_per_conversion: Optional[float] = Field(None, ge=0)
 
 
+class CampaignTypeObjective(BaseModel):
+    """Per-campaign-type objective and conversion action override."""
+    primary: ObjectiveType
+    primary_conversion_action: str = "purchase"
+
+
 class ObjectivesInfo(BaseModel):
     primary: ObjectiveType
     secondary: List[ObjectiveType] = Field(default_factory=list)
     kpi: KpiTargets = Field(default_factory=KpiTargets)
     conversions: ConversionsConfig
+    # Per-type overrides: keys are CampaignTypeKey values (e.g. "search_brand").
+    # When present, these take priority over the global primary / conversions fields.
+    per_campaign_type: Dict[str, CampaignTypeObjective] = Field(default_factory=dict)
+
+    def get_objective_for(self, campaign_type_key: str) -> ObjectiveType:
+        """Return the objective for a specific campaign type, falling back to global."""
+        entry = self.per_campaign_type.get(campaign_type_key)
+        return entry.primary if entry else self.primary
+
+    def get_conversion_action_for(self, campaign_type_key: str) -> str:
+        """Return the primary conversion action for a specific campaign type."""
+        entry = self.per_campaign_type.get(campaign_type_key)
+        return entry.primary_conversion_action if entry else self.conversions.primary_conversion_action
 
 
 class BudgetByLanguage(BaseModel):
