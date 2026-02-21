@@ -35,6 +35,20 @@ interface FormState {
   target_cities: string
 }
 
+interface SitelinkState {
+  text: string
+  description_1: string
+  description_2: string
+  final_url: string
+}
+
+interface RemarketingListState {
+  name: string
+  type: string
+  lookback_days: string
+  source: string
+}
+
 interface LangState {
   code: string
   name: string
@@ -45,6 +59,9 @@ interface LangState {
   headlines: string
   descriptions: string
   callouts: string
+  sitelinks: SitelinkState[]
+  kw_themes: string
+  kw_negative: string
 }
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -105,6 +122,9 @@ const DEFAULT_LANG: LangState = {
   headlines: '',
   descriptions: '',
   callouts: '',
+  sitelinks: [],
+  kw_themes: '',
+  kw_negative: '',
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -190,20 +210,64 @@ function briefToBudgetByTypeLang(b: Record<string, unknown>): Record<string, Rec
   return result
 }
 
+function parseKwThemes(text: string): Record<string, string[]> {
+  const themes: Record<string, string[]> = {}
+  for (const line of text.split('\n')) {
+    const colonIdx = line.indexOf(':')
+    if (colonIdx === -1 || !line.trim()) continue
+    const theme = line.slice(0, colonIdx).trim()
+    const keywords = line.slice(colonIdx + 1).split(',').map(k => k.trim()).filter(Boolean)
+    if (theme && keywords.length > 0) themes[theme] = keywords
+  }
+  return themes
+}
+
+function briefToRemarketingLists(b: Record<string, unknown>): RemarketingListState[] {
+  const audiences = (b.audiences || {}) as Record<string, unknown>
+  const lists = (audiences.remarketing_lists as Record<string, unknown>[]) || []
+  return lists.map(rl => ({
+    name: String(rl.name || ''),
+    type: String(rl.type || 'website_visitors'),
+    lookback_days: String(rl.lookback_days || '30'),
+    source: String(rl.source || ''),
+  }))
+}
+
 function briefToLangs(b: Record<string, unknown>): LangState[] {
   const langs = (b.languages as Record<string, unknown>[]) || []
   if (!langs.length) return [{ ...DEFAULT_LANG }]
-  return langs.map(l => ({
-    code: String(l.code || ''),
-    name: String(l.name || ''),
-    google_language_id: String(l.google_language_id || ''),
-    landing_page: String(l.landing_page || ''),
-    brand_terms: ((l.brand_terms as string[]) || []).join('\n'),
-    usp_main: String(((l.usp as Record<string, unknown>)?.main) || ''),
-    headlines: ((l.headlines as string[]) || []).join('\n'),
-    descriptions: ((l.descriptions as string[]) || []).join('\n'),
-    callouts: ((l.callouts as string[]) || []).join('\n'),
-  }))
+  const akw = (b.acquisition_keywords || {}) as Record<string, unknown>
+  return langs.map(l => {
+    const code = String(l.code || '').toUpperCase()
+    const sitelinks = ((l.sitelinks as Record<string, unknown>[]) || []).map(sl => ({
+      text: String(sl.text || ''),
+      description_1: String(sl.description_1 || ''),
+      description_2: String(sl.description_2 || ''),
+      final_url: String(sl.final_url || ''),
+    }))
+    const kwPlan = akw[code] as Record<string, unknown> | undefined
+    let kw_themes = ''
+    let kw_negative = ''
+    if (kwPlan) {
+      const themes = (kwPlan.themes || {}) as Record<string, string[]>
+      kw_themes = Object.entries(themes).map(([t, kws]) => `${t}: ${kws.join(', ')}`).join('\n')
+      kw_negative = ((kwPlan.negative_keywords as string[]) || []).join('\n')
+    }
+    return {
+      code,
+      name: String(l.name || ''),
+      google_language_id: String(l.google_language_id || ''),
+      landing_page: String(l.landing_page || ''),
+      brand_terms: ((l.brand_terms as string[]) || []).join('\n'),
+      usp_main: String(((l.usp as Record<string, unknown>)?.main) || ''),
+      headlines: ((l.headlines as string[]) || []).join('\n'),
+      descriptions: ((l.descriptions as string[]) || []).join('\n'),
+      callouts: ((l.callouts as string[]) || []).join('\n'),
+      sitelinks,
+      kw_themes,
+      kw_negative,
+    }
+  })
 }
 
 function buildBrief(
@@ -211,6 +275,7 @@ function buildBrief(
   langs: LangState[],
   selectedTypes: Set<string>,
   budgetByTypeLang: Record<string, Record<string, string>>,
+  remarketingLists: RemarketingListState[],
 ): Record<string, unknown> {
   const activeLangCodes = langs.map(l => l.code.toUpperCase())
   const byCampaignType: Record<string, unknown> = {}
@@ -279,7 +344,14 @@ function buildBrief(
       usp: { main: l.usp_main || '', bullets: [] },
       headlines: toLines(l.headlines),
       descriptions: toLines(l.descriptions),
-      sitelinks: [],
+      sitelinks: l.sitelinks
+        .filter(sl => sl.text.trim())
+        .map(sl => ({
+          text: sl.text.slice(0, 25),
+          description_1: sl.description_1.slice(0, 35),
+          description_2: sl.description_2.slice(0, 35),
+          final_url: sl.final_url || l.landing_page,
+        })),
       callouts: toLines(l.callouts),
       structured_snippets: [],
     })),
@@ -290,8 +362,26 @@ function buildBrief(
       exclusions: {},
       radius_targets: [],
     },
+    acquisition_keywords: (() => {
+      const akw: Record<string, unknown> = {}
+      for (const l of langs) {
+        const themes = parseKwThemes(l.kw_themes)
+        const negatives = toLines(l.kw_negative)
+        if (Object.keys(themes).length > 0 || negatives.length > 0) {
+          akw[l.code.toUpperCase()] = { themes, negative_keywords: negatives }
+        }
+      }
+      return Object.keys(akw).length > 0 ? akw : null
+    })(),
     audiences: {
-      remarketing_lists: [],
+      remarketing_lists: remarketingLists
+        .filter(rl => rl.name.trim())
+        .map(rl => ({
+          name: rl.name.trim(),
+          type: rl.type || 'website_visitors',
+          lookback_days: parseInt(rl.lookback_days) || 30,
+          source: rl.source.trim() || 'website',
+        })),
       customer_match: { enabled: false },
       in_market_segments: [],
       custom_intent: [],
@@ -465,8 +555,13 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [budgetByTypeLang, setBudgetByTypeLang] = useState<Record<string, Record<string, string>>>(() =>
     existingBrief ? briefToBudgetByTypeLang(existingBrief) : {}
   )
+  const [remarketingLists, setRemarketingLists] = useState<RemarketingListState[]>(() =>
+    existingBrief ? briefToRemarketingLists(existingBrief) : []
+  )
   const [errors, setErrors] = useState<string[]>([])
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveHadWarnings, setSaveHadWarnings] = useState(false)
+  const [kwSuggestingLang, setKwSuggestingLang] = useState<number | null>(null)
 
   // ── Auto-fill state ────────────────────────────────────────────────────────
   const [autofillUrl, setAutofillUrl] = useState('')
@@ -511,6 +606,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           headlines: (l.headlines || []).join('\n'),
           descriptions: (l.descriptions || []).join('\n'),
           callouts: (l.callouts || []).join('\n'),
+          sitelinks: [],
+          kw_themes: '',
+          kw_negative: '',
         })))
       }
       setAutofillSuccess(true)
@@ -528,17 +626,42 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
     )
   }
 
+  const kwSuggestMutation = useMutation({
+    mutationFn: ({ lang }: { langIdx: number; lang: LangState }) =>
+      autofillApi.suggestKeywords({
+        brand_name: form.brand_name,
+        hotel_category: form.hotel_category,
+        stars: parseInt(form.stars) || 3,
+        language_code: lang.code,
+        domain: form.domain || undefined,
+        services: toLines(form.services),
+        strengths: toLines(form.strengths),
+      }),
+    onSuccess: (data, { langIdx }) => {
+      setLangs(prev => prev.map((l, i) => i === langIdx
+        ? { ...l, kw_themes: data.kw_themes_text, kw_negative: data.kw_negative_text }
+        : l
+      ))
+      setKwSuggestingLang(null)
+    },
+    onError: (e: Error) => {
+      setErrors([`Suggerimento keyword: ${e.message}`])
+      setKwSuggestingLang(null)
+    },
+  })
+
   const saveMutation = useMutation({
     mutationFn: (brief: Record<string, unknown>) => projectsApi.uploadBrief(projectId, brief),
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['brief', projectId] })
       qc.invalidateQueries({ queryKey: ['project', projectId] })
+      // Brief is always saved by backend — always navigate after save
+      setSaveSuccess(true)
       if (result.validation.errors.length > 0) {
         setErrors(result.validation.errors.map(e => e.message))
-      } else {
-        setSaveSuccess(true)
-        setTimeout(onSaved, 1200)
+        setSaveHadWarnings(true)
       }
+      setTimeout(onSaved, 1800)
     },
     onError: (e: Error) => setErrors([e.message]),
   })
@@ -556,7 +679,34 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   }
 
   const addLang = () =>
-    setLangs(prev => [...prev, { code: '', name: '', google_language_id: '', landing_page: '', brand_terms: '', usp_main: '', headlines: '', descriptions: '', callouts: '' }])
+    setLangs(prev => [...prev, { ...DEFAULT_LANG, code: '', name: '', google_language_id: '' }])
+
+  const addSitelink = (langIdx: number) =>
+    setLangs(prev => prev.map((l, i) => i === langIdx
+      ? { ...l, sitelinks: [...l.sitelinks, { text: '', description_1: '', description_2: '', final_url: '' }] }
+      : l
+    ))
+
+  const removeSitelink = (langIdx: number, slIdx: number) =>
+    setLangs(prev => prev.map((l, i) => i === langIdx
+      ? { ...l, sitelinks: l.sitelinks.filter((_, j) => j !== slIdx) }
+      : l
+    ))
+
+  const setSitelinkField = (langIdx: number, slIdx: number, key: keyof SitelinkState, val: string) =>
+    setLangs(prev => prev.map((l, i) => i === langIdx
+      ? { ...l, sitelinks: l.sitelinks.map((sl, j) => j === slIdx ? { ...sl, [key]: val } : sl) }
+      : l
+    ))
+
+  const addRemarketingList = () =>
+    setRemarketingLists(prev => [...prev, { name: '', type: 'website_visitors', lookback_days: '30', source: '' }])
+
+  const removeRemarketingList = (idx: number) =>
+    setRemarketingLists(prev => prev.filter((_, i) => i !== idx))
+
+  const setRemarketingListField = (idx: number, key: keyof RemarketingListState, val: string) =>
+    setRemarketingLists(prev => prev.map((rl, i) => i === idx ? { ...rl, [key]: val } : rl))
 
   const removeLang = (i: number) => setLangs(prev => prev.filter((_, idx) => idx !== i))
 
@@ -600,7 +750,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
   const handleSubmit = () => {
     if (validate()) {
-      saveMutation.mutate(buildBrief(form, langs, selectedTypes, budgetByTypeLang))
+      saveMutation.mutate(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists))
     }
   }
 
@@ -638,9 +788,13 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
 
       {/* ── Messages ── */}
       {saveSuccess && (
-        <div style={css.successBox}>Brief salvato con successo! Reindirizzamento...</div>
+        <div style={css.successBox}>
+          {saveHadWarnings
+            ? 'Brief salvato (con avvertimenti). Reindirizzamento verso overview...'
+            : 'Brief salvato con successo! Reindirizzamento...'}
+        </div>
       )}
-      {errors.length > 0 && (
+      {errors.length > 0 && !saveSuccess && (
         <div style={css.errBox}>
           <strong>Errori da correggere:</strong>
           <ul style={{ marginLeft: 16, marginTop: 4 }}>
@@ -652,6 +806,14 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           >
             ✕ Chiudi
           </button>
+        </div>
+      )}
+      {errors.length > 0 && saveSuccess && (
+        <div style={{ ...css.errBox, borderColor: T.yellow, background: '#fffbeb', color: '#92400e' }}>
+          <strong>Avvertimenti (brief salvato):</strong>
+          <ul style={{ marginLeft: 16, marginTop: 4 }}>
+            {errors.map((e, i) => <li key={i}>{e}</li>)}
+          </ul>
         </div>
       )}
 
@@ -1161,6 +1323,77 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                   placeholder={'Cancellazione gratuita\nWi-Fi incluso\nParcheggio gratuito\nCheck-in anticipato'}
                 />
               </div>
+
+              {/* ── Sitelinks ── */}
+              <div style={css.field}>
+                <label style={css.label}>Sitelink (consigliati min. 2)</label>
+                <span style={css.hint}>Testo max 25 car. · Descrizioni max 35 car. ciascuna</span>
+                {lang.sitelinks.map((sl, j) => (
+                  <div key={j} style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: 10, marginBottom: 8, background: T.bgPage }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <strong style={{ fontSize: 12, color: T.textGray }}>Sitelink {j + 1}</strong>
+                      <button style={css.btnRed} onClick={() => removeSitelink(i, j)}>✕</button>
+                    </div>
+                    <div style={css.grid2}>
+                      <div>
+                        <label style={{ ...css.label, fontSize: 11 }}>Testo *</label>
+                        <input style={css.input} value={sl.text} onChange={e => setSitelinkField(i, j, 'text', e.target.value)} maxLength={25} placeholder="Prenota Ora" />
+                        <div style={css.charCount}>{sl.text.length}/25</div>
+                      </div>
+                      <div>
+                        <label style={{ ...css.label, fontSize: 11 }}>URL finale *</label>
+                        <input style={css.input} value={sl.final_url} onChange={e => setSitelinkField(i, j, 'final_url', e.target.value)} placeholder="https://..." />
+                      </div>
+                      <div>
+                        <label style={{ ...css.label, fontSize: 11 }}>Descrizione 1</label>
+                        <input style={css.input} value={sl.description_1} onChange={e => setSitelinkField(i, j, 'description_1', e.target.value)} maxLength={35} placeholder="Miglior tariffa garantita" />
+                        <div style={css.charCount}>{sl.description_1.length}/35</div>
+                      </div>
+                      <div>
+                        <label style={{ ...css.label, fontSize: 11 }}>Descrizione 2</label>
+                        <input style={css.input} value={sl.description_2} onChange={e => setSitelinkField(i, j, 'description_2', e.target.value)} maxLength={35} placeholder="Cancellazione gratuita" />
+                        <div style={css.charCount}>{sl.description_2.length}/35</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <button style={css.btnAdd} onClick={() => addSitelink(i)}>+ Aggiungi sitelink</button>
+              </div>
+
+              {/* ── Acquisition Keywords ── */}
+              <div style={css.field}>
+                <label style={css.label}>Keyword Acquisition — opzionale</label>
+                <span style={css.hint}>Formato: "tema: kw1, kw2, kw3" — una riga per tema. Usate nelle campagne Search Acquisition.</span>
+                <div style={{ marginBottom: 6 }}>
+                  <button
+                    style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: kwSuggestingLang === i ? 0.6 : 1 }}
+                    onClick={() => {
+                      if (!form.brand_name) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }
+                      setKwSuggestingLang(i)
+                      kwSuggestMutation.mutate({ langIdx: i, lang })
+                    }}
+                    disabled={kwSuggestingLang === i}
+                  >
+                    {kwSuggestingLang === i ? '⏳ Generando...' : '✨ Suggerisci con AI'}
+                  </button>
+                </div>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 100 }}
+                  value={lang.kw_themes}
+                  onChange={e => setLangField(i, 'kw_themes', e.target.value)}
+                  placeholder={'prenotazione: prenota hotel X, hotel X booking\ncategoria: hotel 4 stelle Roma\nposizione: hotel centro storico Roma'}
+                />
+              </div>
+              <div style={css.field}>
+                <label style={css.label}>Keyword Negative — opzionale</label>
+                <span style={css.hint}>Una per riga</span>
+                <textarea
+                  style={{ ...css.textarea, minHeight: 70 }}
+                  value={lang.kw_negative}
+                  onChange={e => setLangField(i, 'kw_negative', e.target.value)}
+                  placeholder={'gratis\nreview\nopinioni\nfoto'}
+                />
+              </div>
             </div>
           ))}
           <button style={css.btnAdd} onClick={addLang}>+ Aggiungi lingua</button>
@@ -1269,6 +1502,40 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               </div>
             </div>
           </div>
+
+          <div style={css.section}>
+            <div style={css.sectionTitle}>Audience & Remarketing</div>
+            <p style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
+              Obbligatorio se hai selezionato campagne <strong>Retargeting</strong> o <strong>Demand Gen</strong>.
+              Inserisci le audience list già create in Google Ads.
+            </p>
+            {remarketingLists.map((rl, idx) => (
+              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 70px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
+                <div>
+                  <label style={{ ...css.label, fontSize: 11 }}>Nome lista *</label>
+                  <input style={css.input} value={rl.name} onChange={e => setRemarketingListField(idx, 'name', e.target.value)} placeholder="All Website Visitors" />
+                </div>
+                <div>
+                  <label style={{ ...css.label, fontSize: 11 }}>Tipo</label>
+                  <select style={css.select} value={rl.type} onChange={e => setRemarketingListField(idx, 'type', e.target.value)}>
+                    <option value="website_visitors">Visitatori sito</option>
+                    <option value="customer_list">Customer list</option>
+                    <option value="youtube">YouTube</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ ...css.label, fontSize: 11 }}>Giorni</label>
+                  <input style={css.input} type="number" min="1" max="540" value={rl.lookback_days} onChange={e => setRemarketingListField(idx, 'lookback_days', e.target.value)} placeholder="30" />
+                </div>
+                <div>
+                  <label style={{ ...css.label, fontSize: 11 }}>Sorgente (URL o nome)</label>
+                  <input style={css.input} value={rl.source} onChange={e => setRemarketingListField(idx, 'source', e.target.value)} placeholder="https://www.hotel.it" />
+                </div>
+                <button style={{ ...css.btnRed, alignSelf: 'flex-end', marginBottom: 0 }} onClick={() => removeRemarketingList(idx)}>✕</button>
+              </div>
+            ))}
+            <button style={css.btnAdd} onClick={addRemarketingList}>+ Aggiungi audience list</button>
+          </div>
         </>
       )}
 
@@ -1280,7 +1547,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
           </p>
           <div style={css.reviewCode}>
-            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang), null, 2)}
+            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists), null, 2)}
           </div>
         </div>
       )}

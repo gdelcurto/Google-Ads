@@ -187,6 +187,94 @@ class AutofillRequest(BaseModel):
     content: Optional[str] = None  # manual fallback: paste website text directly
 
 
+class KeywordsRequest(BaseModel):
+    brand_name: str
+    hotel_category: str
+    stars: int
+    language_code: str
+    domain: Optional[str] = None
+    services: Optional[List[str]] = None
+    strengths: Optional[List[str]] = None
+
+
+@router.post("/keywords")
+async def suggest_keywords(
+    payload: KeywordsRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+):
+    """
+    Generate acquisition keyword themes for a hotel using AI.
+    Returns kw_themes_text and kw_negative_text ready to paste into the brief form.
+    """
+    settings = get_settings()
+
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Chiave API Anthropic non configurata.",
+        )
+
+    lang_code = payload.language_code.upper()
+    lang_name = LANG_NAMES.get(lang_code, lang_code)
+
+    services_txt = ", ".join(payload.services or []) or "non specificati"
+    strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
+
+    prompt = f"""Sei un esperto SEA/PPC per hotel. Genera keyword themes di acquisizione per Google Ads.
+
+Hotel: {payload.brand_name}
+Categoria: {payload.hotel_category}
+Stelle: {payload.stars}
+Dominio: {payload.domain or 'non specificato'}
+Servizi: {services_txt}
+Punti di forza: {strengths_txt}
+Lingua: {lang_name} ({lang_code})
+
+Genera keyword themes per campagne Search Acquisition. Restituisci SOLO testo in questo formato:
+prenotazione: kw1, kw2, kw3, kw4
+categoria: kw1, kw2, kw3
+posizione: kw1, kw2, kw3
+servizi: kw1, kw2, kw3
+[negatives]: kw_neg1, kw_neg2, kw_neg3, kw_neg4, kw_neg5
+
+Regole:
+- 4-6 temi con 4-8 keyword ciascuno
+- Keyword REALI che un utente cercherebbe per trovare questo hotel
+- Scrivi in {lang_name}
+- Ultima riga sempre [negatives]: con 5-8 keyword negative (es. gratis, recensioni, immagini)
+- Zero testo aggiuntivo, solo le righe richieste"""
+
+    try:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+    except Exception as exc:
+        logger.error(f"Keywords suggestion failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
+
+    # Split negatives from themes
+    lines = [l.strip() for l in raw.split('\n') if l.strip()]
+    theme_lines = []
+    negative_lines = []
+    for line in lines:
+        if line.lower().startswith('[negatives]') or line.lower().startswith('negatives'):
+            colon = line.find(':')
+            if colon != -1:
+                negative_lines = [k.strip() for k in line[colon + 1:].split(',') if k.strip()]
+        else:
+            theme_lines.append(line)
+
+    return {
+        "kw_themes_text": "\n".join(theme_lines),
+        "kw_negative_text": "\n".join(negative_lines),
+    }
+
+
 @router.post("")
 async def autofill_from_url(
     payload: AutofillRequest,

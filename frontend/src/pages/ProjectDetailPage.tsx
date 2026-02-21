@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
@@ -80,7 +80,7 @@ const s: Record<string, React.CSSProperties> = {
   },
 }
 
-type Tab = 'overview' | 'campaigns' | 'brief' | 'audit'
+type Tab = 'overview' | 'campaigns' | 'brief' | 'audit' | 'plan_json'
 
 function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
   const [expanded, setExpanded] = useState(false)
@@ -187,6 +187,7 @@ export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [planJsonText, setPlanJsonText] = useState('')
   const qc = useQueryClient()
 
   const { data: project } = useQuery({
@@ -212,6 +213,20 @@ export default function ProjectDetailPage() {
     queryKey: ['audit', id],
     queryFn: () => projectsApi.getAudit(id!),
     enabled: activeTab === 'audit',
+  })
+
+  // Sync plan JSON editor when plan changes
+  useEffect(() => {
+    if (plan) setPlanJsonText(JSON.stringify(plan, null, 2))
+  }, [plan])
+
+  const savePlanMutation = useMutation({
+    mutationFn: (planData: Record<string, unknown>) => projectsApi.savePlan(id!, planData),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['plan', id] })
+      setMessage({ type: 'success', text: 'Piano salvato con successo.' })
+    },
+    onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
 
   const generateMutation = useMutation({
@@ -253,7 +268,18 @@ export default function ProjectDetailPage() {
         <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
           {generateMutation.isPending ? 'Generando...' : 'Genera Piano (Dry Run)'}
         </button>
-        <button style={s.btnGreen} onClick={() => projectsApi.exportCsv(id!)} disabled={!plan}>
+        <button
+          style={s.btnGreen}
+          onClick={async () => {
+            try {
+              await projectsApi.exportCsv(id!)
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : 'Errore export'
+              setMessage({ type: 'error', text: `Export CSV: ${msg}` })
+            }
+          }}
+          disabled={!plan}
+        >
           Esporta CSV
         </button>
         <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
@@ -262,13 +288,17 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'brief', 'audit'] as Tab[]).map(t => (
+        {(['overview', 'campaigns', 'brief', 'plan_json', 'audit'] as Tab[]).map(t => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview' ? 'Overview' : t === 'campaigns' ? 'Campagne' : t === 'brief' ? 'Brief' : 'Audit Log'}
+            {t === 'overview' ? 'Overview'
+              : t === 'campaigns' ? 'Campagne'
+              : t === 'brief' ? 'Brief'
+              : t === 'plan_json' ? 'Modifica Piano'
+              : 'Audit Log'}
           </button>
         ))}
       </div>
@@ -314,6 +344,49 @@ export default function ProjectDetailPage() {
                 setActiveTab('overview')
               }}
             />
+          )}
+        </div>
+      )}
+
+      {activeTab === 'plan_json' && (
+        <div>
+          <p style={{ fontSize: 13, color: T.textGray, marginBottom: 12 }}>
+            Modifica manualmente il JSON del piano campagne. Utile per aggiustamenti rapidi senza rigenerare.
+            {!plan && ' Genera prima il piano con il pulsante "Genera Piano".'}
+          </p>
+          {plan ? (
+            <>
+              <textarea
+                style={s.textarea}
+                value={planJsonText}
+                onChange={e => setPlanJsonText(e.target.value)}
+                rows={30}
+              />
+              <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                <button
+                  style={s.btnGreen}
+                  onClick={() => {
+                    try {
+                      const parsed = JSON.parse(planJsonText)
+                      savePlanMutation.mutate(parsed)
+                    } catch {
+                      setMessage({ type: 'error', text: 'JSON non valido — controlla la sintassi.' })
+                    }
+                  }}
+                  disabled={savePlanMutation.isPending}
+                >
+                  {savePlanMutation.isPending ? 'Salvataggio...' : 'Salva Piano Modificato'}
+                </button>
+                <button
+                  style={s.btnOutline}
+                  onClick={() => plan && setPlanJsonText(JSON.stringify(plan, null, 2))}
+                >
+                  Ripristina
+                </button>
+              </div>
+            </>
+          ) : (
+            <p style={{ color: T.textGray }}>Genera prima il piano.</p>
           )}
         </div>
       )}

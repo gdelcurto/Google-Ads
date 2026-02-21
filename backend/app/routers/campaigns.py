@@ -114,6 +114,35 @@ async def generate_campaign_plan(
     return _plan_to_preview(plan)
 
 
+@router.put("/{project_id}/plan")
+async def save_plan_json(
+    project_id: str,
+    plan_data: dict,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Save a manually edited plan JSON back to the project."""
+    project = await _get_project_or_404(project_id, db)
+    try:
+        plan = AccountPlan(**plan_data)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Piano JSON non valido: {exc}")
+
+    project.plan_json = plan.model_dump_json()
+
+    log = AuditLog(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="save_plan_manual",
+        entity_type="project",
+        entity_id=project_id,
+        details=json.dumps({"campaigns_count": len(plan.campaigns)}),
+    )
+    db.add(log)
+
+    return {"status": "ok", "campaigns": len(plan.campaigns)}
+
+
 @router.get("/{project_id}/plan")
 async def get_plan(
     project_id: str,

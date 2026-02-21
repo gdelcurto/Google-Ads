@@ -85,8 +85,27 @@ export const projectsApi = {
   getPlan: (id: string) =>
     api.get<AccountPlanPreview>(`/projects/${id}/plan`).then((r) => r.data),
 
-  exportCsv: (id: string) => {
-    window.open(`/api/projects/${id}/export/csv`, '_blank')
+  exportCsv: async (id: string): Promise<void> => {
+    const token = localStorage.getItem('token')
+    const resp = await fetch(`/api/projects/${id}/export/csv`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }))
+      throw new Error(err.detail || `Export failed: ${resp.status}`)
+    }
+    const blob = await resp.blob()
+    const url = URL.createObjectURL(blob)
+    const cd = resp.headers.get('Content-Disposition') || ''
+    const nameMatch = cd.match(/filename="([^"]+)"/)
+    const filename = nameMatch ? nameMatch[1] : `campaigns_${id}.csv`
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   publish: (id: string, dryRun = true) =>
@@ -94,6 +113,9 @@ export const projectsApi = {
 
   getAudit: (id: string) =>
     api.get<unknown[]>(`/projects/${id}/audit`).then((r) => r.data),
+
+  savePlan: (id: string, planData: Record<string, unknown>) =>
+    api.put<{ status: string; campaigns: number }>(`/projects/${id}/plan`, planData).then((r) => r.data),
 }
 
 export interface AutofillResult {
@@ -125,6 +147,17 @@ export interface AutofillResult {
 export const autofillApi = {
   fromUrl: (url: string, languages: string[], content?: string) =>
     api.post<AutofillResult>('/autofill', { url, languages, content }).then((r) => r.data),
+
+  suggestKeywords: (data: {
+    brand_name: string
+    hotel_category: string
+    stars: number
+    language_code: string
+    domain?: string
+    services?: string[]
+    strengths?: string[]
+  }) =>
+    api.post<{ kw_themes_text: string; kw_negative_text: string }>('/autofill/keywords', data).then((r) => r.data),
 }
 
 export const authApi = {
