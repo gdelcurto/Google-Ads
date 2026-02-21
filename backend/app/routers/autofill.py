@@ -197,6 +197,18 @@ class KeywordsRequest(BaseModel):
     strengths: Optional[List[str]] = None
 
 
+class SitelinksRequest(BaseModel):
+    brand_name: str
+    hotel_category: str
+    stars: int
+    language_code: str
+    landing_page: str
+    domain: Optional[str] = None
+    services: Optional[List[str]] = None
+    strengths: Optional[List[str]] = None
+    booking_engine_url: Optional[str] = None
+
+
 @router.post("/keywords")
 async def suggest_keywords(
     payload: KeywordsRequest,
@@ -273,6 +285,99 @@ Regole:
         "kw_themes_text": "\n".join(theme_lines),
         "kw_negative_text": "\n".join(negative_lines),
     }
+
+
+@router.post("/sitelinks")
+async def suggest_sitelinks(
+    payload: SitelinksRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+):
+    """
+    Generate 4–6 Google Ads sitelinks for a hotel using AI.
+    Returns a list of sitelink objects ready to populate the brief form.
+    """
+    settings = get_settings()
+
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Chiave API Anthropic non configurata.",
+        )
+
+    lang_code = payload.language_code.upper()
+    lang_name = LANG_NAMES.get(lang_code, lang_code)
+    services_txt = ", ".join(payload.services or []) or "non specificati"
+    strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
+    booking_url = payload.booking_engine_url or payload.landing_page
+
+    prompt = f"""Sei un esperto Google Ads per hotel. Genera esattamente 5 sitelink per Google Ads.
+
+Hotel: {payload.brand_name}
+Categoria: {payload.hotel_category} — {payload.stars} stelle
+Lingua: {lang_name} ({lang_code})
+Landing page: {payload.landing_page}
+Booking engine: {booking_url}
+Servizi: {services_txt}
+Punti di forza: {strengths_txt}
+
+REGOLE ASSOLUTE:
+- text: MASSIMO 25 caratteri, spazi inclusi. Conta ogni carattere.
+- description_1: MASSIMO 35 caratteri, spazi inclusi.
+- description_2: MASSIMO 35 caratteri, spazi inclusi.
+- final_url: URL reale basata sulla landing page (modifica il path, non inventare domini)
+- Scrivi text, description_1, description_2 in {lang_name}
+- Temi suggeriti: prenotazione diretta, offerte speciali, camere, servizi, posizione/attrazioni
+
+Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
+[
+  {{"text": "Prenota Ora", "description_1": "Miglior tariffa garantita", "description_2": "Cancellazione gratuita inclusa", "final_url": "{booking_url}"}},
+  {{"text": "Offerte Speciali", "description_1": "Pacchetti esclusivi per soggiorni", "description_2": "Risparmia prenotando online", "final_url": "{payload.landing_page}/offerte"}},
+  {{"text": "Le Nostre Camere", "description_1": "Camere eleganti e confortevoli", "description_2": "Vista panoramica e servizi top", "final_url": "{payload.landing_page}/camere"}},
+  {{"text": "Servizi Hotel", "description_1": "SPA, ristorante e molto altro", "description_2": "Tutto per il tuo relax", "final_url": "{payload.landing_page}/servizi"}},
+  {{"text": "Come Raggiungerci", "description_1": "Posizione centrale e accessibile", "description_2": "Navetta aeroporto disponibile", "final_url": "{payload.landing_page}/contatti"}}
+]"""
+
+    try:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        message = await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = message.content[0].text.strip()
+    except Exception as exc:
+        logger.error(f"Sitelinks suggestion failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
+
+    # Parse JSON array from response
+    try:
+        json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', raw, re.DOTALL)
+        if json_match:
+            raw = json_match.group(1)
+        else:
+            start = raw.find('[')
+            end = raw.rfind(']')
+            if start != -1 and end != -1:
+                raw = raw[start:end + 1]
+        sitelinks = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.error(f"Sitelinks JSON parse error: {exc}\nRaw: {raw[:500]}")
+        raise HTTPException(status_code=500, detail="Risposta AI non parsabile. Riprova.")
+
+    # Hard-enforce character limits
+    result = []
+    for sl in sitelinks:
+        if not isinstance(sl, dict) or not sl.get("text"):
+            continue
+        result.append({
+            "text": str(sl.get("text", ""))[:25],
+            "description_1": str(sl.get("description_1", ""))[:35],
+            "description_2": str(sl.get("description_2", ""))[:35],
+            "final_url": str(sl.get("final_url", payload.landing_page)),
+        })
+
+    return {"sitelinks": result}
 
 
 @router.post("")

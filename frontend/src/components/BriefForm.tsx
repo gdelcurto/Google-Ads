@@ -562,6 +562,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveHadWarnings, setSaveHadWarnings] = useState(false)
   const [kwSuggestingLang, setKwSuggestingLang] = useState<number | null>(null)
+  const [slSuggestingLang, setSlSuggestingLang] = useState<number | null>(null)
 
   // ── Auto-fill state ────────────────────────────────────────────────────────
   const [autofillUrl, setAutofillUrl] = useState('')
@@ -647,6 +648,32 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
     onError: (e: Error) => {
       setErrors([`Suggerimento keyword: ${e.message}`])
       setKwSuggestingLang(null)
+    },
+  })
+
+  const slSuggestMutation = useMutation({
+    mutationFn: ({ lang }: { langIdx: number; lang: LangState }) =>
+      autofillApi.suggestSitelinks({
+        brand_name: form.brand_name,
+        hotel_category: form.hotel_category,
+        stars: parseInt(form.stars) || 3,
+        language_code: lang.code,
+        landing_page: lang.landing_page || `https://${form.domain}`,
+        domain: form.domain || undefined,
+        services: toLines(form.services),
+        strengths: toLines(form.strengths),
+        booking_engine_url: form.booking_engine_url || undefined,
+      }),
+    onSuccess: (data, { langIdx }) => {
+      setLangs(prev => prev.map((l, i) => i === langIdx
+        ? { ...l, sitelinks: data.sitelinks }
+        : l
+      ))
+      setSlSuggestingLang(null)
+    },
+    onError: (e: Error) => {
+      setErrors([`Suggerimento sitelink: ${e.message}`])
+      setSlSuggestingLang(null)
     },
   })
 
@@ -1328,6 +1355,20 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               <div style={css.field}>
                 <label style={css.label}>Sitelink (consigliati min. 2)</label>
                 <span style={css.hint}>Testo max 25 car. · Descrizioni max 35 car. ciascuna</span>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
+                  <button
+                    style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: slSuggestingLang === i ? 0.6 : 1 }}
+                    onClick={() => {
+                      if (!form.brand_name) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }
+                      setSlSuggestingLang(i)
+                      slSuggestMutation.mutate({ langIdx: i, lang })
+                    }}
+                    disabled={slSuggestingLang === i}
+                  >
+                    {slSuggestingLang === i ? '⏳ Generando sitelink...' : '✨ Genera sitelink con AI'}
+                  </button>
+                  <span style={{ fontSize: 11, color: T.textGray }}>oppure aggiungili manualmente →</span>
+                </div>
                 {lang.sitelinks.map((sl, j) => (
                   <div key={j} style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: 10, marginBottom: 8, background: T.bgPage }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1364,7 +1405,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
               <div style={css.field}>
                 <label style={css.label}>Keyword Acquisition — opzionale</label>
                 <span style={css.hint}>Formato: "tema: kw1, kw2, kw3" — una riga per tema. Usate nelle campagne Search Acquisition.</span>
-                <div style={{ marginBottom: 6 }}>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' as const }}>
                   <button
                     style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: kwSuggestingLang === i ? 0.6 : 1 }}
                     onClick={() => {
@@ -1374,8 +1415,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                     }}
                     disabled={kwSuggestingLang === i}
                   >
-                    {kwSuggestingLang === i ? '⏳ Generando...' : '✨ Suggerisci con AI'}
+                    {kwSuggestingLang === i ? '⏳ Generando keyword...' : '✨ Genera keyword con AI'}
                   </button>
+                  <span style={{ fontSize: 11, color: T.textGray }}>oppure inseriscile manualmente ↓</span>
                 </div>
                 <textarea
                   style={{ ...css.textarea, minHeight: 100 }}

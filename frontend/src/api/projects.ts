@@ -158,6 +158,21 @@ export const autofillApi = {
     strengths?: string[]
   }) =>
     api.post<{ kw_themes_text: string; kw_negative_text: string }>('/autofill/keywords', data).then((r) => r.data),
+
+  suggestSitelinks: (data: {
+    brand_name: string
+    hotel_category: string
+    stars: number
+    language_code: string
+    landing_page: string
+    domain?: string
+    services?: string[]
+    strengths?: string[]
+    booking_engine_url?: string
+  }) =>
+    api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[] }>(
+      '/autofill/sitelinks', data
+    ).then((r) => r.data),
 }
 
 export const authApi = {
