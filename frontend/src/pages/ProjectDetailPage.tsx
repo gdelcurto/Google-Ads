@@ -184,12 +184,179 @@ function PlanSummary({ plan }: { plan: AccountPlanPreview }) {
   )
 }
 
+const TYPE_COLOR: Record<string, string> = {
+  search_brand:       '#1a73e8',
+  search_acquisition: '#ea8600',
+  retargeting:        '#7c3aed',
+  performance_max:    '#059669',
+  demand_gen:         '#e10098',
+}
+
+const TYPE_LABEL: Record<string, string> = {
+  search_brand:       'Brand',
+  search_acquisition: 'Acquisition',
+  retargeting:        'Retargeting',
+  performance_max:    'Performance Max',
+  demand_gen:         'Demand Gen',
+}
+
+function CampaignPreviewCard({
+  campaign, briefLang, domain,
+}: {
+  campaign: CampaignPreview
+  briefLang: Record<string, unknown> | undefined
+  domain: string
+}) {
+  const [open, setOpen] = useState(false)
+  const isPMax = campaign.campaign_type === 'performance_max'
+  const color = TYPE_COLOR[campaign.campaign_type] || T.primary
+  const label = TYPE_LABEL[campaign.campaign_type] || campaign.campaign_type
+
+  return (
+    <div style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg, marginBottom: 12, overflow: 'hidden' }}>
+
+      {/* ── Header row (always visible) ── */}
+      <div
+        style={{
+          padding: '12px 16px', background: T.bgMuted, cursor: 'pointer',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          borderBottom: open ? `1px solid ${T.borderLight}` : 'none',
+        }}
+        onClick={() => setOpen(o => !o)}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
+          <span style={{ background: color, color: '#fff', borderRadius: 4, fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
+            {label}
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 14 }}>{campaign.campaign_name}</span>
+          <span style={{ fontSize: 12, color: T.textGray }}>
+            {campaign.language_code} · €{campaign.budget_daily_eur.toFixed(2)}/d · {campaign.bid_strategy}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+          {campaign.publish_blockers.length > 0 && (
+            <span style={{ fontSize: 11, color: T.error, fontWeight: 700 }}>
+              {campaign.publish_blockers.length} {campaign.publish_blockers.length === 1 ? 'blocco' : 'blocchi'}
+            </span>
+          )}
+          <span style={{ fontSize: 11, fontWeight: 700, color: campaign.can_publish ? T.success : T.error }}>
+            {campaign.can_publish ? '✓ Pronta' : '✗ Bloccata'}
+          </span>
+          <span style={{ fontSize: 12, color: T.textGray }}>{open ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {/* ── Expanded body ── */}
+      {open && (
+        <div style={{ padding: 20 }}>
+
+          {/* Publish blockers */}
+          {campaign.publish_blockers.length > 0 && (
+            <div style={{ background: '#fff0f0', border: '1px solid #fca5a5', borderRadius: T.radiusSm, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: T.error }}>
+              <strong>Blocchi:</strong>
+              <ul style={{ marginLeft: 16, marginTop: 4 }}>
+                {campaign.publish_blockers.map((b, i) => <li key={i}>{b}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* ── Performance Max ── */}
+          {isPMax ? (
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Asset Groups</div>
+              {campaign.pmax_asset_groups.length === 0
+                ? <p style={{ color: T.textGray, fontSize: 13 }}>Nessun asset group trovato.</p>
+                : campaign.pmax_asset_groups.map((ag, i) => (
+                  <div key={i} style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusSm, padding: '10px 14px', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <strong style={{ fontSize: 13 }}>📦 {ag.name}</strong>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: ag.has_missing_assets ? T.error : T.success }}>
+                        {ag.has_missing_assets ? '⚠ Asset mancanti' : '✓ Completo'}
+                      </span>
+                    </div>
+                    {ag.missing_asset_notes.length > 0 && (
+                      <ul style={{ fontSize: 12, color: T.error, marginLeft: 16 }}>
+                        {ag.missing_asset_notes.map((n, j) => <li key={j}>{n}</li>)}
+                      </ul>
+                    )}
+                    {ag.audience_signals.length > 0 && (
+                      <div style={{ fontSize: 12, color: T.textGray, marginTop: 4 }}>
+                        Audience signals: {ag.audience_signals.join(', ')}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: T.textGray, marginTop: 2 }}>
+                      Headline asset: {ag.headlines_count}
+                    </div>
+                  </div>
+                ))
+              }
+              {/* Brief assets recap */}
+              {briefLang && (
+                <div style={{ marginTop: 16, padding: '12px 14px', background: T.bgMuted, borderRadius: T.radiusSm, fontSize: 13 }}>
+                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Asset testo da brief ({campaign.language_code})</div>
+                  <div style={{ marginBottom: 4 }}>
+                    <strong>Headline:</strong>{' '}
+                    {(briefLang.headlines as string[] || []).slice(0, 3).join(' | ')}
+                    {(briefLang.headlines as string[] || []).length > 3
+                      ? ` +${(briefLang.headlines as string[] || []).length - 3} altri` : ''}
+                  </div>
+                  <div>
+                    <strong>Description:</strong>{' '}
+                    {(briefLang.descriptions as string[] || []).slice(0, 1).join('')}
+                  </div>
+                </div>
+              )}
+            </div>
+
+          ) : (
+            /* ── Search / Retargeting / Demand Gen — RSA preview ── */
+            briefLang ? (
+              <GoogleAdPreview
+                lang={{
+                  headlines:    briefLang.headlines    as string[] || [],
+                  descriptions: briefLang.descriptions as string[] || [],
+                  callouts:     briefLang.callouts     as string[] || [],
+                  sitelinks:    briefLang.sitelinks    as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
+                }}
+                domain={domain}
+              />
+            ) : (
+              <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
+                Asset non trovati per la lingua <strong>{campaign.language_code}</strong> nel brief.
+                Assicurati che la lingua sia configurata nel brief.
+              </div>
+            )
+          )}
+
+          {/* ── Ad Groups table ── */}
+          {campaign.ad_groups.length > 0 && (
+            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderLight}`, paddingTop: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.textGray, marginBottom: 8 }}>
+                Ad Groups ({campaign.ad_groups_count})
+              </div>
+              {campaign.ad_groups.map((ag, i) => (
+                <div key={i} style={{ fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
+                  <span style={{ fontWeight: 600 }}>📁 {ag.name}</span>
+                  <span style={{ color: T.textGray }}>KW: {ag.keywords_count}</span>
+                  <span style={{ color: T.textGray }}>Annunci: {ag.ads_count}</span>
+                  {ag.audience_targeting.length > 0 && (
+                    <span style={{ color: T.textGray }}>Audience: {ag.audience_targeting.join(', ')}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [planJsonText, setPlanJsonText] = useState('')
-  const [previewLangIdx, setPreviewLangIdx] = useState(0)
   const qc = useQueryClient()
 
   const { data: project } = useQuery({
@@ -200,7 +367,7 @@ export default function ProjectDetailPage() {
   const { data: plan } = useQuery({
     queryKey: ['plan', id],
     queryFn: () => projectsApi.getPlan(id!),
-    enabled: activeTab === 'campaigns' || activeTab === 'overview',
+    enabled: activeTab === 'campaigns' || activeTab === 'overview' || activeTab === 'preview',
     retry: false,
   })
 
@@ -332,72 +499,51 @@ export default function ProjectDetailPage() {
       )}
 
       {activeTab === 'preview' && (() => {
-        const briefLangs = (brief as any)?.languages as any[] | undefined
+        const briefLangs = (brief as any)?.languages as Record<string, unknown>[] | undefined
         const briefDomain = (brief as any)?.client?.domain || (brief as any)?.hotel?.domain || ''
+
+        const ready   = plan?.campaigns.filter(c => c.can_publish).length ?? 0
+        const blocked = plan?.campaigns.filter(c => !c.can_publish).length ?? 0
+
         return (
           <div>
-            <p style={{ fontSize: 13, color: T.textGray, marginBottom: 16 }}>
-              Simulazione di come apparirà il tuo annuncio RSA su Google. Google ottimizza
-              automaticamente la combinazione di headline e descrizioni in base alle performance.
-            </p>
-
-            {!project.has_brief ? (
-              <div style={s.card}>
-                <p style={{ color: T.textGray }}>Carica prima il brief per visualizzare l'anteprima.</p>
+            {/* Summary bar */}
+            {plan && (
+              <div style={{ display: 'flex', gap: 24, marginBottom: 20, fontSize: 13, flexWrap: 'wrap' as const }}>
+                <span>Campagne totali: <strong>{plan.total_campaigns}</strong></span>
+                <span style={{ color: T.success }}>Pronte: <strong>{ready}</strong></span>
+                <span style={{ color: blocked > 0 ? T.error : T.textGray }}>Bloccate: <strong>{blocked}</strong></span>
+                <span style={{ color: T.textGray, fontSize: 12 }}>
+                  Clicca su una campagna per vedere l'anteprima dell'annuncio
+                </span>
               </div>
-            ) : briefFetching ? (
-              <p style={{ color: T.textGray }}>Caricamento brief...</p>
-            ) : briefLangs && briefLangs.length > 0 ? (
-              <>
-                {/* Language pill tabs */}
-                <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-                  {briefLangs.map((lang: any, i: number) => (
-                    <button
-                      key={i}
-                      onClick={() => setPreviewLangIdx(i)}
-                      style={{
-                        padding: '6px 18px', border: 'none', borderRadius: 20, cursor: 'pointer',
-                        fontSize: 13, fontWeight: previewLangIdx === i ? 700 : 400,
-                        background: previewLangIdx === i ? T.primary : T.bgMuted,
-                        color: previewLangIdx === i ? '#fff' : T.textGray,
-                        transition: 'all .15s',
-                      }}
-                    >
-                      {lang.code}{lang.name ? ` — ${lang.name}` : ''}
-                    </button>
-                  ))}
-                </div>
+            )}
 
-                {/* Preview for selected language */}
-                {(() => {
-                  const lang = briefLangs[previewLangIdx]
-                  if (!lang) return null
-                  let domain = briefDomain
-                  if (!domain && lang.landing_page) {
-                    try { domain = new URL(lang.landing_page).hostname } catch { /* ok */ }
-                  }
-                  return (
-                    <GoogleAdPreview
-                      lang={{
-                        headlines: lang.headlines || [],
-                        descriptions: lang.descriptions || [],
-                        callouts: lang.callouts || [],
-                        sitelinks: lang.sitelinks || [],
-                      }}
-                      domain={domain}
-                    />
-                  )
-                })()}
-              </>
-            ) : (
+            {!plan ? (
               <div style={s.card}>
-                <p style={{ color: T.textGray }}>
-                  Nessuna lingua configurata nel brief.{' '}
-                  <button style={{ ...s.btn, fontSize: 12, padding: '4px 12px' }} onClick={() => setActiveTab('brief')}>
-                    Vai al Brief
-                  </button>
+                <p style={{ color: T.textGray, marginBottom: 12 }}>
+                  Genera prima il piano per vedere l'anteprima di tutte le campagne.
                 </p>
+                <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
+                  {generateMutation.isPending ? 'Generando...' : 'Genera Piano'}
+                </button>
               </div>
+            ) : (
+              plan.campaigns.map(campaign => {
+                const briefLang = briefLangs?.find(l => l.code === campaign.language_code)
+                let domain = briefDomain
+                if (!domain && briefLang?.landing_page) {
+                  try { domain = new URL(briefLang.landing_page as string).hostname } catch { /* ok */ }
+                }
+                return (
+                  <CampaignPreviewCard
+                    key={campaign.external_key}
+                    campaign={campaign}
+                    briefLang={briefLang}
+                    domain={domain}
+                  />
+                )
+              })
             )}
           </div>
         )
