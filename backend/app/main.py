@@ -1,6 +1,7 @@
 """
 Google Ads Hotel Campaigns — FastAPI application entry point.
 """
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -45,7 +46,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
     alembic_cfg = AlembicConfig("alembic.ini")
-    alembic_command.upgrade(alembic_cfg, "head")
+    await asyncio.to_thread(alembic_command.upgrade, alembic_cfg, "head")
     logger.info("Database migrations applied")
     await _seed_admin()
     logger.info(
