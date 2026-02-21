@@ -8,16 +8,17 @@ export const T = {
   secondary:   '#f8f4f0',   // cream — light card tint
 
   // Text
-  text:        '#000',
-  textGray:    '#a6a6a6',   // muted / secondary text
+  text:        '#111',
+  textGray:    '#6b6b6b',   // muted — contrast 5.7:1 on white (WCAG AA)
 
   // Backgrounds
   bgPage:      '#fff',
   bgCard:      '#fff',
+  bgMuted:     '#f7f7f7',   // subtle section bg / alternating rows
 
   // Borders
-  borderLight: '#ebebeb',
-  border:      '#e1e1e1',
+  borderLight: '#e4e4e4',   // card borders, dividers
+  border:      '#c4c4c4',   // input borders, visible outlines
 
   // Palette extras
   blue:        '#576a8f',
@@ -33,8 +34,8 @@ export const T = {
   navBg:       '#000',
 
   // Elevation
-  shadow:      '0 1px 4px rgba(0,0,0,0.07)',
-  shadowMd:    '0 4px 24px rgba(0,0,0,0.10)',
+  shadow:      '0 1px 6px rgba(0,0,0,0.10)',
+  shadowMd:    '0 4px 20px rgba(0,0,0,0.13)',
 
   // Shape
   radius:      8,

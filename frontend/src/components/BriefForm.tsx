@@ -305,8 +305,8 @@ const css: Record<string, React.CSSProperties> = {
   },
   charCount: { fontSize: 11, color: T.textGray, textAlign: 'right', marginTop: 2 },
   langCard: {
-    border: `1px solid ${T.border}`, borderRadius: T.radiusLg,
-    padding: 16, marginBottom: 16, background: T.secondary,
+    border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg,
+    padding: 16, marginBottom: 16, background: T.bgMuted,
   },
   langHeader: {
     display: 'flex', justifyContent: 'space-between',

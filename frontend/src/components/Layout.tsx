@@ -12,7 +12,7 @@ const s: Record<string, React.CSSProperties> = {
     gap: 32,
     height: 60,
     flexShrink: 0,
-    boxShadow: '2px 2px 8px -7px rgba(0,0,0,1)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
   },
   logo: { height: 26, display: 'block' },
   navDivider: { width: 1, height: 20, background: T.borderLight, flexShrink: 0 },
