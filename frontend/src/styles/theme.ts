@@ -12,7 +12,7 @@ export const T = {
   textGray:    '#a6a6a6',   // muted / secondary text
 
   // Backgrounds
-  bgPage:      '#efefef',
+  bgPage:      '#fff',
   bgCard:      '#fff',
 
   // Borders
