@@ -63,6 +63,13 @@ interface LangState {
   sitelinks: SitelinkState[]
   kw_themes: string
   kw_negative: string
+  // Per-type RSA copy overrides (optional)
+  brand_headlines: string
+  brand_descriptions: string
+  acquisition_headlines: string
+  acquisition_descriptions: string
+  retargeting_headlines: string
+  retargeting_descriptions: string
 }
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -126,6 +133,12 @@ const DEFAULT_LANG: LangState = {
   sitelinks: [],
   kw_themes: '',
   kw_negative: '',
+  brand_headlines: '',
+  brand_descriptions: '',
+  acquisition_headlines: '',
+  acquisition_descriptions: '',
+  retargeting_headlines: '',
+  retargeting_descriptions: '',
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -254,6 +267,9 @@ function briefToLangs(b: Record<string, unknown>): LangState[] {
       kw_themes = Object.entries(themes).map(([t, kws]) => `${t}: ${kws.join(', ')}`).join('\n')
       kw_negative = ((kwPlan.negative_keywords as string[]) || []).join('\n')
     }
+    const brandAssets = l.brand_assets as { headlines?: string[]; descriptions?: string[] } | undefined
+    const acqAssets = l.acquisition_assets as { headlines?: string[]; descriptions?: string[] } | undefined
+    const retAssets = l.retargeting_assets as { headlines?: string[]; descriptions?: string[] } | undefined
     return {
       code,
       name: String(l.name || ''),
@@ -267,6 +283,12 @@ function briefToLangs(b: Record<string, unknown>): LangState[] {
       sitelinks,
       kw_themes,
       kw_negative,
+      brand_headlines: (brandAssets?.headlines || []).join('\n'),
+      brand_descriptions: (brandAssets?.descriptions || []).join('\n'),
+      acquisition_headlines: (acqAssets?.headlines || []).join('\n'),
+      acquisition_descriptions: (acqAssets?.descriptions || []).join('\n'),
+      retargeting_headlines: (retAssets?.headlines || []).join('\n'),
+      retargeting_descriptions: (retAssets?.descriptions || []).join('\n'),
     }
   })
 }
@@ -355,6 +377,18 @@ function buildBrief(
         })),
       callouts: toLines(l.callouts),
       structured_snippets: [],
+      brand_assets: toLines(l.brand_headlines).length > 0 ? {
+        headlines: toLines(l.brand_headlines).map(h => h.slice(0, 30)),
+        descriptions: toLines(l.brand_descriptions).map(d => d.slice(0, 90)),
+      } : null,
+      acquisition_assets: toLines(l.acquisition_headlines).length > 0 ? {
+        headlines: toLines(l.acquisition_headlines).map(h => h.slice(0, 30)),
+        descriptions: toLines(l.acquisition_descriptions).map(d => d.slice(0, 90)),
+      } : null,
+      retargeting_assets: toLines(l.retargeting_headlines).length > 0 ? {
+        headlines: toLines(l.retargeting_headlines).map(h => h.slice(0, 30)),
+        descriptions: toLines(l.retargeting_descriptions).map(d => d.slice(0, 90)),
+      } : null,
     })),
     geo_targeting: {
       target_countries: toLines(form.target_countries),
@@ -533,6 +567,91 @@ const langPillStyle = (active: boolean): React.CSSProperties => ({
   background: active ? T.primary : T.bgCard, color: active ? '#fff' : T.textGray,
 })
 
+// ── PerTypeCopySection ────────────────────────────────────────────────────────
+
+function PerTypeCopySection({
+  label, description,
+  headlinesValue, descriptionsValue,
+  headlinesPlaceholder, descriptionsPlaceholder,
+  onHeadlinesChange, onDescriptionsChange,
+}: {
+  label: string
+  description: string
+  headlinesValue: string
+  descriptionsValue: string
+  headlinesPlaceholder: string
+  descriptionsPlaceholder: string
+  onHeadlinesChange: (v: string) => void
+  onDescriptionsChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const hasContent = headlinesValue.trim().length > 0 || descriptionsValue.trim().length > 0
+
+  return (
+    <div style={{ border: `1px solid ${hasContent ? T.primary : T.borderLight}`, borderRadius: T.radiusSm, marginBottom: 10 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{
+          width: '100%', textAlign: 'left', padding: '10px 14px',
+          background: hasContent ? '#eff6ff' : T.bgPage,
+          border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          borderRadius: T.radiusSm,
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13, color: hasContent ? T.primary : T.textGray }}>
+          {hasContent ? '✓ ' : ''}{label}
+          {!hasContent && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: T.textGray }}>(opzionale)</span>}
+        </span>
+        <span style={{ fontSize: 11, color: T.textGray }}>{open ? '▲' : '▼'}</span>
+      </button>
+
+      {open && (
+        <div style={{ padding: '14px 14px 10px', borderTop: `1px solid ${T.borderLight}` }}>
+          <p style={{ fontSize: 12, color: T.textGray, marginBottom: 12, marginTop: 0 }}>{description}</p>
+
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 4 }}>
+              Headline dedicate (una per riga — max 30 car.)
+            </label>
+            <textarea
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 90, resize: 'vertical', boxSizing: 'border-box' as const }}
+              value={headlinesValue}
+              onChange={e => onHeadlinesChange(e.target.value)}
+              placeholder={headlinesPlaceholder}
+            />
+            {toLines(headlinesValue).map((h, j) => h.length > 30 && (
+              <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
+                Riga {j + 1} troppo lunga ({h.length}/30)
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: T.textGray, textAlign: 'right', marginTop: 2 }}>
+              {toLines(headlinesValue).length} headline
+            </div>
+          </div>
+
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 4 }}>
+              Descrizioni dedicate (una per riga — max 90 car.)
+            </label>
+            <textarea
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 70, resize: 'vertical', boxSizing: 'border-box' as const }}
+              value={descriptionsValue}
+              onChange={e => onDescriptionsChange(e.target.value)}
+              placeholder={descriptionsPlaceholder}
+            />
+            {toLines(descriptionsValue).map((d, j) => d.length > 90 && (
+              <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
+                Riga {j + 1} troppo lunga ({d.length}/90)
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── component ─────────────────────────────────────────────────────────────────
 
 interface BriefFormProps {
@@ -613,6 +732,12 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           sitelinks: [],
           kw_themes: '',
           kw_negative: '',
+          brand_headlines: '',
+          brand_descriptions: '',
+          acquisition_headlines: '',
+          acquisition_descriptions: '',
+          retargeting_headlines: '',
+          retargeting_descriptions: '',
         })))
         // Auto-generate sitelinks for each language in parallel
         setAutoSlPending(true)
@@ -1459,6 +1584,40 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                   placeholder={'gratis\nreview\nopinioni\nfoto'}
                 />
               </div>
+
+              {/* ── Per-type RSA copy (optional) ── */}
+              <PerTypeCopySection
+                label="Copy Brand Search"
+                description="Copy dedicata alle campagne Brand. Deve contenere il nome dell'hotel. Sostituisce gli headline generici per questo tipo di campagna."
+                headlinesValue={lang.brand_headlines}
+                descriptionsValue={lang.brand_descriptions}
+                headlinesPlaceholder={'Hotel Bella Vista\nSito Ufficiale\nMiglior Tariffa Garantita\nPrenota Direttamente'}
+                descriptionsPlaceholder={'Prenota sul sito ufficiale di Hotel Bella Vista e ottieni la miglior tariffa garantita.'}
+                onHeadlinesChange={v => setLangField(i, 'brand_headlines', v)}
+                onDescriptionsChange={v => setLangField(i, 'brand_descriptions', v)}
+              />
+
+              <PerTypeCopySection
+                label="Copy Acquisition Search"
+                description="Copy per campagne di acquisizione. NON deve contenere il brand — usa termini di categoria, posizione e USP generici."
+                headlinesValue={lang.acquisition_headlines}
+                descriptionsValue={lang.acquisition_descriptions}
+                headlinesPlaceholder={'Hotel 4 Stelle Roma Centro\nColazione Inclusa\nPiscina Panoramica\nCancellazione Gratuita'}
+                descriptionsPlaceholder={'Hotel 4 stelle nel cuore di Roma. Prenota online e risparmia fino al 20% sulla tariffa ufficiale.'}
+                onHeadlinesChange={v => setLangField(i, 'acquisition_headlines', v)}
+                onDescriptionsChange={v => setLangField(i, 'acquisition_descriptions', v)}
+              />
+
+              <PerTypeCopySection
+                label="Copy Retargeting / Display"
+                description="Copy urgency/personalizzata per visitatori che hanno già visto il sito. Usa messaggi di ritorno e offerte riservate."
+                headlinesValue={lang.retargeting_headlines}
+                descriptionsValue={lang.retargeting_descriptions}
+                headlinesPlaceholder={'Completa la Prenotazione\nOfferta Riservata a Te\nUltimi Posti Disponibili\nTorna e Risparmia'}
+                descriptionsPlaceholder={'Hai visitato il nostro sito? Completa la prenotazione oggi e approfitta di una tariffa esclusiva.'}
+                onHeadlinesChange={v => setLangField(i, 'retargeting_headlines', v)}
+                onDescriptionsChange={v => setLangField(i, 'retargeting_descriptions', v)}
+              />
             </div>
           ))}
           <button style={css.btnAdd} onClick={addLang}>+ Aggiungi lingua</button>
