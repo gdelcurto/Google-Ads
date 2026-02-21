@@ -698,6 +698,197 @@ _TYPE_COPY_PROMPTS: dict[str, dict] = {
 }
 
 
+# ─── Budget Strategy ──────────────────────────────────────────────────────────
+
+class BudgetStrategyRequest(BaseModel):
+    brand_name: str
+    hotel_category: str
+    stars: int
+    total_monthly_budget_eur: float
+    languages: List[str]
+    vertical: str = "hotel"
+    country: str = "IT"
+
+
+class BudgetStrategyResponse(BaseModel):
+    recommended_types: List[str]
+    budget_split: dict
+    daily_by_type_lang: dict
+    rationale: dict
+    overall_strategy: str
+    min_budget_warning: Optional[str] = None
+
+
+# Weights when all 5 types are active (sum = 1.0)
+_BASE_WEIGHTS: dict[str, float] = {
+    "search_brand": 0.12,
+    "search_acquisition": 0.28,
+    "performance_max": 0.38,
+    "retargeting": 0.10,
+    "demand_gen": 0.12,
+}
+
+# Frontend key → backend key (for daily_by_type_lang output)
+_FRONTEND_KEYS: dict[str, str] = {
+    "search_brand": "brand",
+    "search_acquisition": "acquisition",
+    "performance_max": "pmax",
+    "retargeting": "retargeting",
+    "demand_gen": "demand_gen",
+}
+
+
+def _select_campaign_types(total_monthly: float) -> tuple[list[str], Optional[str]]:
+    """Return recommended campaign types + optional budget warning based on total monthly budget."""
+    warning: Optional[str] = None
+    if total_monthly < 300:
+        warning = (
+            f"Budget €{total_monthly:.0f}/mese è sotto la soglia minima consigliata di €300. "
+            "Si consiglia di investire almeno €300/mese per ottenere dati statistici significativi."
+        )
+        return ["search_brand", "search_acquisition"], warning
+    if total_monthly < 600:
+        return ["search_brand", "search_acquisition"], None
+    if total_monthly < 1500:
+        return ["search_brand", "search_acquisition", "retargeting"], None
+    if total_monthly < 3000:
+        return ["search_brand", "search_acquisition", "performance_max", "retargeting"], None
+    return ["search_brand", "search_acquisition", "performance_max", "retargeting", "demand_gen"], None
+
+
+def _compute_split(recommended: list[str]) -> dict[str, float]:
+    """Normalize base weights to active campaign types only."""
+    raw = {k: _BASE_WEIGHTS[k] for k in recommended}
+    total = sum(raw.values())
+    return {k: round(v / total, 4) for k, v in raw.items()}
+
+
+def _compute_daily(
+    split: dict[str, float],
+    total_monthly: float,
+    languages: list[str],
+) -> dict[str, dict[str, float]]:
+    """Return daily budget per campaign type per language (frontend key → lang code → €/day)."""
+    n_langs = max(len(languages), 1)
+    result: dict[str, dict[str, float]] = {}
+    for backend_key, pct in split.items():
+        fe_key = _FRONTEND_KEYS[backend_key]
+        monthly_type = total_monthly * pct
+        daily_per_lang = monthly_type / n_langs / 30.44
+        result[fe_key] = {lang.upper(): round(daily_per_lang, 2) for lang in languages}
+    return result
+
+
+@router.post("/budget-strategy")
+async def suggest_budget_strategy(
+    payload: BudgetStrategyRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+) -> BudgetStrategyResponse:
+    """
+    Recommend which campaign types to activate and how to distribute the budget,
+    based on hotel context and total monthly spend.
+    Returns recommended_types, budget_split (%), daily_by_type_lang (€/day), and AI-generated rationale.
+    """
+    settings = get_settings()
+
+    recommended, warning = _select_campaign_types(payload.total_monthly_budget_eur)
+    split = _compute_split(recommended)
+    daily = _compute_daily(split, payload.total_monthly_budget_eur, payload.languages)
+
+    # Build rationale via Claude if API key is available; otherwise use static fallback
+    rationale: dict[str, str] = {}
+    overall_strategy = ""
+
+    _STATIC_RATIONALE: dict[str, str] = {
+        "search_brand": "Protegge il traffico branded dalle OTA e intercetta utenti ad altissima intenzione d'acquisto con CPC contenuto e ROAS elevato.",
+        "search_acquisition": "Intercetta utenti che cercano attivamente hotel nella tua destinazione. È il motore principale per acquisire nuovi clienti diretti.",
+        "performance_max": "Campagna omnicanale (Search, Display, YouTube, Maps) che scala automaticamente su tutti i touchpoint Google. Fondamentale dopo brand e acquisition.",
+        "retargeting": "Re-ingaggia i visitatori che hanno esplorato il sito senza prenotare. Alta probabilità di conversione a basso CPA.",
+        "demand_gen": "Campagna awareness su YouTube, Discover e Gmail per raggiungere viaggiatori nella fase di ispirazione. Efficace con budget superiori a €3.000/mese.",
+    }
+
+    if settings.anthropic_api_key:
+        type_labels = {
+            "search_brand": "Brand Search",
+            "search_acquisition": "Acquisition Search",
+            "performance_max": "Performance Max",
+            "retargeting": "Retargeting Display",
+            "demand_gen": "Demand Gen",
+        }
+        langs_str = ", ".join(payload.languages)
+        types_str = "\n".join(
+            f"- {type_labels[t]}: {split[t]*100:.1f}% (€{payload.total_monthly_budget_eur * split[t]:.0f}/mese)"
+            for t in recommended
+        )
+        prompt = f"""Sei uno stratega Google Ads specializzato in hotel e hospitality.
+Genera un piano strategico conciso per questo hotel.
+
+HOTEL: {payload.brand_name} — {payload.hotel_category} {payload.stars} stelle
+PAESE: {payload.country}
+LINGUE: {langs_str}
+BUDGET MENSILE TOTALE: €{payload.total_monthly_budget_eur:.0f}
+
+CAMPAGNE CONSIGLIATE:
+{types_str}
+
+Per ciascuna campagna scrivi UN PARAGRAFO di 2-3 frasi che spieghi:
+1. Perché questa campagna è strategica per questo hotel
+2. Quale obiettivo primario persegue
+3. Un tip pratico specifico per il settore alberghiero
+
+Scrivi anche un paragrafo "overall" di 2-3 frasi che riassuma la strategia complessiva e il razionale del budget.
+
+Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
+{{
+  "overall": "...",
+  {', '.join(f'"{t}": "..."' for t in recommended)}
+}}"""
+
+        try:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+            message = await client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1200,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            raw = message.content[0].text.strip()
+            json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+            raw = json_match.group(1) if json_match else raw[raw.find('{'):raw.rfind('}') + 1]
+            parsed = json.loads(raw)
+            overall_strategy = parsed.get("overall", "")
+            for t in recommended:
+                rationale[t] = parsed.get(t, _STATIC_RATIONALE.get(t, ""))
+        except Exception as exc:
+            logger.warning(f"BudgetStrategy AI rationale failed: {exc}. Using static fallback.")
+            for t in recommended:
+                rationale[t] = _STATIC_RATIONALE.get(t, "")
+            overall_strategy = (
+                f"Strategia full-funnel con {len(recommended)} campagne per un budget di "
+                f"€{payload.total_monthly_budget_eur:.0f}/mese. "
+                "Le campagne sono ordinate per priorità di intento: brand protection → acquisizione → scalabilità."
+            )
+    else:
+        for t in recommended:
+            rationale[t] = _STATIC_RATIONALE.get(t, "")
+        overall_strategy = (
+            f"Strategia full-funnel con {len(recommended)} campagne per un budget di "
+            f"€{payload.total_monthly_budget_eur:.0f}/mese. "
+            "Le campagne sono ordinate per priorità di intento: brand protection → acquisizione → scalabilità."
+        )
+
+    return BudgetStrategyResponse(
+        recommended_types=recommended,
+        budget_split={k: round(v * 100, 1) for k, v in split.items()},  # percentages
+        daily_by_type_lang=daily,
+        rationale=rationale,
+        overall_strategy=overall_strategy,
+        min_budget_warning=warning,
+    )
+
+
+# ─── Type Copy ────────────────────────────────────────────────────────────────
+
 @router.post("/type-copy")
 async def suggest_type_copy(
     payload: TypeCopyRequest,

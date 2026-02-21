@@ -771,6 +771,17 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [previewLangIdx, setPreviewLangIdx] = useState(0)
   const [autoSlPending, setAutoSlPending] = useState(false)
 
+  // ── Budget Strategy state ──────────────────────────────────────────────────
+  const [strategyResult, setStrategyResult] = useState<{
+    recommended_types: string[]
+    budget_split: Record<string, number>
+    daily_by_type_lang: Record<string, Record<string, number>>
+    rationale: Record<string, string>
+    overall_strategy: string
+    min_budget_warning: string | null
+  } | null>(null)
+  const [strategyPanelOpen, setStrategyPanelOpen] = useState(false)
+
   // ── Auto-fill state ────────────────────────────────────────────────────────
   const [autofillUrl, setAutofillUrl] = useState('')
   const [autofillLangs, setAutofillLangs] = useState<string[]>(['IT', 'EN'])
@@ -879,6 +890,46 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
       // Se il fetch automatico fallisce, apri la modalità manuale
       if (!autofillManual) setAutofillManual(true)
     },
+  })
+
+  const budgetStrategyMutation = useMutation({
+    mutationFn: () => {
+      const totalBudget = parseFloat(form.total_monthly_eur) || 0
+      if (!totalBudget) throw new Error('Inserisci il budget mensile totale prima di richiedere la strategia.')
+      if (!form.brand_name) throw new Error('Inserisci il nome del brand (Step 0) prima di richiedere la strategia.')
+      return autofillApi.suggestBudgetStrategy({
+        brand_name: form.brand_name,
+        hotel_category: form.hotel_category || 'city_hotel',
+        stars: parseInt(form.stars) || 3,
+        total_monthly_budget_eur: totalBudget,
+        languages: langs.map(l => l.code.toUpperCase()).filter(Boolean),
+        vertical: form.vertical || 'hotel',
+        country: form.country || 'IT',
+      })
+    },
+    onSuccess: (data) => {
+      setStrategyResult(data)
+      setStrategyPanelOpen(true)
+      // Map backend keys to frontend keys
+      const backendToFrontend: Record<string, string> = {
+        'search_brand': 'brand',
+        'search_acquisition': 'acquisition',
+        'performance_max': 'pmax',
+        'retargeting': 'retargeting',
+        'demand_gen': 'demand_gen',
+      }
+      // Apply recommended types to selectedTypes
+      setSelectedTypes(new Set(data.recommended_types.map(t => backendToFrontend[t] || t)))
+      // Apply daily budgets to budget table
+      const newBudget: Record<string, Record<string, string>> = {}
+      for (const [feKey, byLang] of Object.entries(data.daily_by_type_lang)) {
+        newBudget[feKey] = Object.fromEntries(
+          Object.entries(byLang).map(([lang, val]) => [lang, String(val)])
+        )
+      }
+      setBudgetByTypeLang(newBudget)
+    },
+    onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })
 
   const toggleAutofillLang = (code: string) => {
@@ -1428,7 +1479,32 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
           </div>
 
           <div style={css.section}>
-            <div style={css.sectionTitle}>Budget campagne (€/giorno per lingua)</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...css.sectionTitle }}>
+              <span>Budget campagne (€/giorno per lingua)</span>
+              <button
+                style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px', marginLeft: 12, flexShrink: 0 }}
+                onClick={() => budgetStrategyMutation.mutate()}
+                disabled={budgetStrategyMutation.isPending}
+              >
+                {budgetStrategyMutation.isPending ? '⏳ Analisi in corso...' : '✨ Suggerisci Strategia AI'}
+              </button>
+            </div>
+            {/* Total monthly budget input */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' as const }}>
+              <label style={{ ...css.label, margin: 0, whiteSpace: 'nowrap' as const }}>Budget mensile totale (€)</label>
+              <input
+                type="number"
+                min="0"
+                step="50"
+                style={{ ...css.input, width: 140 }}
+                value={form.total_monthly_eur}
+                onChange={e => setField('total_monthly_eur', e.target.value)}
+                placeholder="es. 2000"
+              />
+              <span style={{ fontSize: 12, color: T.textGray }}>
+                Inserisci il budget totale e clicca "Suggerisci Strategia AI" per ricevere la distribuzione consigliata.
+              </span>
+            </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
@@ -1529,6 +1605,52 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 </div>
               )
             })()}
+
+            {/* ── Budget Strategy Rationale Panel ── */}
+            {strategyPanelOpen && strategyResult && (
+              <div style={{ marginTop: 20, background: T.bgCard, border: `1px solid ${T.primary}33`, borderRadius: T.radiusLg, padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: T.primary }}>Strategia consigliata dall'AI</div>
+                  <button style={css.btnRed} onClick={() => setStrategyPanelOpen(false)}>✕</button>
+                </div>
+                {strategyResult.min_budget_warning && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e' }}>
+                    ⚠️ {strategyResult.min_budget_warning}
+                  </div>
+                )}
+                {strategyResult.overall_strategy && (
+                  <div style={{ fontSize: 13, color: T.textGray, marginBottom: 14, lineHeight: 1.6, borderBottom: `1px solid ${T.borderLight}`, paddingBottom: 12 }}>
+                    {strategyResult.overall_strategy}
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+                  {strategyResult.recommended_types.map(backendKey => {
+                    const labelMap: Record<string, string> = {
+                      search_brand: 'Brand Search',
+                      search_acquisition: 'Acquisition Search',
+                      performance_max: 'Performance Max',
+                      retargeting: 'Retargeting',
+                      demand_gen: 'Demand Gen',
+                    }
+                    const pct = strategyResult.budget_split[backendKey]
+                    return (
+                      <div key={backendKey} style={{ background: T.bgPage, border: `1px solid ${T.borderLight}`, borderRadius: 8, padding: 12 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                          <strong style={{ fontSize: 13, color: T.text }}>{labelMap[backendKey] || backendKey}</strong>
+                          {pct != null && <span style={{ fontSize: 12, color: T.primary, fontWeight: 700 }}>{pct}%</span>}
+                        </div>
+                        <div style={{ fontSize: 12, color: T.textGray, lineHeight: 1.5 }}>
+                          {strategyResult.rationale[backendKey] || ''}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ marginTop: 12, fontSize: 12, color: T.textGray }}>
+                  Le campagne selezionate e i budget sono stati applicati automaticamente alla tabella sopra. Puoi modificarli liberamente.
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

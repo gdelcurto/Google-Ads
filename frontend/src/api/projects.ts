@@ -188,6 +188,24 @@ export const autofillApi = {
     strengths?: string[]
   }) =>
     api.post<{ headlines: string[]; descriptions: string[] }>('/autofill/type-copy', data).then((r) => r.data),
+
+  suggestBudgetStrategy: (data: {
+    brand_name: string
+    hotel_category: string
+    stars: number
+    total_monthly_budget_eur: number
+    languages: string[]
+    vertical?: string
+    country?: string
+  }) =>
+    api.post<{
+      recommended_types: string[]
+      budget_split: Record<string, number>
+      daily_by_type_lang: Record<string, Record<string, number>>
+      rationale: Record<string, string>
+      overall_strategy: string
+      min_budget_warning: string | null
+    }>('/autofill/budget-strategy', data).then((r) => r.data),
 }
 
 export const authApi = {
