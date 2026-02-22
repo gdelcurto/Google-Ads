@@ -616,15 +616,15 @@ const css: Record<string, React.CSSProperties> = {
     overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
   },
   autofillPanel: {
-    background: T.bgCard,
-    border: `1px solid ${T.primary}33`, borderRadius: T.radiusLg,
+    background: '#e10098',
+    border: 'none', borderRadius: T.radiusLg,
     padding: 20, marginBottom: 24,
   },
   autofillTitle: {
-    fontWeight: 700, fontSize: 15, color: T.primary,
+    fontWeight: 700, fontSize: 15, color: '#fff',
     marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
   },
-  autofillSubtitle: { fontSize: 12, color: T.textGray, marginBottom: 14 },
+  autofillSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginBottom: 14 },
   autofillRow: { display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const },
   autofillUrlInput: {
     flex: 1, minWidth: 220, padding: '9px 12px',
@@ -633,7 +633,7 @@ const css: Record<string, React.CSSProperties> = {
   },
   autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
   btnAutofill: {
-    background: T.primary, color: '#fff', border: 'none',
+    background: '#fff', color: '#e10098', border: 'none',
     padding: '9px 20px', borderRadius: T.radiusSm, cursor: 'pointer',
     fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' as const,
   },
@@ -1172,7 +1172,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
             onClick={() => setErrors([])}
             style={{ marginTop: 6, background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', fontWeight: 700 }}
           >
-            ✕ Chiudi
+            <i className="fa-solid fa-xmark"></i> Chiudi
           </button>
         </div>
       )}
@@ -1191,7 +1191,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
           {/* ── Auto-fill Panel ── */}
           <div style={css.autofillPanel}>
             <div style={css.autofillTitle}>
-              <span>✨</span> Auto-compila dal sito dell'hotel
+              <i className="fa-solid fa-wand-magic-sparkles"></i> Auto-compila dal sito dell'hotel
             </div>
             <div style={css.autofillSubtitle}>
               Inserisci l'URL del sito dell'hotel: l'AI analizzerà il sito e compilerà automaticamente
@@ -1212,10 +1212,12 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                 onClick={() => { setErrors([]); setAutofillSuccess(false); startJobMutation.mutate() }}
                 disabled={startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim()}
               >
-                {startJobMutation.isPending ? '⏳ Avvio...' : '🔍 Analizza e compila'}
+                {startJobMutation.isPending
+                  ? <><i className="fa-solid fa-hourglass-half"></i> Avvio...</>
+                  : <><i className="fa-solid fa-magnifying-glass"></i> Analizza e compila</>}
               </button>
             </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: T.text, fontWeight: 600 }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: '#fff', fontWeight: 600 }}>
               Lingue da generare:
             </div>
             <div style={css.autofillLangPills}>
@@ -1255,13 +1257,13 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
             )}
             {startJobMutation.isSuccess && (
               <div style={{ marginTop: 10, fontSize: 12, color: T.blue, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '8px 12px' }}>
-                ⏳ Elaborazione in corso in background — puoi cambiare scheda liberamente.
+                <i className="fa-solid fa-hourglass-half"></i> Elaborazione in corso in background — puoi cambiare scheda liberamente.
                 Riceverai una notifica in questa pagina quando il brief sarà pronto.
               </div>
             )}
             {autofillSuccess && (
               <div style={css.autofillSuccessBox}>
-                ✅ Campi compilati con successo! Scorri il form per rivedere e correggere i dati generati.
+                <i className="fa-solid fa-circle-check"></i> Campi compilati con successo! Scorri il form per rivedere e correggere i dati generati.
               </div>
             )}
           </div>
@@ -1528,7 +1530,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                   onClick={() => budgetStrategyMutation.mutate()}
                   disabled={budgetStrategyMutation.isPending}
                 >
-                  {budgetStrategyMutation.isPending ? '⏳ Analisi in corso...' : '✨ Suggerisci Strategia AI'}
+                  {budgetStrategyMutation.isPending
+                    ? <><i className="fa-solid fa-hourglass-half"></i> Analisi in corso...</>
+                    : <><i className="fa-solid fa-wand-magic-sparkles"></i> Suggerisci Strategia AI</>}
                 </button>
               </div>
             </div>
@@ -1537,7 +1541,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: T.textGray }}>
                 <span>Budget mensile:</span>
                 <strong style={{ color: T.text }}>€{parseFloat(form.total_monthly_eur).toLocaleString('it-IT')}/mese</strong>
-                <button style={{ ...css.btnRed, padding: '2px 8px', fontSize: 11 }} onClick={() => { setField('total_monthly_eur', ''); setBudgetByTypeLang({}); setStrategyResult(null); setStrategyPanelOpen(false) }}>✕ Azzera</button>
+                <button style={{ ...css.btnRed, padding: '2px 8px', fontSize: 11 }} onClick={() => { setField('total_monthly_eur', ''); setBudgetByTypeLang({}); setStrategyResult(null); setStrategyPanelOpen(false) }}><i className="fa-solid fa-xmark"></i> Azzera</button>
               </div>
             )}
             <div style={{ overflowX: 'auto' }}>
@@ -1658,11 +1662,11 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                       {' '}— {strategyResult.recommended_types.length} campagne attive
                     </div>
                   </div>
-                  <button style={css.btnRed} onClick={() => setStrategyPanelOpen(false)}>✕</button>
+                  <button style={css.btnRed} onClick={() => setStrategyPanelOpen(false)}><i className="fa-solid fa-xmark"></i></button>
                 </div>
                 {strategyResult.min_budget_warning && (
                   <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e' }}>
-                    ⚠️ {strategyResult.min_budget_warning}
+                    <i className="fa-solid fa-triangle-exclamation"></i> {strategyResult.min_budget_warning}
                   </div>
                 )}
                 {strategyResult.overall_strategy && (
@@ -1713,7 +1717,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                   {lang.name ? ` (${lang.name})` : ''}
                 </strong>
                 {langs.length > 1 && (
-                  <button style={css.btnRed} onClick={() => removeLang(i)}>✕ Rimuovi</button>
+                  <button style={css.btnRed} onClick={() => removeLang(i)}><i className="fa-solid fa-xmark"></i> Rimuovi</button>
                 )}
               </div>
 
@@ -1839,7 +1843,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                     }}
                     disabled={slSuggestingLang === i}
                   >
-                    {slSuggestingLang === i ? '⏳ Generando sitelink...' : '✨ Genera sitelink con AI'}
+                    {slSuggestingLang === i
+                      ? <><i className="fa-solid fa-hourglass-half"></i> Generando sitelink...</>
+                      : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera sitelink con AI</>}
                   </button>
                   <span style={{ fontSize: 11, color: T.textGray }}>oppure aggiungili manualmente →</span>
                 </div>
@@ -1847,7 +1853,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                   <div key={j} style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: 10, marginBottom: 8, background: T.bgPage }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <strong style={{ fontSize: 12, color: T.textGray }}>Sitelink {j + 1}</strong>
-                      <button style={css.btnRed} onClick={() => removeSitelink(i, j)}>✕</button>
+                      <button style={css.btnRed} onClick={() => removeSitelink(i, j)}><i className="fa-solid fa-xmark"></i></button>
                     </div>
                     <div style={css.grid2}>
                       <div>
@@ -1889,7 +1895,9 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                     }}
                     disabled={kwSuggestingLang === i}
                   >
-                    {kwSuggestingLang === i ? '⏳ Generando keyword...' : '✨ Genera keyword con AI'}
+                    {kwSuggestingLang === i
+                      ? <><i className="fa-solid fa-hourglass-half"></i> Generando keyword...</>
+                      : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera keyword con AI</>}
                   </button>
                   <span style={{ fontSize: 11, color: T.textGray }}>oppure inseriscile manualmente ↓</span>
                 </div>
@@ -2081,7 +2089,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
                   <label style={{ ...css.label, fontSize: 11 }}>Sorgente (URL o nome)</label>
                   <input style={css.input} value={rl.source} onChange={e => setRemarketingListField(idx, 'source', e.target.value)} placeholder="https://www.hotel.it" />
                 </div>
-                <button style={{ ...css.btnRed, alignSelf: 'flex-end', marginBottom: 0 }} onClick={() => removeRemarketingList(idx)}>✕</button>
+                <button style={{ ...css.btnRed, alignSelf: 'flex-end', marginBottom: 0 }} onClick={() => removeRemarketingList(idx)}><i className="fa-solid fa-xmark"></i></button>
               </div>
             ))}
             <button style={css.btnAdd} onClick={addRemarketingList}>+ Aggiungi audience list</button>

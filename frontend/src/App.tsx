@@ -49,7 +49,9 @@ function GlobalAutofillToasts() {
                 color: n.type === 'completed' ? '#166534' : '#991b1b',
               }}
             >
-              {n.type === 'completed' ? '✅ Auto-fill completato!' : '❌ Auto-fill fallito'}
+              {n.type === 'completed'
+                ? <><i className="fa-solid fa-circle-check"></i> Auto-fill completato!</>
+                : <><i className="fa-solid fa-circle-xmark"></i> Auto-fill fallito</>}
             </span>
             <button
               onClick={() => dismissNotification(n.projectId)}
@@ -64,7 +66,7 @@ function GlobalAutofillToasts() {
                 flexShrink: 0,
               }}
             >
-              ✕
+              <i className="fa-solid fa-xmark"></i>
             </button>
           </div>
 

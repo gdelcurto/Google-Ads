@@ -856,14 +856,14 @@ export default function ProjectDetailPage() {
       {message && (
         <div style={message.type === 'success' ? s.success : s.error}>
           {message.text}
-          <button onClick={() => setMessage(null)} style={{ marginLeft: 12, cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700 }}>✕</button>
+          <button onClick={() => setMessage(null)} style={{ marginLeft: 12, cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700 }}><i className="fa-solid fa-xmark"></i></button>
         </div>
       )}
 
       {/* Auto-fill job in progress */}
       {hasRunningJob && !pendingAutofill && (
         <div style={{ ...s.alert, display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span>⏳</span>
+          <i className="fa-solid fa-hourglass-half"></i>
           <span style={{ flex: 1 }}>
             Auto-fill in elaborazione in background — puoi cambiare scheda o pagina liberamente.
             Riceverai una notifica in basso a destra quando il brief è pronto.
@@ -875,7 +875,7 @@ export default function ProjectDetailPage() {
       {pendingAutofill && (
         <div style={{ ...s.success, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ flex: 1 }}>
-            ✅ <strong>Auto-fill completato!</strong> Il brief per <em>{pendingAutofill.brand_name}</em> è pronto.
+            <i className="fa-solid fa-circle-check"></i> <strong>Auto-fill completato!</strong> Il brief per <em>{pendingAutofill.brand_name}</em> è pronto.
           </span>
           <button
             style={{ ...s.btn, fontSize: 13, padding: '6px 14px' }}
@@ -887,7 +887,7 @@ export default function ProjectDetailPage() {
             onClick={handleDismissAutofill}
             style={{ cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700, fontSize: 16 }}
           >
-            ✕
+            <i className="fa-solid fa-xmark"></i>
           </button>
         </div>
       )}
