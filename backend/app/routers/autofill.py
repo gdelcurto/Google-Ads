@@ -5,7 +5,8 @@ import json
 import logging
 import re
 import urllib.parse
-from typing import List, Optional
+import xml.etree.ElementTree as ET
+from typing import Dict, List, Optional, Tuple
 
 import asyncio
 from datetime import datetime
@@ -34,6 +35,231 @@ LANG_NAMES: dict[str, str] = {
     "JA": "日本語", "PL": "Polski", "SV": "Svenska",
     "NO": "Norsk", "DA": "Dansk",
 }
+
+# ── Sitemap & multilingual URL detection ────────────────────────────────────
+
+# Language-code patterns found in URL paths or query strings.
+# Order matters: more specific patterns first.
+_LANG_URL_PATTERNS: list[tuple[str, str]] = [
+    # Path segments: /it/, /en-gb/, /de-ch/, etc.
+    (r'(?:^|/)([a-z]{2}-[a-z]{2})(?:/|$)',   'path_region'),
+    (r'(?:^|/)([a-z]{2})(?:/|$)',             'path_lang'),
+    # Query string: ?lang=it, ?language=en, ?hl=de
+    (r'[?&](?:lang|language|hl|locale)=([a-z]{2}(?:-[a-z]{2})?)', 'query'),
+]
+
+# Sitemap XML namespaces
+_NS_SITEMAP  = 'http://www.sitemaps.org/schemas/sitemap/0.9'
+_NS_XHTML    = 'http://www.w3.org/1999/xhtml'
+_NS_IMAGE    = 'http://www.google.com/schemas/sitemap-image/1.1'
+
+
+def _detect_lang_from_url(url: str) -> Optional[str]:
+    """Return ISO-639-1 language code detected from URL path/query, or None."""
+    parsed = urllib.parse.urlparse(url)
+    target = parsed.path.lower() + '?' + parsed.query.lower()
+    for pattern, _ in _LANG_URL_PATTERNS:
+        m = re.search(pattern, target)
+        if m:
+            code = m.group(1).split('-')[0].upper()   # "en-gb" → "EN"
+            if code in LANG_IDS:
+                return code
+    return None
+
+
+async def _fetch_xml(client: httpx.AsyncClient, url: str) -> Optional[ET.Element]:
+    """Fetch an XML document and return its parsed root, or None on error."""
+    try:
+        resp = await client.get(url)
+        if resp.status_code == 200 and ('xml' in resp.headers.get('content-type', '') or
+                                         resp.text.lstrip().startswith('<')):
+            # Strip XML namespace declarations for simpler xpath access
+            text = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', resp.text)
+            return ET.fromstring(text)
+    except Exception as exc:
+        logger.debug(f"_fetch_xml {url}: {exc}")
+    return None
+
+
+async def _discover_sitemaps(
+    base_url: str,
+    client: httpx.AsyncClient,
+) -> Tuple[Dict[str, List[str]], List[str]]:
+    """
+    Discover all sitemaps for a website and return:
+      - lang_urls: dict mapping language code → list of page URLs found in sitemap
+      - all_urls:  flat list of all page URLs (for relevance scoring)
+
+    Strategy:
+      1. Try /sitemap.xml (follows redirects to sitemap_index.xml automatically)
+      2. Parse sitemap index → fetch each sub-sitemap
+      3. For each <url><loc>, detect language from:
+         a. <xhtml:link rel="alternate" hreflang=".."> inside the sitemap entry
+         b. Language pattern in the URL path/query (/it/, /en/, ?lang=de, …)
+      4. Also try robots.txt to find Sitemap: directives
+    """
+    parsed_base = urllib.parse.urlparse(base_url)
+    root_domain  = f"{parsed_base.scheme}://{parsed_base.netloc}"
+
+    lang_urls: Dict[str, List[str]] = {}
+    all_urls:  List[str] = []
+    visited_sitemaps: set[str] = set()
+
+    def _add_url(url: str, lang: Optional[str]) -> None:
+        all_urls.append(url)
+        if lang:
+            lang_urls.setdefault(lang, []).append(url)
+
+    async def _process_urlset(root: ET.Element) -> None:
+        """Extract <url> entries from a urlset element."""
+        for url_el in root.findall('.//url'):
+            loc_el = url_el.find('loc')
+            if loc_el is None or not loc_el.text:
+                continue
+            loc = loc_el.text.strip()
+
+            # Check xhtml:link alternates inside this <url> block
+            alternates = url_el.findall('.//{http://www.w3.org/1999/xhtml}link') or \
+                         url_el.findall('.//link')
+            hreflang_found = False
+            for link in alternates:
+                hreflang = link.get('hreflang') or link.get('{http://www.w3.org/1999/xhtml}hreflang')
+                href     = link.get('href')     or link.get('{http://www.w3.org/1999/xhtml}href')
+                if hreflang and href and hreflang.lower() != 'x-default':
+                    code = hreflang.split('-')[0].upper()
+                    if code in LANG_IDS:
+                        _add_url(href.strip(), code)
+                        hreflang_found = True
+
+            if not hreflang_found:
+                lang = _detect_lang_from_url(loc)
+                _add_url(loc, lang)
+
+    async def _process_sitemapindex(root: ET.Element) -> None:
+        """Fetch and process each <sitemap><loc> listed in a sitemapindex."""
+        tasks = []
+        for sm_el in root.findall('.//sitemap'):
+            loc_el = sm_el.find('loc')
+            if loc_el is None or not loc_el.text:
+                continue
+            sm_url = loc_el.text.strip()
+            if sm_url in visited_sitemaps:
+                continue
+            visited_sitemaps.add(sm_url)
+
+            # Skip image/video/news sitemaps — not useful for page content
+            if any(k in sm_url.lower() for k in ('image', 'video', 'news', '.kml')):
+                logger.debug(f"Skipping non-page sitemap: {sm_url}")
+                continue
+            tasks.append(_fetch_and_process(sm_url))
+        await asyncio.gather(*tasks)
+
+    async def _fetch_and_process(sm_url: str) -> None:
+        root = await _fetch_xml(client, sm_url)
+        if root is None:
+            return
+        tag = root.tag.lower()
+        if 'sitemapindex' in tag:
+            await _process_sitemapindex(root)
+        elif 'urlset' in tag:
+            await _process_urlset(root)
+
+    # 1. Try standard sitemap locations
+    sitemap_candidates = [
+        f"{root_domain}/sitemap.xml",
+        f"{root_domain}/sitemap_index.xml",
+        f"{root_domain}/sitemap/sitemap.xml",
+        f"{root_domain}/wp-sitemap.xml",         # WordPress
+        f"{root_domain}/sitemap.xml.gz",
+    ]
+
+    # 2. Also check robots.txt for Sitemap: directives
+    try:
+        resp = await client.get(f"{root_domain}/robots.txt")
+        if resp.status_code == 200:
+            for line in resp.text.splitlines():
+                if line.lower().startswith('sitemap:'):
+                    sm_url = line.split(':', 1)[1].strip()
+                    if sm_url not in sitemap_candidates:
+                        sitemap_candidates.insert(0, sm_url)  # prioritize explicit declaration
+    except Exception:
+        pass
+
+    # 3. Fetch sitemaps (stop after first successful one that yields URLs)
+    for candidate in sitemap_candidates:
+        if candidate in visited_sitemaps:
+            continue
+        visited_sitemaps.add(candidate)
+        root = await _fetch_xml(client, candidate)
+        if root is None:
+            continue
+        tag = root.tag.lower()
+        if 'sitemapindex' in tag:
+            await _process_sitemapindex(root)
+        elif 'urlset' in tag:
+            await _process_urlset(root)
+        if all_urls:
+            break  # found a working sitemap — no need to try fallbacks
+
+    logger.info(
+        f"Sitemap discovery: {len(all_urls)} total URLs, "
+        f"languages found: {list(lang_urls.keys())}"
+    )
+    return lang_urls, all_urls
+
+
+def _pick_lang_landing(lang_urls: Dict[str, List[str]], lang: str, base_url: str) -> Optional[str]:
+    """
+    From the sitemap's language → URL map, find the best landing page for a given language.
+    Prefers root/homepage paths (shortest path length) that belong to that language.
+    """
+    candidates = lang_urls.get(lang, [])
+    if not candidates:
+        return None
+
+    def _path_depth(url: str) -> int:
+        return len([p for p in urllib.parse.urlparse(url).path.split('/') if p])
+
+    # Prefer shallowest path (most likely the language homepage)
+    return min(candidates, key=_path_depth)
+
+
+def _score_sitemap_url(url: str) -> int:
+    """Score a sitemap URL for relevance to hotel content (same keywords as _score_link)."""
+    path = urllib.parse.urlparse(url).path.lower()
+    return sum(w for kw, w in _RELEVANCE_KW if kw in path)
+
+
+def _build_lang_url_section(
+    lang_landings: Dict[str, str],
+    lang_urls: Dict[str, List[str]],
+    langs: List[str],
+) -> str:
+    """
+    Build a text block for the AI prompt describing discovered URLs per language.
+    Returns empty string if no sitemap data was found.
+    """
+    if not lang_landings and not lang_urls:
+        return ""
+
+    lines = ["--- URL PER LINGUA (rilevati dalla sitemap del sito) ---"]
+    for lang in langs:
+        landing = lang_landings.get(lang)
+        lang_name = LANG_NAMES.get(lang, lang)
+        if landing:
+            lines.append(f"{lang} ({lang_name}) — homepage: {landing}")
+        # Add up to 5 relevant subpage URLs for this language
+        relevant = sorted(
+            lang_urls.get(lang, []),
+            key=_score_sitemap_url,
+            reverse=True,
+        )[:5]
+        for url in relevant:
+            if url != landing:
+                lines.append(f"  {url}")
+    lines.append("--- FINE URL PER LINGUA ---\n")
+    return "\n".join(lines) + "\n"
+
 
 SYSTEM_PROMPT = """\
 Sei un copywriter Google Ads certificato, specializzato in hotel e hospitality da oltre 10 anni.
@@ -90,6 +316,7 @@ Analizza il sito web di un hotel e genera un brief strutturato per campagne Goog
 URL: {url}
 Lingue richieste: {languages}
 
+{lang_url_section}\
 --- CONTENUTO DEL SITO ---
 {content}
 --- FINE CONTENUTO ---
@@ -122,6 +349,11 @@ USP_MAIN (≤ 90 caratteri):
 BRAND TERMS:
 - Esattamente come gli utenti cercano su Google (nome ufficiale, abbreviazioni comuni, varianti)
 
+LANDING PAGE PER LINGUA (CRITICO):
+- Usa ESATTAMENTE gli URL forniti nella sezione "URL per lingua" qui sopra.
+- Se per una lingua è fornito un URL specifico, usalo come landing_page — NON inventare path.
+- Se non è disponibile un URL specifico per quella lingua, usa la homepage principale.
+
 ═══ OUTPUT JSON ═══
 
 {{
@@ -142,7 +374,7 @@ BRAND TERMS:
       "code": "IT",
       "name": "Italiano",
       "google_language_id": 1004,
-      "landing_page": "https://www.dominio.it/",
+      "landing_page": "https://www.dominio.it/it/",
       "brand_terms": ["Grand Hotel Bellevue", "Hotel Bellevue Roma", "Bellevue Hotel"],
       "usp_main": "Hotel 4 stelle a 2 min dal Colosseo, colazione inclusa e miglior tariffa garantita.",
       "headlines": [
@@ -276,10 +508,17 @@ def _extract_relevant_links(html: str, base_url: str, max_links: int = 4) -> lis
     return [url for _, url in scored[:max_links]]
 
 
-async def _fetch_pages(base_url: str) -> str:
+async def _fetch_pages(
+    base_url: str,
+    langs: Optional[List[str]] = None,
+) -> Tuple[str, Dict[str, List[str]], Dict[str, str]]:
     """
-    Fetch the hotel homepage, extract internal links, pick the most relevant
-    subpages (rooms, services, spa, offers…) and return combined plain text.
+    Fetch hotel website content using sitemap-first strategy.
+
+    Returns:
+      - content:       Combined plain text from fetched pages (≤ 14 000 chars)
+      - lang_urls:     Dict lang_code → list of URLs found in sitemap for that language
+      - lang_landings: Dict lang_code → best landing page URL for that language
     """
     if not base_url.startswith(('http://', 'https://')):
         base_url = 'https://' + base_url
@@ -295,11 +534,13 @@ async def _fetch_pages(base_url: str) -> str:
     }
 
     collected: list[str] = []
-    errors: list[str] = []
+    errors:    list[str] = []
     homepage_html = ''
+    lang_urls:     Dict[str, List[str]] = {}
+    lang_landings: Dict[str, str]       = {}
 
     async with httpx.AsyncClient(
-        timeout=15.0,
+        timeout=20.0,
         follow_redirects=True,
         verify=False,
         headers=headers,
@@ -311,6 +552,8 @@ async def _fetch_pages(base_url: str) -> str:
             ct = resp.headers.get('content-type', '')
             if resp.status_code == 200 and 'text/html' in ct:
                 homepage_html = resp.text
+                # Use the final URL after redirects as canonical base
+                base_url = str(resp.url)
                 text = _strip_html(homepage_html)
                 if len(text) > 200:
                     collected.append(f"[{base_url}]\n{text}")
@@ -319,25 +562,75 @@ async def _fetch_pages(base_url: str) -> str:
         except Exception as exc:
             errors.append(f"{base_url} → {type(exc).__name__}: {exc}")
 
-        # ── Step 2: discover and fetch relevant subpages ─────────────────────
-        if homepage_html:
-            subpages = _extract_relevant_links(homepage_html, base_url, max_links=4)
-            logger.info(f"Autofill discovered {len(subpages)} relevant subpages: {subpages}")
+        # ── Step 2: sitemap discovery ─────────────────────────────────────────
+        try:
+            lang_urls, sitemap_all_urls = await _discover_sitemaps(base_url, client)
+        except Exception as exc:
+            logger.warning(f"Sitemap discovery failed: {exc}")
+            lang_urls, sitemap_all_urls = {}, []
 
-            for url in subpages:
-                if len('\n\n'.join(collected)) >= 14000:
+        logger.info(
+            f"Sitemap: {len(sitemap_all_urls)} URLs total, "
+            f"langs detected: {list(lang_urls.keys())}"
+        )
+
+        # ── Step 3: determine best landing page per language ──────────────────
+        if langs:
+            for lang in langs:
+                landing = _pick_lang_landing(lang_urls, lang, base_url)
+                if landing:
+                    lang_landings[lang] = landing
+                    logger.info(f"  {lang} landing: {landing}")
+
+        # ── Step 4: pick pages to fetch ──────────────────────────────────────
+        # Prefer sitemap URLs scored by content relevance; fall back to homepage links.
+        urls_to_fetch: list[str] = []
+
+        if sitemap_all_urls:
+            # Score all sitemap URLs and pick top relevant ones
+            scored_sitemap = sorted(
+                [(url, _score_sitemap_url(url)) for url in sitemap_all_urls],
+                key=lambda x: x[1],
+                reverse=True,
+            )
+            # Take top 6 relevant (score > 0), deduplicated
+            seen_fetch: set[str] = {base_url}
+            for url, score in scored_sitemap:
+                if score <= 0:
                     break
-                try:
-                    resp = await client.get(url)
-                    ct = resp.headers.get('content-type', '')
-                    if resp.status_code == 200 and 'text/html' in ct:
-                        text = _strip_html(resp.text)
-                        if len(text) > 200:
-                            collected.append(f"[{url}]\n{text}")
-                    else:
-                        errors.append(f"{url} → HTTP {resp.status_code}")
-                except Exception as exc:
-                    errors.append(f"{url} → {type(exc).__name__}: {exc}")
+                if url not in seen_fetch:
+                    seen_fetch.add(url)
+                    urls_to_fetch.append(url)
+                if len(urls_to_fetch) >= 6:
+                    break
+
+            # Also include each language landing page to get language-specific content
+            for lang_landing in lang_landings.values():
+                if lang_landing not in seen_fetch:
+                    seen_fetch.add(lang_landing)
+                    urls_to_fetch.append(lang_landing)
+
+        if not urls_to_fetch and homepage_html:
+            # Fallback: extract links from homepage HTML
+            urls_to_fetch = _extract_relevant_links(homepage_html, base_url, max_links=5)
+
+        logger.info(f"Pages to fetch: {urls_to_fetch}")
+
+        # ── Step 5: fetch selected pages ─────────────────────────────────────
+        for url in urls_to_fetch:
+            if len('\n\n'.join(collected)) >= 14000:
+                break
+            try:
+                resp = await client.get(url)
+                ct = resp.headers.get('content-type', '')
+                if resp.status_code == 200 and 'text/html' in ct:
+                    text = _strip_html(resp.text)
+                    if len(text) > 200:
+                        collected.append(f"[{url}]\n{text}")
+                else:
+                    errors.append(f"{url} → HTTP {resp.status_code}")
+            except Exception as exc:
+                errors.append(f"{url} → {type(exc).__name__}: {exc}")
 
     if not collected:
         detail = "Impossibile recuperare il sito web dal server. "
@@ -349,7 +642,7 @@ async def _fetch_pages(base_url: str) -> str:
 
     result = '\n\n'.join(collected)[:14000]
     logger.info(f"_fetch_pages: {len(collected)} pages, {len(result)} chars total")
-    return result
+    return result, lang_urls, lang_landings
 
 
 def _trim_to_word(text: str, max_chars: int) -> str:
@@ -649,19 +942,24 @@ async def autofill_from_url(
         raise HTTPException(status_code=422, detail="Almeno una lingua richiesta")
 
     # 1. Fetch the website (or use manually provided content)
+    lang_urls:     Dict[str, List[str]] = {}
+    lang_landings: Dict[str, str]       = {}
+
     if payload.content and payload.content.strip():
         logger.info(f"Autofill: using manual content for {payload.url}, langs={langs}")
         content = payload.content.strip()[:14000]
     else:
         logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
-        content = await _fetch_pages(payload.url)
+        content, lang_urls, lang_landings = await _fetch_pages(payload.url, langs)
 
     # 2. Call Claude
+    lang_url_section = _build_lang_url_section(lang_landings, lang_urls, langs)
     user_prompt = USER_PROMPT_TEMPLATE.format(
         url=payload.url,
         languages=", ".join(langs),
         content=content,
         n_langs=len(langs),
+        lang_url_section=lang_url_section,
     )
 
     try:
@@ -1249,13 +1547,39 @@ async def _update_job_status(
 
 
 async def _bg_sitelinks(
-    client, common: dict, lang_code: str, landing_page: str, booking_url: str
+    client,
+    common: dict,
+    lang_code: str,
+    landing_page: str,
+    booking_url: str,
+    sitemap_urls: Optional[List[str]] = None,
 ) -> list:
-    """Generate sitelinks for one language inside the background task."""
+    """Generate sitelinks for one language inside the background task.
+
+    sitemap_urls: real page URLs for this language discovered from the sitemap.
+    When provided, the AI is instructed to use them as final_url values instead of guessing.
+    """
     lang_name = LANG_NAMES.get(lang_code, lang_code)
     services_txt = ", ".join(common.get("services") or []) or "non specificati"
     strengths_txt = ", ".join(common.get("strengths") or []) or "non specificati"
     bk = booking_url or landing_page
+
+    # Build sitemap URL hint for the prompt
+    sitemap_hint = ""
+    if sitemap_urls:
+        # Score and pick the most relevant real URLs to suggest for sitelinks
+        scored = sorted(
+            [(url, _score_sitemap_url(url)) for url in sitemap_urls if url != landing_page],
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        top_urls = [url for url, _ in scored[:8]]
+        if top_urls:
+            sitemap_hint = (
+                "\nURL REALI DEL SITO (usa questi come final_url dove pertinenti):\n"
+                + "\n".join(f"  {u}" for u in top_urls)
+                + "\n"
+            )
 
     prompt = (
         f"Sei un copywriter Google Ads specializzato in hotel. Genera esattamente 5 sitelink.\n\n"
@@ -1263,12 +1587,14 @@ async def _bg_sitelinks(
         f"Categoria: {common['hotel_category']} — {common['stars']} stelle\n"
         f"Lingua: {lang_name} ({lang_code})\n"
         f"Landing page: {landing_page}\nBooking engine: {bk}\n"
-        f"Servizi: {services_txt}\nPunti di forza: {strengths_txt}\n\n"
+        f"Servizi: {services_txt}\nPunti di forza: {strengths_txt}\n"
+        f"{sitemap_hint}\n"
         "REGOLE CARATTERI:\n"
         "- text: ≤ 25 caratteri\n- description_1: ≤ 35 caratteri\n- description_2: ≤ 35 caratteri\n"
         "NON troncare le parole: se non entra, elimina l'ultima parola.\n\n"
         "REGOLE CONTENUTO:\n"
-        "- final_url basata sulla landing page reale\n"
+        "- final_url: usa gli URL reali forniti sopra quando disponibili; "
+        "altrimenti adatta il path della landing page\n"
         f"- Scrivi in {lang_name}\n"
         "- 5 temi diversi: prenotazione diretta, offerte, camere, servizi, location\n\n"
         "Restituisci SOLO array JSON di 5 oggetti, zero testo aggiuntivo:\n"
@@ -1361,18 +1687,23 @@ async def _run_autofill_job(
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=api_key)
 
-        # 1. Fetch website content
+        # 1. Fetch website content + sitemap data
+        lang_urls:     Dict[str, List[str]] = {}
+        lang_landings: Dict[str, str]       = {}
+
         if content and content.strip():
             page_content = content.strip()[:14000]
         else:
-            page_content = await _fetch_pages(url)
+            page_content, lang_urls, lang_landings = await _fetch_pages(url, langs)
 
         # 2. Main brief generation
+        lang_url_section = _build_lang_url_section(lang_landings, lang_urls, langs)
         user_prompt = USER_PROMPT_TEMPLATE.format(
             url=url,
             languages=", ".join(langs),
             content=page_content,
             n_langs=len(langs),
+            lang_url_section=lang_url_section,
         )
         message = await client.messages.create(
             model="claude-sonnet-4-6",
@@ -1414,10 +1745,14 @@ async def _run_autofill_job(
             code = lang.get("code", "IT")
             landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
             usp = lang.get("usp_main")
+            # Real sitemap URLs for this language (used to build accurate sitelink final_urls)
+            sitemap_lang_urls = lang_urls.get(code, [])
 
             async def _safe_sitelinks():
                 try:
-                    return await _bg_sitelinks(client, common, code, landing, booking_url)
+                    return await _bg_sitelinks(
+                        client, common, code, landing, booking_url, sitemap_lang_urls
+                    )
                 except Exception as exc:
                     logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
                     return []
