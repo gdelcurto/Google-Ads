@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
 
 if TYPE_CHECKING:
@@ -16,6 +16,13 @@ if TYPE_CHECKING:
 
 class BrandAgent(CampaignAgent):
     TYPE_KEY = "search_brand"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "BRAND_NO_HEADLINES",
+        "BRAND_NO_BRAND_IN_HEADLINES",
+        "BRAND_NO_BRAND_TERMS",
+    ]
 
     # Brand copy = RSA copy generation + full account audit knowledge (QS, structure, negatives)
     SKILL_FILES = (
@@ -99,16 +106,23 @@ class BrandAgent(CampaignAgent):
             return lang.brand_assets.descriptions
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
         if not headlines:
-            warnings.append(
-                f"[Brand/{lang.code}] Nessun headline configurato. "
-                "Aggiungere almeno 3 headline in 'headlines' o in 'brand_assets.headlines'."
-            )
-            return warnings
+            issues.append(ValidationIssue(
+                code="BRAND_NO_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Nessun headline configurato. "
+                    "Aggiungere almeno 3 headline in 'headlines' o in 'brand_assets.headlines'."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
+            return issues
 
         # Brand name must appear in at least one headline
         brand_lower = [t.lower() for t in lang.brand_terms]
@@ -118,51 +132,84 @@ class BrandAgent(CampaignAgent):
         )
         if not brand_found:
             example = lang.brand_terms[0] if lang.brand_terms else "nome hotel"
-            warnings.append(
-                f"[Brand/{lang.code}] Nessun headline contiene il brand name '{example}'. "
-                "Brand campaigns DEVONO includere il nome dell'hotel (pinnato in posizione 1). "
-                "Configura 'brand_assets.headlines' con copy branded."
-            )
+            issues.append(ValidationIssue(
+                code="BRAND_NO_BRAND_IN_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Nessun headline contiene il brand name '{example}'. "
+                    "Brand campaigns DEVONO includere il nome dell'hotel (pinnato in posizione 1). "
+                    "Configura 'brand_assets.headlines' con copy branded."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
 
         # Warn if no type-specific assets configured
         if not (lang.brand_assets and lang.brand_assets.headlines):
-            warnings.append(
-                f"[Brand/{lang.code}] Usando headline generici per le campagne Brand. "
-                "Per copy ottimizzata, configura 'brand_assets.headlines' con: "
-                "nome hotel + vantaggi prenotazione diretta (sito ufficiale, miglior tariffa, cancellazione gratis)."
-            )
+            issues.append(ValidationIssue(
+                code="BRAND_GENERIC_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Usando headline generici per le campagne Brand. "
+                    "Per copy ottimizzata, configura 'brand_assets.headlines' con: "
+                    "nome hotel + vantaggi prenotazione diretta (sito ufficiale, miglior tariffa, cancellazione gratis)."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
 
-    def validate_strategy(self, brief: "Brief") -> List[str]:
-        warnings: List[str] = []
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         total = brief.budgets.total_monthly_eur
         if total <= 0:
-            return warnings
+            return issues
 
         entry = brief.budgets.by_campaign_type.get("search_brand")
         if entry and entry.total > 0:
             pct = entry.total / total * 100
             if pct < 5:
-                warnings.append(
-                    f"[Brand] Budget {pct:.1f}% del totale (consigliato 5–15%). "
-                    "Budget Brand troppo basso: le OTA possono superarti nell'asta sulle query branded. "
-                    "Aumenta ad almeno il 5% per proteggere il tuo brand SERP."
-                )
+                issues.append(ValidationIssue(
+                    code="BRAND_BUDGET_TOO_LOW",
+                    message=(
+                        f"[Brand] Budget {pct:.1f}% del totale (consigliato 5–15%). "
+                        "Budget Brand troppo basso: le OTA possono superarti nell'asta sulle query branded. "
+                        "Aumenta ad almeno il 5% per proteggere il tuo brand SERP."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="BrandAgent",
+                ))
             elif pct > 20:
-                warnings.append(
-                    f"[Brand] Budget {pct:.1f}% del totale (max consigliato 15%). "
-                    "Sovrainvestimento su Brand: il traffico brand è già intenzionato e costa poco. "
-                    "Redistribuisci verso Acquisition o PMax per crescita."
-                )
+                issues.append(ValidationIssue(
+                    code="BRAND_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[Brand] Budget {pct:.1f}% del totale (max consigliato 15%). "
+                        "Sovrainvestimento su Brand: il traffico brand è già intenzionato e costa poco. "
+                        "Redistribuisci verso Acquisition o PMax per crescita."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="BrandAgent",
+                ))
 
-        # Brand terms must be configured
+        # Brand terms must be configured per language
         for lang in brief.languages:
             if not lang.brand_terms:
-                warnings.append(
-                    f"[Brand/{lang.code}] Nessun brand term configurato. "
-                    "Senza brand terms la campagna Brand non può essere strutturata correttamente. "
-                    "Aggiungi nome hotel + varianti in 'brand_terms'."
-                )
+                issues.append(ValidationIssue(
+                    code="BRAND_NO_BRAND_TERMS",
+                    message=(
+                        f"[Brand/{lang.code}] Nessun brand term configurato. "
+                        "Senza brand terms la campagna Brand non può essere strutturata correttamente. "
+                        "Aggiungi nome hotel + varianti in 'brand_terms'."
+                    ),
+                    level="error",
+                    blocks_publish=True,
+                    agent="BrandAgent",
+                    language=lang.code,
+                ))
 
-        return warnings
+        return issues

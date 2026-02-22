@@ -1,14 +1,20 @@
 """
 Campaign orchestrator: runs all generators on a brief and returns the AccountPlan.
 Also handles idempotency checks against existing campaign records.
+
+Execution order (agent levels):
+  L1 STRATEGIC  — pre-generation: brief structure + strategy validation
+  L2 SPECIALIST — copy + per-campaign validation (during generation step)
+  TECH          — cross-cutting: naming, negatives, geo (post-generation)
+  L3 AUDITOR    — post-generation: cross-campaign audit
 """
 from __future__ import annotations
 
-import json
 import logging
 from typing import List, Optional
 
-from app.agents import AGENTS
+from app.agents import AGENTS, AUDIT_AGENTS, STRATEGIC_AGENTS, TECH_AGENTS
+from app.agents.base import ValidationIssue
 from app.domain.schemas.brief import Brief
 from app.domain.schemas.campaign_plan import AccountPlan, CampaignPlan, CampaignType
 from app.generators.acquisition_search import AcquisitionSearchGenerator
@@ -33,13 +39,55 @@ def _campaign_type_key(c: CampaignPlan) -> str:
         return "search_brand" if c.campaign_subtype == "Brand" else "search_acquisition"
     return ""
 
+
 logger = logging.getLogger(__name__)
+
+
+def _apply_issues_to_campaigns(
+    issues: List[ValidationIssue],
+    campaigns: List[CampaignPlan],
+) -> tuple[list[str], list[str]]:
+    """
+    Apply ValidationIssue objects to affected campaigns:
+    - issues with blocks_publish=True → set campaign.can_publish=False,
+      add blocker message to campaign.publish_blockers
+    - all issues → classified into warnings or errors for AccountPlan
+
+    Returns (warning_messages, error_messages).
+    """
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    for issue in issues:
+        if issue.level == "error":
+            errors.append(issue.message)
+        else:
+            warnings.append(issue.message)
+
+        if issue.blocks_publish:
+            for campaign in campaigns:
+                if issue.language is None or campaign.language_code == issue.language:
+                    campaign.can_publish = False
+                    blocker = f"[{issue.code}] {issue.message}"
+                    if blocker not in campaign.publish_blockers:
+                        campaign.publish_blockers.append(blocker)
+
+    return warnings, errors
 
 
 class CampaignOrchestrator:
     """
     Runs all generators and assembles the full AccountPlan.
     Supports dry_run mode (no API calls, only plan diff output).
+
+    Validation flow:
+      1. BriefValidator (schema + required fields)
+      2. L1 Strategic agents (brief structure + strategy)
+      3. Generators (create CampaignPlan objects)
+      4. L2 Specialist agents (copy + per-campaign validation)
+      5. StrategicValidator (cross-campaign coherence)
+      6. TECH agents (naming, negatives, geo)
+      7. L3 Audit agents (post-generation cross-campaign audit)
     """
 
     def __init__(self):
@@ -69,7 +117,10 @@ class CampaignOrchestrator:
             extra={"project_id": project_id, "client": brief.client.brand_slug, "dry_run": dry_run},
         )
 
-        # Step 1: Validate brief
+        all_warnings: list[str] = []
+        all_errors: list[str] = []
+
+        # ── Step 1: Schema validation ──────────────────────────────────────────
         validation = self.validator.validate(brief)
         if not validation.is_valid:
             logger.warning(
@@ -77,7 +128,23 @@ class CampaignOrchestrator:
                 extra={"errors": validation.error_messages},
             )
 
-        # Step 2: Run all generators
+        # ── Step 2: L1 Strategic agents (pre-generation) ──────────────────────
+        l1_issues: list[ValidationIssue] = []
+        for agent in STRATEGIC_AGENTS:
+            try:
+                l1_issues.extend(agent.validate_strategy(brief))
+            except Exception as exc:
+                logger.error(f"L1 agent {agent.__class__.__name__} failed: {exc}", exc_info=True)
+
+        # L1 issues don't affect per-campaign can_publish yet (no campaigns generated)
+        # but do contribute to account-level errors/warnings
+        for issue in l1_issues:
+            if issue.level == "error":
+                all_errors.append(issue.message)
+            else:
+                all_warnings.append(issue.message)
+
+        # ── Step 3: Run all generators ─────────────────────────────────────────
         all_campaigns: List[CampaignPlan] = []
         for generator in self.generators:
             try:
@@ -93,15 +160,15 @@ class CampaignOrchestrator:
                     f"Generator {generator.__class__.__name__} fallito: {exc}",
                 )
 
-        # Step 3: Idempotency diff (mark what's new vs existing)
+        # ── Step 4: Idempotency diff (mark what's new vs existing) ────────────
         if existing_campaigns:
             all_campaigns = self._apply_idempotency(all_campaigns, existing_campaigns)
 
-        # Step 4: Global negative keywords (across all campaigns)
+        # ── Step 5: Global negative keywords (across all campaigns) ───────────
         global_negatives = self._build_global_negatives(brief)
 
-        # Step 5: Agent copy validation — one check per (language × campaign_type)
-        agent_warnings: list[str] = []
+        # ── Step 6: L2 Agent copy validation — one check per (language × campaign_type) ──
+        l2_issues: list[ValidationIssue] = []
         seen_pairs: set[tuple[str, str]] = set()
         for c in all_campaigns:
             tk = _campaign_type_key(c)
@@ -110,20 +177,59 @@ class CampaignOrchestrator:
                 seen_pairs.add(pair)
                 lang = brief.get_language(c.language_code)
                 if lang and tk in AGENTS:
-                    agent_warnings.extend(AGENTS[tk].validate_copy(lang))
+                    l2_issues.extend(AGENTS[tk].validate_copy(lang))
 
-        # Step 5b: Agent strategy validation — per campaign type (budget, structure, audiences)
+        # Step 6b: L2 Agent strategy validation — per campaign type
         seen_types: set[str] = set()
         for c in all_campaigns:
             tk = _campaign_type_key(c)
             if tk and tk not in seen_types and tk in AGENTS:
                 seen_types.add(tk)
-                agent_warnings.extend(AGENTS[tk].validate_strategy(brief))
+                l2_issues.extend(AGENTS[tk].validate_strategy(brief))
 
-        # Step 5c: Cross-campaign strategic validation (differentiation, budget mix)
-        agent_warnings.extend(self.strategy_validator.validate(brief))
+        # Step 6c: Cross-campaign strategic validation
+        l2_issues.extend(self.strategy_validator.validate(brief))
 
-        # Step 6: Dry run diff (only set if not already set by idempotency)
+        w, e = _apply_issues_to_campaigns(l2_issues, all_campaigns)
+        all_warnings.extend(w)
+        all_errors.extend(e)
+
+        # ── Step 7: TECH agents (naming, negatives, geo) ──────────────────────
+        tech_issues: list[ValidationIssue] = []
+        for agent in TECH_AGENTS:
+            try:
+                tech_issues.extend(agent.validate_strategy(brief))
+                tech_issues.extend(agent.validate_plan(brief, all_campaigns))
+            except Exception as exc:
+                logger.error(f"TECH agent {agent.__class__.__name__} failed: {exc}", exc_info=True)
+
+        w, e = _apply_issues_to_campaigns(tech_issues, all_campaigns)
+        all_warnings.extend(w)
+        all_errors.extend(e)
+
+        # ── Step 8: L3 Audit agents (post-generation cross-campaign) ──────────
+        l3_issues: list[ValidationIssue] = []
+        for agent in AUDIT_AGENTS:
+            try:
+                l3_issues.extend(agent.validate_plan(brief, all_campaigns))
+            except Exception as exc:
+                logger.error(f"L3 agent {agent.__class__.__name__} failed: {exc}", exc_info=True)
+
+        w, e = _apply_issues_to_campaigns(l3_issues, all_campaigns)
+        all_warnings.extend(w)
+        all_errors.extend(e)
+
+        # Also apply L1 blocking issues to all campaigns (account-level blockers)
+        blocking_l1 = [i for i in l1_issues if i.blocks_publish]
+        if blocking_l1:
+            for campaign in all_campaigns:
+                for issue in blocking_l1:
+                    campaign.can_publish = False
+                    blocker = f"[{issue.code}] {issue.message}"
+                    if blocker not in campaign.publish_blockers:
+                        campaign.publish_blockers.append(blocker)
+
+        # ── Step 9: Dry run diff ───────────────────────────────────────────────
         if dry_run:
             for campaign in all_campaigns:
                 if campaign.dry_run_diff is None:
@@ -143,10 +249,10 @@ class CampaignOrchestrator:
             brief_version=brief.version,
             campaigns=all_campaigns,
             global_negative_keywords=global_negatives,
-            validation_warnings=validation.warning_messages + agent_warnings,
-            validation_errors=validation.error_messages,
-            is_valid=validation.is_valid,
-            publish_ready=validation.is_valid and all(c.can_publish for c in all_campaigns),
+            validation_warnings=validation.warning_messages + all_warnings,
+            validation_errors=validation.error_messages + all_errors,
+            is_valid=validation.is_valid and not all_errors,
+            publish_ready=validation.is_valid and not all_errors and all(c.can_publish for c in all_campaigns),
         )
 
         logger.info(
@@ -155,6 +261,8 @@ class CampaignOrchestrator:
                 "campaigns": len(all_campaigns),
                 "valid": plan.is_valid,
                 "publish_ready": plan.publish_ready,
+                "warnings": len(all_warnings),
+                "errors": len(all_errors),
             },
         )
         return plan

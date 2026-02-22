@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
 
 if TYPE_CHECKING:
@@ -32,6 +32,11 @@ _TRAVEL_SIGNALS = [
 
 class DemandGenAgent(CampaignAgent):
     TYPE_KEY = "demand_gen"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "DG_NO_IN_MARKET_SEGMENTS",
+    ]
 
     # Demand Gen = creative fatigue detection + ad copy variants for upper-funnel audiences
     SKILL_FILES = (
@@ -131,8 +136,8 @@ class DemandGenAgent(CampaignAgent):
     def get_descriptions(self, lang: LanguagePlan) -> List[str]:
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
         # Detect transactional copy in Demand Gen (wrong tone for upper funnel)
@@ -144,64 +149,101 @@ class DemandGenAgent(CampaignAgent):
 
         if transactional_found:
             examples = '", "'.join(transactional_found[:2])
-            warnings.append(
-                f'[DemandGen/{lang.code}] Copy transazionale/promozionale rilevata: "{examples}". '
-                "Demand Gen è upper-funnel (inspirazione, non prenotazione). "
-                "Usa copy aspirazionale: 'Il tuo rifugio nel cuore di Roma', 'Vivi Roma come un local'. "
-                "Evita: 'Prenota ora', 'Miglior prezzo', '4 stelle Roma centro'."
-            )
+            issues.append(ValidationIssue(
+                code="DG_TRANSACTIONAL_COPY",
+                message=(
+                    f'[DemandGen/{lang.code}] Copy transazionale/promozionale rilevata: "{examples}". '
+                    "Demand Gen è upper-funnel (inspirazione, non prenotazione). "
+                    "Usa copy aspirazionale: 'Il tuo rifugio nel cuore di Roma', 'Vivi Roma come un local'. "
+                    "Evita: 'Prenota ora', 'Miglior prezzo', '4 stelle Roma centro'."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="DemandGenAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
 
-    def validate_strategy(self, brief: "Brief") -> List[str]:
-        warnings: List[str] = []
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         total = brief.budgets.total_monthly_eur
         if total <= 0:
-            return warnings
+            return issues
 
         entry = brief.budgets.by_campaign_type.get("demand_gen")
         if entry and entry.total > 0:
             pct = entry.total / total * 100
             if pct < 5:
-                warnings.append(
-                    f"[Demand Gen] Budget {pct:.1f}% del totale (consigliato 5–15%). "
-                    "Con budget < 5% Demand Gen non raggiunge massa critica per l'apprendimento "
-                    "e le performance non sono statisticamente significative."
-                )
+                issues.append(ValidationIssue(
+                    code="DG_BUDGET_TOO_LOW",
+                    message=(
+                        f"[Demand Gen] Budget {pct:.1f}% del totale (consigliato 5–15%). "
+                        "Con budget < 5% Demand Gen non raggiunge massa critica per l'apprendimento "
+                        "e le performance non sono statisticamente significative."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="DemandGenAgent",
+                ))
             elif pct > 20:
-                warnings.append(
-                    f"[Demand Gen] Budget {pct:.1f}% del totale (max consigliato 15%). "
-                    "Budget Demand Gen elevato: in questa fase il CPA è alto e il ROAS basso. "
-                    "Valuta di redistribuire verso PMax o Acquisition per conversioni dirette."
-                )
+                issues.append(ValidationIssue(
+                    code="DG_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[Demand Gen] Budget {pct:.1f}% del totale (max consigliato 15%). "
+                        "Budget Demand Gen elevato: in questa fase il CPA è alto e il ROAS basso. "
+                        "Valuta di redistribuire verso PMax o Acquisition per conversioni dirette."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="DemandGenAgent",
+                ))
 
-        # In-market audience check — OBBLIGATORIA per Demand Gen
+        # In-market audience check — OBBLIGATORIA per Demand Gen — hard blocker
         in_market = brief.audiences.in_market_segments
         if not in_market:
-            warnings.append(
-                "[Demand Gen] ⛔ Nessun segmento in-market configurato. "
-                "Demand Gen RICHIEDE audience per funzionare correttamente. "
-                "Aggiungi: 'In-market: Travel', 'In-market: Hotel & Accommodation', "
-                "'In-market: Trips to [destinazione]', 'Custom segment competitor'."
-            )
+            issues.append(ValidationIssue(
+                code="DG_NO_IN_MARKET_SEGMENTS",
+                message=(
+                    "[Demand Gen] Nessun segmento in-market configurato. "
+                    "Demand Gen RICHIEDE audience per funzionare correttamente. "
+                    "Aggiungi: 'In-market: Travel', 'In-market: Hotel & Accommodation', "
+                    "'In-market: Trips to [destinazione]', 'Custom segment competitor'."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="DemandGenAgent",
+            ))
         else:
             has_travel = any(
                 any(sig in seg.lower() for sig in _TRAVEL_SIGNALS)
                 for seg in in_market
             )
             if not has_travel:
-                warnings.append(
-                    "[Demand Gen] Nessun segmento in-market correlato al travel o hospitality. "
-                    "Aggiungi segmenti specifici: 'In-market: Hotel & Accommodation', "
-                    "'In-market: Travel', 'In-market: City Breaks'."
-                )
+                issues.append(ValidationIssue(
+                    code="DG_NO_TRAVEL_SEGMENTS",
+                    message=(
+                        "[Demand Gen] Nessun segmento in-market correlato al travel o hospitality. "
+                        "Aggiungi segmenti specifici: 'In-market: Hotel & Accommodation', "
+                        "'In-market: Travel', 'In-market: City Breaks'."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="DemandGenAgent",
+                ))
 
         # Lookalike/remarketing audience check
         if not brief.audiences.remarketing_lists:
-            warnings.append(
-                "[Demand Gen] Nessuna lista remarketing/lookalike configurata. "
-                "Demand Gen performa significativamente meglio con lookalike dei visitatori del sito. "
-                "Configura almeno una lista remarketing (30–90 giorni) come seed per il lookalike."
-            )
+            issues.append(ValidationIssue(
+                code="DG_NO_REMARKETING_SEED",
+                message=(
+                    "[Demand Gen] Nessuna lista remarketing/lookalike configurata. "
+                    "Demand Gen performa significativamente meglio con lookalike dei visitatori del sito. "
+                    "Configura almeno una lista remarketing (30–90 giorni) come seed per il lookalike."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="DemandGenAgent",
+            ))
 
-        return warnings
+        return issues

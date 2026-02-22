@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
 
 if TYPE_CHECKING:
@@ -20,6 +20,11 @@ _MIN_HEADLINES_EXCELLENT = 8
 
 class PMaxAgent(CampaignAgent):
     TYPE_KEY = "performance_max"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "PMAX_NO_BRAND_TERMS",
+    ]
 
     # PMax = bid strategy selection + budget scenario planning + landing page quality
     SKILL_FILES = (
@@ -123,40 +128,59 @@ class PMaxAgent(CampaignAgent):
             return lang.brand_assets.descriptions
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
         if len(headlines) < _MIN_HEADLINES_GOOD:
-            warnings.append(
-                f"[PMax/{lang.code}] Solo {len(headlines)} headline configurati "
-                f"(min 3, consigliati {_MIN_HEADLINES_EXCELLENT}+ per ad strength 'Excellent'). "
-                "Con pochi headline Google ha combinazioni creative limitate e performance ridotte."
-            )
+            issues.append(ValidationIssue(
+                code="PMAX_TOO_FEW_HEADLINES",
+                message=(
+                    f"[PMax/{lang.code}] Solo {len(headlines)} headline configurati "
+                    f"(min 3, consigliati {_MIN_HEADLINES_EXCELLENT}+ per ad strength 'Excellent'). "
+                    "Con pochi headline Google ha combinazioni creative limitate e performance ridotte."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="PMaxAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
 
-    def validate_strategy(self, brief: "Brief") -> List[str]:
-        warnings: List[str] = []
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         total = brief.budgets.total_monthly_eur
         if total <= 0:
-            return warnings
+            return issues
 
         entry = brief.budgets.by_campaign_type.get("performance_max")
         if entry and entry.total > 0:
             pct = entry.total / total * 100
             if pct < 30:
-                warnings.append(
-                    f"[PMax] Budget {pct:.1f}% del totale (consigliato 30–50%). "
-                    "Performance Max richiede volume sufficiente per l'algoritmo di ottimizzazione. "
-                    "Con budget basso il periodo di apprendimento si allunga e le performance soffrono."
-                )
+                issues.append(ValidationIssue(
+                    code="PMAX_BUDGET_TOO_LOW",
+                    message=(
+                        f"[PMax] Budget {pct:.1f}% del totale (consigliato 30–50%). "
+                        "Performance Max richiede volume sufficiente per l'algoritmo di ottimizzazione. "
+                        "Con budget basso il periodo di apprendimento si allunga e le performance soffrono."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="PMaxAgent",
+                ))
             elif pct > 60:
-                warnings.append(
-                    f"[PMax] Budget {pct:.1f}% del totale (max consigliato 50%). "
-                    "PMax dominante: rischio che cannibaliz le campagne Brand e Acquisition. "
-                    "Mantieni Brand Search attivo con budget dedicato per proteggere le query branded."
-                )
+                issues.append(ValidationIssue(
+                    code="PMAX_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[PMax] Budget {pct:.1f}% del totale (max consigliato 50%). "
+                        "PMax dominante: rischio che cannibalizzi le campagne Brand e Acquisition. "
+                        "Mantieni Brand Search attivo con budget dedicato per proteggere le query branded."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="PMaxAgent",
+                ))
 
         # Audience signals check
         has_signals = (
@@ -165,21 +189,33 @@ class PMaxAgent(CampaignAgent):
             or brief.audiences.customer_match.enabled
         )
         if not has_signals:
-            warnings.append(
-                "[PMax] ⚠ Nessun audience signal configurato. "
-                "Senza segnali (remarketing lists, in-market segments, customer match), "
-                "il periodo di apprendimento sarà 3–6 settimane invece di 1–2. "
-                "Configura almeno: remarketing list sito (30 giorni), in-market Travel."
-            )
+            issues.append(ValidationIssue(
+                code="PMAX_NO_AUDIENCE_SIGNALS",
+                message=(
+                    "[PMax] Nessun audience signal configurato. "
+                    "Senza segnali (remarketing lists, in-market segments, customer match), "
+                    "il periodo di apprendimento sarà 3–6 settimane invece di 1–2. "
+                    "Configura almeno: remarketing list sito (30 giorni), in-market Travel."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="PMaxAgent",
+            ))
 
-        # Brand exclusion — warn if no brand terms (can't build exclusion list)
+        # Brand exclusion — blocks publish if no brand terms (can't build exclusion list)
         brand_configured = any(bool(l.brand_terms) for l in brief.languages)
         if not brand_configured:
-            warnings.append(
-                "[PMax] ⛔ Nessun brand term configurato. "
-                "Senza brand terms non è possibile impostare la brand exclusion list in PMax. "
-                "PMax senza brand exclusion cannibalizzerà le campagne Brand Search "
-                "e farà aumentare i CPC delle query branded."
-            )
+            issues.append(ValidationIssue(
+                code="PMAX_NO_BRAND_TERMS",
+                message=(
+                    "[PMax] Nessun brand term configurato. "
+                    "Senza brand terms non è possibile impostare la brand exclusion list in PMax. "
+                    "PMax senza brand exclusion cannibalizzerà le campagne Brand Search "
+                    "e farà aumentare i CPC delle query branded."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="PMaxAgent",
+            ))
 
-        return warnings
+        return issues

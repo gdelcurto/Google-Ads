@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
 
 if TYPE_CHECKING:
@@ -16,6 +16,11 @@ if TYPE_CHECKING:
 
 class AcquisitionAgent(CampaignAgent):
     TYPE_KEY = "search_acquisition"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "ACQ_BRAND_IN_HEADLINES",
+    ]
 
     # Acquisition = keyword mining to find intent + cannibalization check + copy variants
     SKILL_FILES = (
@@ -107,60 +112,92 @@ class AcquisitionAgent(CampaignAgent):
             return lang.acquisition_assets.descriptions
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
-        # Brand name must NOT appear in acquisition headlines
+        # Brand name must NOT appear in acquisition headlines — hard blocker
         brand_lower = [t.lower() for t in lang.brand_terms]
         for h in headlines:
             if any(bt in h.lower() for bt in brand_lower):
-                warnings.append(
-                    f"[Acquisition/{lang.code}] L'headline '{h}' contiene il brand name. "
-                    "Acquisition usa copy generica (categoria/destinazione/USP). "
-                    "Sposta questo headline in 'brand_assets.headlines' o rimuovi il brand name."
-                )
+                issues.append(ValidationIssue(
+                    code="ACQ_BRAND_IN_HEADLINES",
+                    message=(
+                        f"[Acquisition/{lang.code}] L'headline '{h}' contiene il brand name. "
+                        "Acquisition usa copy generica (categoria/destinazione/USP). "
+                        "Sposta questo headline in 'brand_assets.headlines' o rimuovi il brand name."
+                    ),
+                    level="error",
+                    blocks_publish=True,
+                    agent="AcquisitionAgent",
+                    language=lang.code,
+                ))
 
         # Warn if no type-specific assets configured
         if not (lang.acquisition_assets and lang.acquisition_assets.headlines):
-            warnings.append(
-                f"[Acquisition/{lang.code}] Usando headline generici per le campagne Acquisition. "
-                "Per copy ottimizzata, configura 'acquisition_assets.headlines' con: "
-                "categoria/destinazione/USP senza brand name "
-                "(es. 'Hotel Roma Centro', '4 Stelle Colosseo', 'Colazione Inclusa')."
-            )
+            issues.append(ValidationIssue(
+                code="ACQ_GENERIC_HEADLINES",
+                message=(
+                    f"[Acquisition/{lang.code}] Usando headline generici per le campagne Acquisition. "
+                    "Per copy ottimizzata, configura 'acquisition_assets.headlines' con: "
+                    "categoria/destinazione/USP senza brand name "
+                    "(es. 'Hotel Roma Centro', '4 Stelle Colosseo', 'Colazione Inclusa')."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="AcquisitionAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
 
-    def validate_strategy(self, brief: "Brief") -> List[str]:
-        warnings: List[str] = []
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         total = brief.budgets.total_monthly_eur
         if total <= 0:
-            return warnings
+            return issues
 
         entry = brief.budgets.by_campaign_type.get("search_acquisition")
         if entry and entry.total > 0:
             pct = entry.total / total * 100
             if pct < 30:
-                warnings.append(
-                    f"[Acquisition] Budget {pct:.1f}% del totale (consigliato 30–45%). "
-                    "Budget Acquisition troppo basso per generare volumi di acquisizione significativi. "
-                    "Aumenta ad almeno il 30% del budget totale."
-                )
+                issues.append(ValidationIssue(
+                    code="ACQ_BUDGET_TOO_LOW",
+                    message=(
+                        f"[Acquisition] Budget {pct:.1f}% del totale (consigliato 30–45%). "
+                        "Budget Acquisition troppo basso per generare volumi di acquisizione significativi. "
+                        "Aumenta ad almeno il 30% del budget totale."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="AcquisitionAgent",
+                ))
             elif pct > 50:
-                warnings.append(
-                    f"[Acquisition] Budget {pct:.1f}% del totale (max consigliato 45%). "
-                    "Budget Acquisition molto elevato. Valuta se redistribuire verso PMax "
-                    "per copertura cross-network e reach incrementale."
-                )
+                issues.append(ValidationIssue(
+                    code="ACQ_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[Acquisition] Budget {pct:.1f}% del totale (max consigliato 45%). "
+                        "Budget Acquisition molto elevato. Valuta se redistribuire verso PMax "
+                        "per copertura cross-network e reach incrementale."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="AcquisitionAgent",
+                ))
 
         # Warn if no keyword themes configured (using vertical template fallback)
         if not brief.acquisition_keywords:
-            warnings.append(
-                "[Acquisition] Nessun keyword theme specifico configurato. "
-                "L'Acquisition usa template verticali come fallback. "
-                "Per massimizzare la rilevanza configura keyword themes specifici per questo hotel: "
-                "temi consigliati — city intent, categoria, proximity, occasion/intent."
-            )
+            issues.append(ValidationIssue(
+                code="ACQ_NO_KEYWORD_THEMES",
+                message=(
+                    "[Acquisition] Nessun keyword theme specifico configurato. "
+                    "L'Acquisition usa template verticali come fallback. "
+                    "Per massimizzare la rilevanza configura keyword themes specifici per questo hotel: "
+                    "temi consigliati — city intent, categoria, proximity, occasion/intent."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="AcquisitionAgent",
+            ))
 
-        return warnings
+        return issues
