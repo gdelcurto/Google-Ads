@@ -115,3 +115,26 @@ class AuditLog(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="audit_logs")
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="audit_logs")
+
+
+class AutofillJob(Base):
+    """Staging table for background auto-fill jobs.
+
+    Stores the complete enriched result (main brief + sitelinks + per-type copies)
+    so the user can apply it to the project at any time without re-calling the APIs.
+    Multiple jobs can exist per project; results are never written to project.brief_json
+    automatically — the user must explicitly click "Applica al progetto".
+    """
+    __tablename__ = "autofill_jobs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    # Not a FK: keeps the job even if the project is deleted, and allows jobs before project save
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(2000), nullable=False)
+    languages_json: Mapped[str] = mapped_column(Text, nullable=False)   # JSON array of lang codes
+    # pending | running | completed | failed
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

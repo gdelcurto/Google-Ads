@@ -1,6 +1,6 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, autofillApi, AutofillResult } from '../api/projects'
+import { projectsApi, autofillApi, AutofillResult, EnrichedAutofillResult } from '../api/projects'
 import { T } from '../styles/theme'
 import { GoogleAdPreview } from './GoogleAdPreview'
 
@@ -740,9 +740,13 @@ interface BriefFormProps {
   projectId: string
   existingBrief?: Record<string, unknown> | null
   onSaved: () => void
+  /** Enriched autofill result from a completed background job — applied automatically on mount/change. */
+  pendingAutofill?: EnrichedAutofillResult | null
+  /** Called when a background job is successfully started, with the job ID. */
+  onJobStarted?: (jobId: string) => void
 }
 
-export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFormProps) {
+export default function BriefForm({ projectId, existingBrief, onSaved, pendingAutofill, onJobStarted }: BriefFormProps) {
   const qc = useQueryClient()
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(() =>
@@ -790,105 +794,63 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
   const [autofillManual, setAutofillManual] = useState(false)
   const [autofillContent, setAutofillContent] = useState('')
 
-  const autofillMutation = useMutation({
-    mutationFn: () => autofillApi.fromUrl(
+  // Apply an enriched autofill result from a completed background job
+  useEffect(() => {
+    if (!pendingAutofill) return
+    setForm(prev => ({
+      ...prev,
+      brand_name: pendingAutofill.brand_name || prev.brand_name,
+      brand_slug: pendingAutofill.brand_slug || prev.brand_slug,
+      domain: pendingAutofill.domain || prev.domain,
+      country: pendingAutofill.country || prev.country,
+      hotel_category: pendingAutofill.hotel_category || prev.hotel_category,
+      stars: pendingAutofill.stars != null ? String(pendingAutofill.stars) : prev.stars,
+      rooms: pendingAutofill.rooms != null ? String(pendingAutofill.rooms) : prev.rooms,
+      address: pendingAutofill.address || prev.address,
+      services: (pendingAutofill.services || []).join('\n'),
+      strengths: (pendingAutofill.strengths || []).join('\n'),
+      booking_engine_url: pendingAutofill.booking_engine_url || prev.booking_engine_url,
+      target_countries: (pendingAutofill.target_countries || []).join('\n') || prev.target_countries,
+      project_name: prev.project_name || `${pendingAutofill.brand_name} — Google Ads`,
+    }))
+    if (pendingAutofill.languages && pendingAutofill.languages.length > 0) {
+      setLangs(pendingAutofill.languages.map(l => ({
+        code: l.code,
+        name: l.name,
+        google_language_id: String(l.google_language_id || ''),
+        landing_page: l.landing_page || '',
+        brand_terms: (l.brand_terms || []).join('\n'),
+        usp_main: l.usp_main || '',
+        headlines: (l.headlines || []).join('\n'),
+        descriptions: (l.descriptions || []).join('\n'),
+        callouts: (l.callouts || []).join('\n'),
+        sitelinks: l.sitelinks || [],
+        kw_themes: '',
+        kw_negative: '',
+        brand_headlines: (l.brand_headlines || []).join('\n'),
+        brand_descriptions: (l.brand_descriptions || []).join('\n'),
+        acquisition_headlines: (l.acquisition_headlines || []).join('\n'),
+        acquisition_descriptions: (l.acquisition_descriptions || []).join('\n'),
+        retargeting_headlines: (l.retargeting_headlines || []).join('\n'),
+        retargeting_descriptions: (l.retargeting_descriptions || []).join('\n'),
+      })))
+    }
+    setAutofillSuccess(true)
+  }, [pendingAutofill])
+
+  // Start a background auto-fill job (returns immediately — result arrives via polling in parent)
+  const startJobMutation = useMutation({
+    mutationFn: () => autofillApi.startJob(
       autofillUrl.trim(),
       autofillLangs,
+      projectId,
       autofillManual && autofillContent.trim() ? autofillContent.trim() : undefined,
     ),
-    onSuccess: (data: AutofillResult) => {
-      // Populate form fields with AI-extracted data
-      setForm(prev => ({
-        ...prev,
-        brand_name: data.brand_name || prev.brand_name,
-        brand_slug: data.brand_slug || prev.brand_slug,
-        domain: data.domain || prev.domain,
-        country: data.country || prev.country,
-        hotel_category: data.hotel_category || prev.hotel_category,
-        stars: data.stars != null ? String(data.stars) : prev.stars,
-        rooms: data.rooms != null ? String(data.rooms) : prev.rooms,
-        address: data.address || prev.address,
-        services: (data.services || []).join('\n'),
-        strengths: (data.strengths || []).join('\n'),
-        booking_engine_url: data.booking_engine_url || prev.booking_engine_url,
-        target_countries: (data.target_countries || []).join('\n') || prev.target_countries,
-        project_name: prev.project_name || `${data.brand_name} — Google Ads`,
-      }))
-      // Populate language assets
-      if (data.languages && data.languages.length > 0) {
-        setLangs(data.languages.map(l => ({
-          code: l.code,
-          name: l.name,
-          google_language_id: String(l.google_language_id || ''),
-          landing_page: l.landing_page || '',
-          brand_terms: (l.brand_terms || []).join('\n'),
-          usp_main: l.usp_main || '',
-          headlines: (l.headlines || []).join('\n'),
-          descriptions: (l.descriptions || []).join('\n'),
-          callouts: (l.callouts || []).join('\n'),
-          sitelinks: [],
-          kw_themes: '',
-          kw_negative: '',
-          brand_headlines: '',
-          brand_descriptions: '',
-          acquisition_headlines: '',
-          acquisition_descriptions: '',
-          retargeting_headlines: '',
-          retargeting_descriptions: '',
-        })))
-        // Auto-generate sitelinks + per-type RSA copy for each language in parallel
-        setAutoSlPending(true)
-        const commonArgs = {
-          brand_name: data.brand_name,
-          hotel_category: data.hotel_category || 'city_hotel',
-          stars: data.stars || 3,
-          domain: data.domain || undefined,
-          services: data.services || [],
-          strengths: data.strengths || [],
-        }
-        Promise.allSettled(data.languages.flatMap((l, idx) => {
-          const langArgs = { ...commonArgs, language_code: l.code, usp_main: l.usp_main || undefined }
-          return [
-            // Sitelinks
-            autofillApi.suggestSitelinks({
-              ...langArgs,
-              landing_page: l.landing_page || `https://${data.domain}`,
-              booking_engine_url: data.booking_engine_url || undefined,
-            }).then(slData => {
-              setLangs(prev => prev.map((lang, i) => i === idx
-                ? { ...lang, sitelinks: slData.sitelinks }
-                : lang
-              ))
-            }),
-            // Brand copy
-            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'brand' }).then(copyData => {
-              setLangs(prev => prev.map((lang, i) => i === idx
-                ? { ...lang, brand_headlines: copyData.headlines.join('\n'), brand_descriptions: copyData.descriptions.join('\n') }
-                : lang
-              ))
-            }),
-            // Acquisition copy
-            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'acquisition' }).then(copyData => {
-              setLangs(prev => prev.map((lang, i) => i === idx
-                ? { ...lang, acquisition_headlines: copyData.headlines.join('\n'), acquisition_descriptions: copyData.descriptions.join('\n') }
-                : lang
-              ))
-            }),
-            // Retargeting copy
-            autofillApi.suggestTypeCopy({ ...langArgs, campaign_type: 'retargeting' }).then(copyData => {
-              setLangs(prev => prev.map((lang, i) => i === idx
-                ? { ...lang, retargeting_headlines: copyData.headlines.join('\n'), retargeting_descriptions: copyData.descriptions.join('\n') }
-                : lang
-              ))
-            }),
-          ]
-        })).finally(() => setAutoSlPending(false))
-      }
-      setAutofillSuccess(true)
+    onSuccess: (data) => {
+      if (onJobStarted) onJobStarted(data.job_id)
     },
     onError: (e: Error) => {
       setErrors([`Auto-fill: ${e.message}`])
-      // Se il fetch automatico fallisce, apri la modalità manuale
       if (!autofillManual) setAutofillManual(true)
     },
   })
@@ -1234,7 +1196,8 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
             </div>
             <div style={css.autofillSubtitle}>
               Inserisci l'URL del sito dell'hotel: l'AI analizzerà il sito e compilerà automaticamente
-              tutti i campi del brief (testi, headline, descrizioni, callout per ogni lingua).
+              tutti i campi del brief. L'elaborazione avviene in background — puoi cambiare scheda
+              e tornerai notificato quando è pronta.
             </div>
             <div style={css.autofillRow}>
               <input
@@ -1243,14 +1206,14 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 value={autofillUrl}
                 onChange={e => { setAutofillUrl(e.target.value); setAutofillSuccess(false) }}
                 placeholder="https://www.nomedelhotel.it"
-                disabled={autofillMutation.isPending}
+                disabled={startJobMutation.isPending || startJobMutation.isSuccess}
               />
               <button
-                style={{ ...css.btnAutofill, opacity: autofillMutation.isPending || !autofillUrl.trim() ? 0.6 : 1 }}
-                onClick={() => { setErrors([]); setAutofillSuccess(false); autofillMutation.mutate() }}
-                disabled={autofillMutation.isPending || !autofillUrl.trim()}
+                style={{ ...css.btnAutofill, opacity: startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim() ? 0.6 : 1 }}
+                onClick={() => { setErrors([]); setAutofillSuccess(false); startJobMutation.mutate() }}
+                disabled={startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim()}
               >
-                {autofillMutation.isPending ? '⏳ Analisi in corso...' : '🔍 Analizza e compila'}
+                {startJobMutation.isPending ? '⏳ Avvio...' : '🔍 Analizza e compila'}
               </button>
             </div>
             <div style={{ marginTop: 10, fontSize: 12, color: T.text, fontWeight: 600 }}>
@@ -1261,7 +1224,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                 <span
                   key={code}
                   style={langPillStyle(autofillLangs.includes(code))}
-                  onClick={() => !autofillMutation.isPending && toggleAutofillLang(code)}
+                  onClick={() => !startJobMutation.isPending && !startJobMutation.isSuccess && toggleAutofillLang(code)}
                 >
                   {code}
                 </span>
@@ -1287,13 +1250,14 @@ export default function BriefForm({ projectId, existingBrief, onSaved }: BriefFo
                   placeholder="Incolla qui il contenuto del sito web dell'hotel..."
                   value={autofillContent}
                   onChange={e => setAutofillContent(e.target.value)}
-                  disabled={autofillMutation.isPending}
+                  disabled={startJobMutation.isPending || startJobMutation.isSuccess}
                 />
               </div>
             )}
-            {autofillMutation.isPending && (
-              <div style={{ marginTop: 10, fontSize: 12, color: T.blue }}>
-                Sto analizzando il sito e generando i contenuti con AI... può richiedere 20–40 secondi.
+            {startJobMutation.isSuccess && (
+              <div style={{ marginTop: 10, fontSize: 12, color: T.blue, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '8px 12px' }}>
+                ⏳ Elaborazione in corso in background — puoi cambiare scheda liberamente.
+                Riceverai una notifica in questa pagina quando il brief sarà pronto.
               </div>
             )}
             {autofillSuccess && (

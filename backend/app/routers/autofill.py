@@ -7,12 +7,17 @@ import re
 import urllib.parse
 from typing import List, Optional
 
+import asyncio
+from datetime import datetime
+
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import TokenData, require_strategist_or_admin
 from app.config import get_settings
+from app.database import AsyncSessionLocal, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/autofill", tags=["autofill"])
@@ -663,7 +668,7 @@ async def autofill_from_url(
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
-            model="claude-opus-4-6",
+            model="claude-sonnet-4-6",
             max_tokens=4096,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
@@ -1128,3 +1133,325 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
     descriptions = [_trim_to_word(d, 90) for d in data.get("descriptions", []) if isinstance(d, str) and d.strip()]
 
     return {"headlines": headlines, "descriptions": descriptions}
+
+
+# ─── Background Auto-fill Jobs ────────────────────────────────────────────────
+
+class StartJobRequest(BaseModel):
+    url: str
+    languages: List[str] = ["IT", "EN"]
+    project_id: str
+    content: Optional[str] = None  # manual fallback: paste website text directly
+
+
+@router.post("/jobs")
+async def start_autofill_job(
+    payload: StartJobRequest,
+    background_tasks: BackgroundTasks,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Start a background auto-fill job and return the job ID immediately.
+    The job fetches the hotel website, calls Claude Sonnet, and enriches each language
+    with sitelinks and per-type RSA copies — all without blocking the HTTP response.
+    Poll GET /api/autofill/jobs/{job_id} to check progress.
+    """
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Chiave API Anthropic non configurata. Imposta ANTHROPIC_API_KEY nel file .env",
+        )
+    langs = [lang.upper() for lang in payload.languages if lang.strip()]
+    if not langs:
+        raise HTTPException(status_code=422, detail="Almeno una lingua richiesta")
+
+    from app.domain.models import AutofillJob
+
+    job = AutofillJob(
+        project_id=payload.project_id,
+        url=payload.url,
+        languages_json=json.dumps(langs),
+        status="pending",
+    )
+    db.add(job)
+    await db.flush()
+    job_id = job.id
+
+    background_tasks.add_task(
+        _run_autofill_job,
+        job_id=job_id,
+        url=payload.url,
+        langs=langs,
+        content=payload.content,
+        api_key=settings.anthropic_api_key,
+    )
+
+    logger.info(f"AutofillJob {job_id} queued for project {payload.project_id}")
+    return {"job_id": job_id, "status": "pending"}
+
+
+@router.get("/jobs/{job_id}")
+async def get_autofill_job(
+    job_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Poll the status and result of a background auto-fill job."""
+    from sqlalchemy import select
+    from app.domain.models import AutofillJob
+
+    result = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+
+    resp: dict = {
+        "id": job.id,
+        "project_id": job.project_id,
+        "status": job.status,
+        "created_at": job.created_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error_message": job.error_message,
+        "result": None,
+    }
+    if job.status == "completed" and job.result_json:
+        resp["result"] = json.loads(job.result_json)
+    return resp
+
+
+# ─── Background task helpers ──────────────────────────────────────────────────
+
+async def _update_job_status(
+    job_id: str,
+    status: str,
+    result: dict | None = None,
+    error: str | None = None,
+) -> None:
+    """Update an AutofillJob in a fresh DB session (safe to call from background tasks)."""
+    from sqlalchemy import select
+    from app.domain.models import AutofillJob
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
+        job = res.scalar_one_or_none()
+        if not job:
+            return
+        job.status = status
+        if result is not None:
+            job.result_json = json.dumps(result)
+        if error is not None:
+            job.error_message = str(error)[:2000]
+        if status in ("completed", "failed"):
+            job.completed_at = datetime.utcnow()
+        await db.commit()
+
+
+async def _bg_sitelinks(
+    client, common: dict, lang_code: str, landing_page: str, booking_url: str
+) -> list:
+    """Generate sitelinks for one language inside the background task."""
+    lang_name = LANG_NAMES.get(lang_code, lang_code)
+    services_txt = ", ".join(common.get("services") or []) or "non specificati"
+    strengths_txt = ", ".join(common.get("strengths") or []) or "non specificati"
+    bk = booking_url or landing_page
+
+    prompt = (
+        f"Sei un copywriter Google Ads specializzato in hotel. Genera esattamente 5 sitelink.\n\n"
+        f"Hotel: {common['brand_name']}\n"
+        f"Categoria: {common['hotel_category']} — {common['stars']} stelle\n"
+        f"Lingua: {lang_name} ({lang_code})\n"
+        f"Landing page: {landing_page}\nBooking engine: {bk}\n"
+        f"Servizi: {services_txt}\nPunti di forza: {strengths_txt}\n\n"
+        "REGOLE CARATTERI:\n"
+        "- text: ≤ 25 caratteri\n- description_1: ≤ 35 caratteri\n- description_2: ≤ 35 caratteri\n"
+        "NON troncare le parole: se non entra, elimina l'ultima parola.\n\n"
+        "REGOLE CONTENUTO:\n"
+        "- final_url basata sulla landing page reale\n"
+        f"- Scrivi in {lang_name}\n"
+        "- 5 temi diversi: prenotazione diretta, offerte, camere, servizi, location\n\n"
+        "Restituisci SOLO array JSON di 5 oggetti, zero testo aggiuntivo:\n"
+        '[{"text":"...","description_1":"...","description_2":"...","final_url":"..."}]'
+    )
+
+    message = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = message.content[0].text.strip()
+    m = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', raw, re.DOTALL)
+    if m:
+        raw = m.group(1)
+    else:
+        s, e = raw.find('['), raw.rfind(']')
+        if s != -1 and e != -1:
+            raw = raw[s:e + 1]
+    sitelinks = json.loads(raw)
+    return [
+        {
+            "text": _trim_to_word(str(sl.get("text", "")), 25),
+            "description_1": _trim_to_word(str(sl.get("description_1", "")), 35),
+            "description_2": _trim_to_word(str(sl.get("description_2", "")), 35),
+            "final_url": str(sl.get("final_url", landing_page)),
+        }
+        for sl in sitelinks if isinstance(sl, dict) and sl.get("text")
+    ]
+
+
+async def _bg_type_copy(
+    client, common: dict, lang_code: str, usp: str | None, campaign_type: str
+) -> dict:
+    """Generate RSA headlines/descriptions for one language + campaign type in the background task."""
+    if campaign_type not in _TYPE_COPY_PROMPTS:
+        return {"headlines": [], "descriptions": []}
+    meta = _TYPE_COPY_PROMPTS[campaign_type]
+    lang_name = LANG_NAMES.get(lang_code, lang_code)
+    services_txt = ", ".join(common.get("services") or []) or "non specificati"
+    strengths_txt = ", ".join(common.get("strengths") or []) or "non specificati"
+    usp_txt = usp or "non specificata"
+
+    prompt = (
+        f"Sei un copywriter Google Ads specializzato in hotel e hospitality.\n"
+        f"Genera RSA copy ad alto impatto per campagne {meta['label']} in lingua {lang_name}.\n\n"
+        f"═══ CONTESTO CAMPAGNA ═══\n{meta['context']}\n\n"
+        f"═══ DATI HOTEL ═══\n"
+        f"Hotel: {common['brand_name']}\nCategoria: {common['hotel_category']} — {common['stars']} stelle\n"
+        f"USP principale: {usp_txt}\nServizi: {services_txt}\nPunti di forza: {strengths_txt}\n"
+        f"Lingua output: {lang_name} ({lang_code})\n\n"
+        f"═══ REGOLE HEADLINE (≤ 30 caratteri) ═══\n{meta['headline_rules']}\n\n"
+        f"═══ REGOLE DESCRIZIONI (≤ 90 caratteri) ═══\n{meta['description_rules']}\n\n"
+        'Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:\n'
+        '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8"],"descriptions":["d1","d2"]}'
+    )
+
+    message = await client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    raw = message.content[0].text.strip()
+    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+    if m:
+        raw = m.group(1)
+    else:
+        s, e = raw.find('{'), raw.rfind('}')
+        if s != -1 and e != -1:
+            raw = raw[s:e + 1]
+    parsed = json.loads(raw)
+    return {
+        "headlines": [_trim_to_word(h, 30) for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()],
+        "descriptions": [_trim_to_word(d, 90) for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()],
+    }
+
+
+async def _run_autofill_job(
+    job_id: str, url: str, langs: List[str], content: Optional[str], api_key: str
+) -> None:
+    """
+    Background task: orchestrate the complete auto-fill pipeline.
+    1. Fetch hotel website (or use manual content).
+    2. Call Claude Sonnet for the main brief JSON.
+    3. For each language in parallel: sitelinks + brand/acquisition/retargeting RSA copies.
+    4. Persist the enriched result in AutofillJob.result_json with status=completed|failed.
+    """
+    await _update_job_status(job_id, "running")
+    try:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+
+        # 1. Fetch website content
+        if content and content.strip():
+            page_content = content.strip()[:14000]
+        else:
+            page_content = await _fetch_pages(url)
+
+        # 2. Main brief generation
+        user_prompt = USER_PROMPT_TEMPLATE.format(
+            url=url,
+            languages=", ".join(langs),
+            content=page_content,
+            n_langs=len(langs),
+        )
+        message = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        raw = message.content[0].text.strip()
+        m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
+        if m:
+            raw = m.group(1)
+        else:
+            s, e = raw.find('{'), raw.rfind('}')
+            if s != -1 and e != -1:
+                raw = raw[s:e + 1]
+        data = json.loads(raw)
+
+        # Enrich language metadata
+        for lang in data.get('languages', []):
+            code = str(lang.get('code', '')).upper()
+            lang['code'] = code
+            if not lang.get('google_language_id'):
+                lang['google_language_id'] = LANG_IDS.get(code, 0)
+            if not lang.get('name'):
+                lang['name'] = LANG_NAMES.get(code, code)
+        data = _truncate_assets(data)
+
+        # 3. Enrich each language with sitelinks + type copies (all in parallel)
+        common = {
+            "brand_name": data.get("brand_name", ""),
+            "hotel_category": data.get("hotel_category", "city_hotel"),
+            "stars": data.get("stars", 3),
+            "services": data.get("services", []),
+            "strengths": data.get("strengths", []),
+        }
+        booking_url = data.get("booking_engine_url") or f"https://{data.get('domain', '')}"
+
+        async def _enrich_language(lang: dict) -> dict:
+            code = lang.get("code", "IT")
+            landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
+            usp = lang.get("usp_main")
+
+            async def _safe_sitelinks():
+                try:
+                    return await _bg_sitelinks(client, common, code, landing, booking_url)
+                except Exception as exc:
+                    logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
+                    return []
+
+            async def _safe_copy(ctype):
+                try:
+                    return await _bg_type_copy(client, common, code, usp, ctype)
+                except Exception as exc:
+                    logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
+                    return {"headlines": [], "descriptions": []}
+
+            sl, brand, acq, ret = await asyncio.gather(
+                _safe_sitelinks(),
+                _safe_copy("brand"),
+                _safe_copy("acquisition"),
+                _safe_copy("retargeting"),
+            )
+            return {
+                **lang,
+                "sitelinks": sl,
+                "brand_headlines": brand["headlines"],
+                "brand_descriptions": brand["descriptions"],
+                "acquisition_headlines": acq["headlines"],
+                "acquisition_descriptions": acq["descriptions"],
+                "retargeting_headlines": ret["headlines"],
+                "retargeting_descriptions": ret["descriptions"],
+            }
+
+        enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
+        data["languages"] = list(enriched)
+
+        await _update_job_status(job_id, "completed", result=data)
+        logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")
+
+    except Exception as exc:
+        logger.error(f"AutofillJob {job_id} failed: {exc}", exc_info=True)
+        await _update_job_status(job_id, "failed", error=str(exc))
