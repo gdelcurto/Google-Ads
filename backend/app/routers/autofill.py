@@ -71,13 +71,20 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str) -> Optional[ET.Element
     """Fetch an XML document and return its parsed root, or None on error."""
     try:
         resp = await client.get(url)
-        if resp.status_code == 200 and ('xml' in resp.headers.get('content-type', '') or
-                                         resp.text.lstrip().startswith('<')):
-            # Strip XML namespace declarations for simpler xpath access
-            text = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', resp.text)
-            return ET.fromstring(text)
+        if resp.status_code != 200:
+            logger.debug(f"_fetch_xml {url}: HTTP {resp.status_code}")
+            return None
+        text = resp.text.strip()
+        if not text.startswith('<'):
+            return None
+        # 1. Strip namespace declarations (xmlns:foo="...") from opening tags
+        text = re.sub(r'\s+xmlns(?::\w+)?="[^"]*"', '', text)
+        # 2. Strip namespace prefixes from element names: <xhtml:link> → <link>, </xhtml:link> → </link>
+        #    This must happen AFTER declaration removal so the prefix→URI mapping is already gone.
+        text = re.sub(r'<(/?)\w+:(\w)', r'<\1\2', text)
+        return ET.fromstring(text)
     except Exception as exc:
-        logger.debug(f"_fetch_xml {url}: {exc}")
+        logger.warning(f"_fetch_xml {url}: {type(exc).__name__}: {exc}")
     return None
 
 
