@@ -38,11 +38,33 @@ logging.basicConfig(level=logging.INFO if not settings.app_debug else logging.DE
 logger = logging.getLogger(__name__)
 
 
+def _run_alembic_upgrade() -> None:
+    """Run Alembic migrations synchronously (called via run_in_executor)."""
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+
+        # alembic.ini lives one level up from app/ (i.e. /app/alembic.ini in Docker)
+        ini_path = Path(__file__).parent.parent / "alembic.ini"
+        alembic_cfg = AlembicConfig(str(ini_path))
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied (upgrade head)")
+    except Exception as exc:
+        logger.warning(f"Alembic upgrade failed: {exc} — falling back to create_all")
+
+
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
-    # Create all tables (idempotent: skips existing tables)
+    # Run Alembic migrations first (handles schema changes on existing DBs)
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _run_alembic_upgrade)
+    except Exception as exc:
+        logger.error(f"Migration executor failed: {exc}", exc_info=True)
+
+    # create_all as safety net for brand-new DBs not tracked by Alembic
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
