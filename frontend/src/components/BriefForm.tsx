@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, autofillApi, EnrichedAutofillResult } from '../api/projects'
+import { projectsApi, autofillApi, EnrichedAutofillResult, ApiCallLogEntry } from '../api/projects'
 import { T } from '../styles/theme'
 import { GoogleAdPreview } from './GoogleAdPreview'
 
@@ -746,7 +746,7 @@ const VERTICAL_DEFAULT_STARS: Record<string, string> = {
 }
 
 /** Append a single API call log entry to the project's persisted log in localStorage. */
-function appendApiLog(projectId: string, entry: Record<string, unknown>): void {
+function appendApiLog(projectId: string, entry: ApiCallLogEntry): void {
   const key = `autofill_apilog_${projectId}`
   try {
     const raw = localStorage.getItem(key)
@@ -924,7 +924,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
         )
       }
       setBudgetByTypeLang(newBudget)
-      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
     },
     onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })
@@ -998,7 +998,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
         : l
       ))
       setKwSuggestingLang(null)
-      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
     },
     onError: (e: Error) => {
       setErrors([`Suggerimento keyword: ${e.message}`])
@@ -1025,7 +1025,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
         : l
       ))
       setSlSuggestingLang(null)
-      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
     },
     onError: (e: Error) => {
       setErrors([`Suggerimento sitelink: ${e.message}`])
