@@ -71,7 +71,26 @@ class QAGatekeeperAgent(CampaignAgent):
             return issues
 
         for campaign in campaigns:
-            # Each campaign must have at least one ad group
+            from app.domain.schemas.campaign_plan import CampaignType
+
+            # PMax uses pmax_asset_groups, not ad_groups — check separately
+            if campaign.campaign_type == CampaignType.performance_max:
+                if not campaign.pmax_asset_groups:
+                    issues.append(ValidationIssue(
+                        code="QA_PMAX_NO_ASSET_GROUPS",
+                        message=(
+                            f"[QA/{campaign.language_code}] Campagna PMax '{campaign.campaign_name}' "
+                            "non ha asset group. Una campagna PMax senza asset group non può essere pubblicata."
+                        ),
+                        level="error",
+                        blocks_publish=True,
+                        agent="QAGatekeeperAgent",
+                        language=campaign.language_code,
+                    ))
+                # Skip ad_groups check for PMax — it has no ad_groups by design
+                continue
+
+            # Non-PMax campaigns: must have at least one ad group
             if not campaign.ad_groups:
                 issues.append(ValidationIssue(
                     code="QA_CAMPAIGN_NO_AD_GROUPS",

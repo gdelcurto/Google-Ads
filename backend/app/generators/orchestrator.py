@@ -66,7 +66,15 @@ def _apply_issues_to_campaigns(
 
         if issue.blocks_publish:
             for campaign in campaigns:
-                if issue.language is None or campaign.language_code == issue.language:
+                lang_match = (
+                    issue.language is None
+                    or campaign.language_code == issue.language
+                )
+                type_match = (
+                    issue.campaign_type_key is None
+                    or _campaign_type_key(campaign) == issue.campaign_type_key
+                )
+                if lang_match and type_match:
                     campaign.can_publish = False
                     blocker = f"[{issue.code}] {issue.message}"
                     if blocker not in campaign.publish_blockers:

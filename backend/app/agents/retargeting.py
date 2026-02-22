@@ -233,6 +233,7 @@ class RetargetingAgent(CampaignAgent):
                 level="error",
                 blocks_publish=True,
                 agent="RetargetingAgent",
+                campaign_type_key="retargeting",
             ))
         else:
             lookbacks = [rm.lookback_days for rm in rm_lists]

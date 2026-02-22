@@ -42,7 +42,8 @@ class ValidationIssue:
     level: str            # "error" | "warning" | "info"
     blocks_publish: bool  # True → prevents publishing until resolved
     agent: str            # agent class name that emitted this issue
-    language: Optional[str] = None  # None = account-level, set = language-scoped
+    language: Optional[str] = None           # None = account-level, set = language-scoped
+    campaign_type_key: Optional[str] = None  # None = all types, set = type-scoped
 
 
 class CampaignAgent(ABC):
