@@ -81,9 +81,15 @@ async def _fetch_xml(client: httpx.AsyncClient, url: str) -> Optional[ET.Element
     return None
 
 
+def _scan_entry(level: str, msg: str) -> dict:
+    """Create a structured scan log entry."""
+    return {"ts": datetime.utcnow().isoformat(), "level": level, "msg": msg}
+
+
 async def _discover_sitemaps(
     base_url: str,
     client: httpx.AsyncClient,
+    scan_log: List[dict],
 ) -> Tuple[Dict[str, List[str]], List[str]]:
     """
     Discover all sitemaps for a website and return:
@@ -110,8 +116,10 @@ async def _discover_sitemaps(
         if lang:
             lang_urls.setdefault(lang, []).append(url)
 
-    async def _process_urlset(root: ET.Element) -> None:
+    async def _process_urlset(root: ET.Element, source_url: str) -> None:
         """Extract <url> entries from a urlset element."""
+        count_before = len(all_urls)
+        hreflang_count = 0
         for url_el in root.findall('.//url'):
             loc_el = url_el.find('loc')
             if loc_el is None or not loc_el.text:
@@ -130,10 +138,15 @@ async def _discover_sitemaps(
                     if code in LANG_IDS:
                         _add_url(href.strip(), code)
                         hreflang_found = True
+                        hreflang_count += 1
 
             if not hreflang_found:
                 lang = _detect_lang_from_url(loc)
                 _add_url(loc, lang)
+
+        added = len(all_urls) - count_before
+        hreflang_note = f", {hreflang_count} con hreflang" if hreflang_count else ""
+        scan_log.append(_scan_entry("info", f"  → {added} URL estratti{hreflang_note}"))
 
     async def _process_sitemapindex(root: ET.Element) -> None:
         """Fetch and process each <sitemap><loc> listed in a sitemapindex."""
@@ -149,20 +162,23 @@ async def _discover_sitemaps(
 
             # Skip image/video/news sitemaps — not useful for page content
             if any(k in sm_url.lower() for k in ('image', 'video', 'news', '.kml')):
-                logger.debug(f"Skipping non-page sitemap: {sm_url}")
+                scan_log.append(_scan_entry("info", f"  ⊘ Ignorata (immagini/video/news): {sm_url}"))
                 continue
+            scan_log.append(_scan_entry("info", f"  📄 Sub-sitemap: {sm_url}"))
             tasks.append(_fetch_and_process(sm_url))
         await asyncio.gather(*tasks)
 
     async def _fetch_and_process(sm_url: str) -> None:
         root = await _fetch_xml(client, sm_url)
         if root is None:
+            scan_log.append(_scan_entry("warn", f"  ✗ Impossibile leggere: {sm_url}"))
             return
         tag = root.tag.lower()
         if 'sitemapindex' in tag:
+            scan_log.append(_scan_entry("info", f"  🗂 Indice sitemap: {sm_url}"))
             await _process_sitemapindex(root)
         elif 'urlset' in tag:
-            await _process_urlset(root)
+            await _process_urlset(root, sm_url)
 
     # 1. Try standard sitemap locations
     sitemap_candidates = [
@@ -174,32 +190,53 @@ async def _discover_sitemaps(
     ]
 
     # 2. Also check robots.txt for Sitemap: directives
+    scan_log.append(_scan_entry("info", f"🔍 Controllo robots.txt: {root_domain}/robots.txt"))
     try:
         resp = await client.get(f"{root_domain}/robots.txt")
         if resp.status_code == 200:
+            extra = []
             for line in resp.text.splitlines():
                 if line.lower().startswith('sitemap:'):
                     sm_url = line.split(':', 1)[1].strip()
                     if sm_url not in sitemap_candidates:
-                        sitemap_candidates.insert(0, sm_url)  # prioritize explicit declaration
+                        sitemap_candidates.insert(0, sm_url)
+                        extra.append(sm_url)
+            if extra:
+                scan_log.append(_scan_entry("info", f"  ✓ Trovate {len(extra)} direttive Sitemap in robots.txt"))
+            else:
+                scan_log.append(_scan_entry("info", "  · Nessuna direttiva Sitemap in robots.txt"))
+        else:
+            scan_log.append(_scan_entry("info", f"  · robots.txt non disponibile (HTTP {resp.status_code})"))
     except Exception:
-        pass
+        scan_log.append(_scan_entry("info", "  · robots.txt non raggiungibile"))
 
     # 3. Fetch sitemaps (stop after first successful one that yields URLs)
     for candidate in sitemap_candidates:
         if candidate in visited_sitemaps:
             continue
         visited_sitemaps.add(candidate)
+        scan_log.append(_scan_entry("info", f"🗺 Tentativo sitemap: {candidate}"))
         root = await _fetch_xml(client, candidate)
         if root is None:
+            scan_log.append(_scan_entry("info", "  · Non trovata o non leggibile"))
             continue
         tag = root.tag.lower()
         if 'sitemapindex' in tag:
+            scan_log.append(_scan_entry("info", f"  ✓ Indice sitemap trovato — elaborazione sub-sitemap..."))
             await _process_sitemapindex(root)
         elif 'urlset' in tag:
-            await _process_urlset(root)
+            scan_log.append(_scan_entry("info", f"  ✓ Sitemap trovata — estrazione URL..."))
+            await _process_urlset(root, candidate)
         if all_urls:
             break  # found a working sitemap — no need to try fallbacks
+
+    # Summary
+    if all_urls:
+        lang_summary = ", ".join(f"{k}: {len(v)} URL" for k, v in lang_urls.items()) or "nessuna lingua rilevata"
+        scan_log.append(_scan_entry("info",
+            f"✅ Sitemap completata — {len(all_urls)} URL totali | Lingue: {lang_summary}"))
+    else:
+        scan_log.append(_scan_entry("warn", "⚠ Nessuna sitemap trovata — uso crawl homepage"))
 
     logger.info(
         f"Sitemap discovery: {len(all_urls)} total URLs, "
@@ -511,7 +548,7 @@ def _extract_relevant_links(html: str, base_url: str, max_links: int = 4) -> lis
 async def _fetch_pages(
     base_url: str,
     langs: Optional[List[str]] = None,
-) -> Tuple[str, Dict[str, List[str]], Dict[str, str]]:
+) -> Tuple[str, Dict[str, List[str]], Dict[str, str], List[dict]]:
     """
     Fetch hotel website content using sitemap-first strategy.
 
@@ -519,9 +556,15 @@ async def _fetch_pages(
       - content:       Combined plain text from fetched pages (≤ 14 000 chars)
       - lang_urls:     Dict lang_code → list of URLs found in sitemap for that language
       - lang_landings: Dict lang_code → best landing page URL for that language
+      - scan_log:      Human-readable log of the scan process
     """
     if not base_url.startswith(('http://', 'https://')):
         base_url = 'https://' + base_url
+
+    scan_log: List[dict] = []
+    scan_log.append(_scan_entry("info", f"🚀 Avvio scansione: {base_url}"))
+    if langs:
+        scan_log.append(_scan_entry("info", f"🌐 Lingue richieste: {', '.join(langs)}"))
 
     headers = {
         'User-Agent': (
@@ -547,53 +590,58 @@ async def _fetch_pages(
     ) as client:
 
         # ── Step 1: homepage ─────────────────────────────────────────────────
+        scan_log.append(_scan_entry("info", f"🏠 Homepage: {base_url}"))
         try:
             resp = await client.get(base_url)
             ct = resp.headers.get('content-type', '')
             if resp.status_code == 200 and 'text/html' in ct:
                 homepage_html = resp.text
-                # Use the final URL after redirects as canonical base
-                base_url = str(resp.url)
+                base_url = str(resp.url)  # final URL after redirects
                 text = _strip_html(homepage_html)
                 if len(text) > 200:
                     collected.append(f"[{base_url}]\n{text}")
+                    scan_log.append(_scan_entry("info", f"  ✓ Homepage scaricata ({len(text):,} caratteri)"))
+                    if str(resp.url) != base_url:
+                        scan_log.append(_scan_entry("info", f"  ↳ Redirect → {resp.url}"))
             else:
                 errors.append(f"{base_url} → HTTP {resp.status_code}")
+                scan_log.append(_scan_entry("error", f"  ✗ Errore HTTP {resp.status_code}"))
         except Exception as exc:
             errors.append(f"{base_url} → {type(exc).__name__}: {exc}")
+            scan_log.append(_scan_entry("error", f"  ✗ Errore connessione: {exc}"))
 
         # ── Step 2: sitemap discovery ─────────────────────────────────────────
+        scan_log.append(_scan_entry("info", ""))
+        scan_log.append(_scan_entry("info", "━━ SCANSIONE SITEMAP ━━"))
         try:
-            lang_urls, sitemap_all_urls = await _discover_sitemaps(base_url, client)
+            lang_urls, sitemap_all_urls = await _discover_sitemaps(base_url, client, scan_log)
         except Exception as exc:
             logger.warning(f"Sitemap discovery failed: {exc}")
+            scan_log.append(_scan_entry("warn", f"⚠ Sitemap discovery fallita: {exc}"))
             lang_urls, sitemap_all_urls = {}, []
 
-        logger.info(
-            f"Sitemap: {len(sitemap_all_urls)} URLs total, "
-            f"langs detected: {list(lang_urls.keys())}"
-        )
-
         # ── Step 3: determine best landing page per language ──────────────────
-        if langs:
+        if langs and lang_urls:
+            scan_log.append(_scan_entry("info", ""))
+            scan_log.append(_scan_entry("info", "━━ LANDING PAGE PER LINGUA ━━"))
             for lang in langs:
                 landing = _pick_lang_landing(lang_urls, lang, base_url)
+                lang_name = LANG_NAMES.get(lang, lang)
                 if landing:
                     lang_landings[lang] = landing
-                    logger.info(f"  {lang} landing: {landing}")
+                    scan_log.append(_scan_entry("info", f"  ✓ {lang} ({lang_name}): {landing}"))
+                else:
+                    scan_log.append(_scan_entry("warn", f"  · {lang} ({lang_name}): nessuna pagina specifica trovata in sitemap"))
 
         # ── Step 4: pick pages to fetch ──────────────────────────────────────
-        # Prefer sitemap URLs scored by content relevance; fall back to homepage links.
         urls_to_fetch: list[str] = []
 
         if sitemap_all_urls:
-            # Score all sitemap URLs and pick top relevant ones
             scored_sitemap = sorted(
                 [(url, _score_sitemap_url(url)) for url in sitemap_all_urls],
                 key=lambda x: x[1],
                 reverse=True,
             )
-            # Take top 6 relevant (score > 0), deduplicated
             seen_fetch: set[str] = {base_url}
             for url, score in scored_sitemap:
                 if score <= 0:
@@ -604,19 +652,20 @@ async def _fetch_pages(
                 if len(urls_to_fetch) >= 6:
                     break
 
-            # Also include each language landing page to get language-specific content
             for lang_landing in lang_landings.values():
                 if lang_landing not in seen_fetch:
                     seen_fetch.add(lang_landing)
                     urls_to_fetch.append(lang_landing)
 
         if not urls_to_fetch and homepage_html:
-            # Fallback: extract links from homepage HTML
             urls_to_fetch = _extract_relevant_links(homepage_html, base_url, max_links=5)
-
-        logger.info(f"Pages to fetch: {urls_to_fetch}")
+            if urls_to_fetch:
+                scan_log.append(_scan_entry("info", "  · Nessuna sitemap — link estratti dalla homepage"))
 
         # ── Step 5: fetch selected pages ─────────────────────────────────────
+        if urls_to_fetch:
+            scan_log.append(_scan_entry("info", ""))
+            scan_log.append(_scan_entry("info", f"━━ PAGINE SCARICATE ({len(urls_to_fetch)}) ━━"))
         for url in urls_to_fetch:
             if len('\n\n'.join(collected)) >= 14000:
                 break
@@ -627,10 +676,15 @@ async def _fetch_pages(
                     text = _strip_html(resp.text)
                     if len(text) > 200:
                         collected.append(f"[{url}]\n{text}")
+                        scan_log.append(_scan_entry("info", f"  ✓ {url} ({len(text):,} car.)"))
+                    else:
+                        scan_log.append(_scan_entry("info", f"  · {url} (contenuto troppo breve)"))
                 else:
                     errors.append(f"{url} → HTTP {resp.status_code}")
+                    scan_log.append(_scan_entry("warn", f"  ✗ {url} → HTTP {resp.status_code}"))
             except Exception as exc:
                 errors.append(f"{url} → {type(exc).__name__}: {exc}")
+                scan_log.append(_scan_entry("warn", f"  ✗ {url} → {exc}"))
 
     if not collected:
         detail = "Impossibile recuperare il sito web dal server. "
@@ -638,11 +692,16 @@ async def _fetch_pages(
             detail += "Dettagli: " + " | ".join(errors)
         detail += " Usa la modalità manuale: incolla il testo del sito nell'apposita area."
         logger.warning(f"_fetch_pages failed for {base_url}: {errors}")
+        scan_log.append(_scan_entry("error", "✗ Scansione fallita — nessun contenuto recuperato"))
         raise HTTPException(status_code=422, detail=detail)
 
     result = '\n\n'.join(collected)[:14000]
-    logger.info(f"_fetch_pages: {len(collected)} pages, {len(result)} chars total")
-    return result, lang_urls, lang_landings
+    total_chars = len(result)
+    scan_log.append(_scan_entry("info", ""))
+    scan_log.append(_scan_entry("info",
+        f"✅ Scansione completata — {len(collected)} pagine, {total_chars:,} caratteri totali"))
+    logger.info(f"_fetch_pages: {len(collected)} pages, {total_chars} chars total")
+    return result, lang_urls, lang_landings, scan_log
 
 
 def _trim_to_word(text: str, max_chars: int) -> str:
@@ -944,13 +1003,15 @@ async def autofill_from_url(
     # 1. Fetch the website (or use manually provided content)
     lang_urls:     Dict[str, List[str]] = {}
     lang_landings: Dict[str, str]       = {}
+    scan_log:      List[dict]           = []
 
     if payload.content and payload.content.strip():
         logger.info(f"Autofill: using manual content for {payload.url}, langs={langs}")
         content = payload.content.strip()[:14000]
+        scan_log.append(_scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata"))
     else:
         logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
-        content, lang_urls, lang_landings = await _fetch_pages(payload.url, langs)
+        content, lang_urls, lang_landings, scan_log = await _fetch_pages(payload.url, langs)
 
     # 2. Call Claude
     lang_url_section = _build_lang_url_section(lang_landings, lang_urls, langs)
@@ -1007,6 +1068,23 @@ async def autofill_from_url(
 
     data = _truncate_assets(data)
 
+    # Override landing_page with sitemap-discovered URLs (deterministic — not AI-dependent)
+    if lang_landings:
+        scan_log.append(_scan_entry("info", ""))
+        scan_log.append(_scan_entry("info", "━━ ASSEGNAZIONE LANDING PAGE ━━"))
+        for lang in data.get('languages', []):
+            code = lang.get('code', '')
+            if code in lang_landings:
+                old = lang.get('landing_page', '')
+                lang['landing_page'] = lang_landings[code]
+                if old != lang_landings[code]:
+                    scan_log.append(_scan_entry("info",
+                        f"  ✓ {code}: {lang_landings[code]} (AI suggeriva: {old or 'n/a'})"))
+            else:
+                scan_log.append(_scan_entry("warn",
+                    f"  · {code}: nessuna landing specifica — mantenuto: {lang.get('landing_page', 'n/a')}"))
+
+    data['_scan_log'] = scan_log
     logger.info(f"Autofill OK: {data.get('brand_name')} — {len(data.get('languages', []))} langs")
     return data
 
@@ -1690,11 +1768,13 @@ async def _run_autofill_job(
         # 1. Fetch website content + sitemap data
         lang_urls:     Dict[str, List[str]] = {}
         lang_landings: Dict[str, str]       = {}
+        scan_log:      List[dict]           = []
 
         if content and content.strip():
             page_content = content.strip()[:14000]
+            scan_log.append(_scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata"))
         else:
-            page_content, lang_urls, lang_landings = await _fetch_pages(url, langs)
+            page_content, lang_urls, lang_landings, scan_log = await _fetch_pages(url, langs)
 
         # 2. Main brief generation
         lang_url_section = _build_lang_url_section(lang_landings, lang_urls, langs)
@@ -1730,6 +1810,24 @@ async def _run_autofill_job(
             if not lang.get('name'):
                 lang['name'] = LANG_NAMES.get(code, code)
         data = _truncate_assets(data)
+
+        # Override landing_page with sitemap-discovered URLs (deterministic — not AI-dependent)
+        if lang_landings:
+            scan_log.append(_scan_entry("info", ""))
+            scan_log.append(_scan_entry("info", "━━ ASSEGNAZIONE LANDING PAGE ━━"))
+            for lang in data.get('languages', []):
+                code = lang.get('code', '')
+                if code in lang_landings:
+                    old = lang.get('landing_page', '')
+                    lang['landing_page'] = lang_landings[code]
+                    if old != lang_landings[code]:
+                        scan_log.append(_scan_entry("info",
+                            f"  ✓ {code}: {lang_landings[code]} (AI suggeriva: {old or 'n/a'})"))
+                else:
+                    scan_log.append(_scan_entry("warn",
+                        f"  · {code}: nessuna landing specifica — mantenuto: {lang.get('landing_page', 'n/a')}"))
+
+        data['_scan_log'] = scan_log
 
         # 3. Enrich each language with sitelinks + type copies (all in parallel)
         common = {

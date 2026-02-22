@@ -146,6 +146,12 @@ export interface AutofillResult {
   }[]
 }
 
+export interface ScanLogEntry {
+  ts: string
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
 /** Enriched result returned by a completed background job — includes sitelinks + per-type RSA copies. */
 export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'> {
   languages: (AutofillResult['languages'][0] & {
@@ -157,6 +163,7 @@ export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'
     retargeting_headlines: string[]
     retargeting_descriptions: string[]
   })[]
+  _scan_log?: ScanLogEntry[]
 }
 
 export interface AutofillJobStatus {

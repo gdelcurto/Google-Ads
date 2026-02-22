@@ -17,9 +17,10 @@ import { autofillApi, type EnrichedAutofillResult } from '../api/projects'
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
-const JOB_KEY          = (p: string) => `autofill_job_${p}`
-const META_KEY         = (p: string) => `autofill_job_meta_${p}`
-const RESULT_KEY       = (p: string) => `autofill_result_${p}`
+const JOB_KEY           = (p: string) => `autofill_job_${p}`
+const META_KEY          = (p: string) => `autofill_job_meta_${p}`
+const RESULT_KEY        = (p: string) => `autofill_result_${p}`
+const SCANLOG_KEY       = (p: string) => `autofill_scanlog_${p}`
 const NOTIF_HISTORY_KEY = 'notifications_history'
 
 function scanRunningProjectIds(): string[] {
@@ -190,6 +191,10 @@ export function AutofillJobProvider({ children }: { children: React.ReactNode })
           if (status.status === 'completed' && status.result) {
             // Persist result so it survives page navigation.
             localStorage.setItem(RESULT_KEY(projectId), JSON.stringify(status.result))
+            // Persist scan log separately so it stays visible even after clearResult()
+            if (status.result._scan_log) {
+              localStorage.setItem(SCANLOG_KEY(projectId), JSON.stringify(status.result._scan_log))
+            }
             localStorage.removeItem(JOB_KEY(projectId))
 
             const raw = localStorage.getItem(META_KEY(projectId))
