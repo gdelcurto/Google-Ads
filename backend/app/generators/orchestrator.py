@@ -267,6 +267,74 @@ class CampaignOrchestrator:
         )
         return plan
 
+    async def generate_plan_ai(
+        self,
+        brief: Brief,
+        project_id: str,
+        api_key: str,
+        dry_run: bool = True,
+        existing_campaigns: Optional[List[dict]] = None,
+    ) -> AccountPlan:
+        """
+        AI-enhanced plan generation:
+          1. Generate campaign structure via sync generate_plan()
+          2. Enhance all copy with Claude (parallel per ad group)
+          3. Validate enhanced copy with Claude (parallel per campaign type)
+          4. Merge AI issues into the plan and recalculate validity flags
+        """
+        from app.connectors.ai_copy_generator import AICopyGenerator
+        from app.connectors.ai_validator import AIValidator
+
+        # ── Step 1: Rule-based generation ─────────────────────────────────────
+        plan = self.generate_plan(
+            brief=brief,
+            project_id=project_id,
+            dry_run=dry_run,
+            existing_campaigns=existing_campaigns,
+        )
+
+        # ── Step 2: AI copy enhancement (in-place) ────────────────────────────
+        copy_gen = AICopyGenerator(api_key=api_key)
+        try:
+            await copy_gen.enhance_campaigns(plan.campaigns, brief, AGENTS)
+            logger.info(f"AI copy enhancement complete for project {project_id}")
+        except Exception as exc:
+            logger.warning(
+                f"AI copy enhancement failed for project {project_id}: {exc}. "
+                "Static copy kept."
+            )
+
+        # ── Step 3: AI copy validation ─────────────────────────────────────────
+        ai_validator = AIValidator(api_key=api_key)
+        ai_issues: list[ValidationIssue] = []
+        try:
+            ai_issues = await ai_validator.validate_all(plan.campaigns, brief, AGENTS)
+            logger.info(
+                f"AI validation complete for project {project_id}: "
+                f"{len(ai_issues)} issue(s) found"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"AI validation failed for project {project_id}: {exc}. "
+                "Skipping AI validation issues."
+            )
+
+        # ── Step 4: Merge AI issues into plan ─────────────────────────────────
+        if ai_issues:
+            ai_warnings, ai_errors = _apply_issues_to_campaigns(ai_issues, plan.campaigns)
+            new_warnings = plan.validation_warnings + ai_warnings
+            new_errors = plan.validation_errors + ai_errors
+            plan = plan.model_copy(update={
+                "validation_warnings": new_warnings,
+                "validation_errors": new_errors,
+                "is_valid": not new_errors,
+                "publish_ready": (
+                    not new_errors and all(c.can_publish for c in plan.campaigns)
+                ),
+            })
+
+        return plan
+
     def _apply_idempotency(
         self,
         campaigns: List[CampaignPlan],
