@@ -778,7 +778,7 @@ export default function ProjectDetailPage() {
     retry: false,
   })
 
-  const { data: brief, isFetching: briefFetching } = useQuery({
+  const { data: brief, isLoading: briefFetching } = useQuery({
     queryKey: ['brief', id],
     queryFn: () => projectsApi.getBrief(id!),
     enabled: (activeTab === 'brief' || activeTab === 'preview' || activeTab === 'action_plan') && (project?.has_brief ?? false),
