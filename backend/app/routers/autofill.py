@@ -552,6 +552,36 @@ def _extract_relevant_links(html: str, base_url: str, max_links: int = 4) -> lis
     return [url for _, url in scored[:max_links]]
 
 
+async def _probe_lang_url(
+    client: httpx.AsyncClient,
+    base_url: str,
+    lang_code: str,
+    scan_log: List[dict],
+) -> Optional[str]:
+    """
+    Try common language-specific URL patterns when the sitemap has no data for that language.
+    Patterns tried (in order): /{lang}/, /{lang}
+    Returns the final URL (after redirects) if HTTP 200 HTML, else None.
+    """
+    parsed = urllib.parse.urlparse(base_url)
+    root   = f"{parsed.scheme}://{parsed.netloc}"
+    slug   = lang_code.lower()   # EN → en, DE → de, IT → it
+
+    for candidate in [f"{root}/{slug}/", f"{root}/{slug}"]:
+        try:
+            resp = await client.get(candidate)
+            ct = resp.headers.get('content-type', '')
+            if resp.status_code == 200 and 'text/html' in ct:
+                final = str(resp.url)
+                scan_log.append(_scan_entry("info", f"    ✓ Trovata per sondaggio HTTP: {final}"))
+                return final
+        except Exception:
+            pass
+
+    scan_log.append(_scan_entry("warn", f"    · Sondaggio {root}/{slug}[/] → nessuna risposta valida"))
+    return None
+
+
 async def _fetch_pages(
     base_url: str,
     langs: Optional[List[str]] = None,
@@ -628,17 +658,28 @@ async def _fetch_pages(
             lang_urls, sitemap_all_urls = {}, []
 
         # ── Step 3: determine best landing page per language ──────────────────
-        if langs and lang_urls:
+        if langs:
             scan_log.append(_scan_entry("info", ""))
             scan_log.append(_scan_entry("info", "━━ LANDING PAGE PER LINGUA ━━"))
             for lang in langs:
-                landing = _pick_lang_landing(lang_urls, lang, base_url)
                 lang_name = LANG_NAMES.get(lang, lang)
+
+                # a) Try sitemap data first
+                landing = _pick_lang_landing(lang_urls, lang, base_url)
                 if landing:
                     lang_landings[lang] = landing
-                    scan_log.append(_scan_entry("info", f"  ✓ {lang} ({lang_name}): {landing}"))
+                    scan_log.append(_scan_entry("info", f"  ✓ {lang} ({lang_name}): {landing}  [sitemap]"))
+                    continue
+
+                # b) Sitemap had no data for this lang → probe common path patterns
+                scan_log.append(_scan_entry("info",
+                    f"  · {lang} ({lang_name}): non trovata in sitemap — sondaggio /{lang.lower()}[/] ..."))
+                probed = await _probe_lang_url(client, base_url, lang, scan_log)
+                if probed:
+                    lang_landings[lang] = probed
                 else:
-                    scan_log.append(_scan_entry("warn", f"  · {lang} ({lang_name}): nessuna pagina specifica trovata in sitemap"))
+                    scan_log.append(_scan_entry("warn",
+                        f"  · {lang} ({lang_name}): nessuna landing specifica — verrà usata la homepage"))
 
         # ── Step 4: pick pages to fetch ──────────────────────────────────────
         urls_to_fetch: list[str] = []
