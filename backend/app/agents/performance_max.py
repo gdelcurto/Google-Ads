@@ -21,6 +21,13 @@ _MIN_HEADLINES_EXCELLENT = 8
 class PMaxAgent(CampaignAgent):
     TYPE_KEY = "performance_max"
 
+    # PMax = bid strategy selection + budget scenario planning + landing page quality
+    SKILL_FILES = (
+        "11-google-bid-strategy-recommendations.md",
+        "03-google-and-meta-budget-scenario-planner.md",
+        "10-google-and-meta-landing-page-audit.md",
+    )
+
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
     PERFORMANCE MAX STRATEGIST — Hospitality Google Ads

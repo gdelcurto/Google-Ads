@@ -19,8 +19,14 @@ if TYPE_CHECKING:
 class CampaignAgent(ABC):
     """Base interface for all campaign-type agents."""
 
-    TYPE_KEY: str   # matches CampaignTypeKey enum value (e.g. "search_brand")
+    TYPE_KEY: str    # matches CampaignTypeKey enum value (e.g. "search_brand")
     GUIDELINES: str  # self-contained strategic + copy documentation for this campaign type
+
+    # Ordered tuple of skill file names (from docs/) that provide background expertise
+    # for this campaign type.  Used when building Claude system prompts for tasks
+    # related to this agent.  Load via: from app.skills import combined_skills
+    #   combined_skills(*agent.SKILL_FILES)
+    SKILL_FILES: tuple[str, ...] = ()
 
     @abstractmethod
     def get_headlines(self, lang: "LanguagePlan") -> List[str]:

@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 class AcquisitionAgent(CampaignAgent):
     TYPE_KEY = "search_acquisition"
 
+    # Acquisition = keyword mining to find intent + cannibalization check + copy variants
+    SKILL_FILES = (
+        "07-google-search-term-mining.md",
+        "20-google-keyword-cannibalization-check.md",
+        "09-google-and-meta-ad-copy-variant-generator.md",
+    )
+
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
     ACQUISITION SEARCH STRATEGIST — Hospitality Google Ads

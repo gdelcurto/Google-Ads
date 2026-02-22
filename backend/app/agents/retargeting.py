@@ -33,6 +33,13 @@ _ACQUISITION_SIGNALS = [
 class RetargetingAgent(CampaignAgent):
     TYPE_KEY = "retargeting"
 
+    # Retargeting = ad extension/sitelink audit + copy variants for warm audiences
+    SKILL_FILES = (
+        "21-google-ad-extension-audit.md",
+        "09-google-and-meta-ad-copy-variant-generator.md",
+        "22-meta-retargeting-window-analysis.md",
+    )
+
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
     RETARGETING STRATEGIST — Hospitality Google Ads

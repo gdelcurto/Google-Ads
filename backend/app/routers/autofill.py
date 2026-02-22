@@ -19,6 +19,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import TokenData, require_strategist_or_admin
 from app.config import get_settings
 from app.database import AsyncSessionLocal, get_db
+from app.skills import (
+    combined_skills,
+    load_skill,
+    AD_COPY_VARIANT_GENERATOR,
+    AD_EXTENSION_AUDIT,
+    BID_STRATEGY_RECOMMENDATIONS,
+    BUDGET_SCENARIO_PLANNER,
+    GOOGLE_ADS_AUDIT,
+    KEYWORD_CANNIBALIZATION,
+    QUALITY_SCORE_BREAKDOWN,
+    SEARCH_TERM_MINING,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/autofill", tags=["autofill"])
@@ -305,7 +317,7 @@ def _build_lang_url_section(
     return "\n".join(lines) + "\n"
 
 
-SYSTEM_PROMPT = """\
+_SYSTEM_PROMPT_HOTEL_CORE = """\
 Sei un copywriter Google Ads certificato, specializzato in hotel e hospitality da oltre 10 anni.
 Conosci a fondo la psicologia del viaggiatore, le dinamiche del funnel alberghiero e le best
 practice RSA per battere le OTA (Booking, Expedia) nelle aste di brand e acquisizione.
@@ -353,6 +365,26 @@ Usa i dettagli specifici dell'hotel per differenziarlo dalla concorrenza generic
 
 Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo prima o dopo.
 """
+
+
+def _build_system_prompt() -> str:
+    """Build the full system prompt for main brief generation (Sonnet).
+
+    Prepends relevant skill knowledge layers before the hotel-specific core rules
+    so Claude has deep domain expertise before applying the hospitality constraints.
+    """
+    sections: list[str] = []
+    audit_knowledge = combined_skills(GOOGLE_ADS_AUDIT, QUALITY_SCORE_BREAKDOWN)
+    if audit_knowledge:
+        sections.append(
+            "═══ EXPERTISE: GOOGLE ADS AUDIT & QUALITY SCORE ═══\n\n"
+            + audit_knowledge
+        )
+    sections.append(_SYSTEM_PROMPT_HOTEL_CORE)
+    return "\n\n".join(sections)
+
+
+SYSTEM_PROMPT = _build_system_prompt()
 
 USER_PROMPT_TEMPLATE = """\
 Analizza il sito web di un hotel e genera un brief strutturato per campagne Google Ads.
@@ -895,6 +927,7 @@ Regole:
         message = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1024,
+            system=combined_skills(SEARCH_TERM_MINING, KEYWORD_CANNIBALIZATION),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -989,6 +1022,7 @@ Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
         message = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1500,
+            system=load_skill(AD_EXTENSION_AUDIT),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -1418,6 +1452,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
             message = await client.messages.create(
                 model="claude-haiku-4-5-20251001",
                 max_tokens=1200,
+                system=combined_skills(BID_STRATEGY_RECOMMENDATIONS, BUDGET_SCENARIO_PLANNER),
                 messages=[{"role": "user", "content": prompt}],
             )
             raw = message.content[0].text.strip()
@@ -1533,6 +1568,7 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
         message = await client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=1500,
+            system=load_skill(AD_COPY_VARIANT_GENERATOR),
             messages=[{"role": "user", "content": prompt}],
         )
         raw = message.content[0].text.strip()
@@ -1730,6 +1766,7 @@ async def _bg_sitelinks(
     message = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1500,
+        system=load_skill(AD_EXTENSION_AUDIT),
         messages=[{"role": "user", "content": prompt}],
     )
     raw = message.content[0].text.strip()
@@ -1781,6 +1818,7 @@ async def _bg_type_copy(
     message = await client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=1500,
+        system=load_skill(AD_COPY_VARIANT_GENERATOR),
         messages=[{"role": "user", "content": prompt}],
     )
     raw = message.content[0].text.strip()

@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 class BrandAgent(CampaignAgent):
     TYPE_KEY = "search_brand"
 
+    # Brand copy = RSA copy generation + full account audit knowledge (QS, structure, negatives)
+    SKILL_FILES = (
+        "09-google-and-meta-ad-copy-variant-generator.md",
+        "37-google-ads-audit.md",
+        "14-google-quality-score-breakdown.md",
+    )
+
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
     BRAND SEARCH STRATEGIST — Hospitality Google Ads

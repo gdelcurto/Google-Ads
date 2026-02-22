@@ -33,6 +33,13 @@ _TRAVEL_SIGNALS = [
 class DemandGenAgent(CampaignAgent):
     TYPE_KEY = "demand_gen"
 
+    # Demand Gen = creative fatigue detection + ad copy variants for upper-funnel audiences
+    SKILL_FILES = (
+        "04-meta-creative-fatigue-detection.md",
+        "09-google-and-meta-ad-copy-variant-generator.md",
+        "15-google-and-meta-channel-mix-optimizer.md",
+    )
+
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
     DEMAND GEN STRATEGIST — Hospitality Google Ads
