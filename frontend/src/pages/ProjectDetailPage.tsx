@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, autofillApi, type AccountPlanPreview, type CampaignPreview, type EnrichedAutofillResult } from '../api/projects'
+import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
 import BriefForm from '../components/BriefForm'
 import { GoogleAdPreview } from '../components/GoogleAdPreview'
 import { T } from '../styles/theme'
+import { useAutofillJobs } from '../contexts/AutofillJobContext'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 28 },
@@ -759,8 +760,6 @@ function CampaignPreviewCard({
   )
 }
 
-const AUTOFILL_JOB_KEY = (projectId: string) => `autofill_job_${projectId}`
-
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -768,57 +767,23 @@ export default function ProjectDetailPage() {
   const [planJsonText, setPlanJsonText] = useState('')
   const qc = useQueryClient()
 
-  // ── Background auto-fill job tracking ────────────────────────────────────────
-  const [autofillJobId, setAutofillJobId] = useState<string | null>(null)
-  const [pendingAutofill, setPendingAutofill] = useState<EnrichedAutofillResult | null>(null)
-
-  // On mount: restore job ID from localStorage (survives tab/page navigation)
-  useEffect(() => {
-    if (!id) return
-    const saved = localStorage.getItem(AUTOFILL_JOB_KEY(id))
-    if (saved) setAutofillJobId(saved)
-  }, [id])
-
-  // Poll the job status every 4 seconds while pending/running
-  const { data: jobStatus } = useQuery({
-    queryKey: ['autofill-job', autofillJobId],
-    queryFn: () => autofillApi.getJob(autofillJobId!),
-    enabled: !!autofillJobId && !pendingAutofill,
-    refetchInterval: (query) => {
-      const s = query.state.data?.status
-      return s === 'pending' || s === 'running' ? 4000 : false
-    },
-  })
-
-  // When the job completes, store the result and clear localStorage
-  useEffect(() => {
-    if (!jobStatus || !id) return
-    if (jobStatus.status === 'completed' && jobStatus.result) {
-      setPendingAutofill(jobStatus.result)
-      localStorage.removeItem(AUTOFILL_JOB_KEY(id))
-      setAutofillJobId(null)
-    } else if (jobStatus.status === 'failed') {
-      setMessage({ type: 'error', text: `Auto-fill fallito: ${jobStatus.error_message || 'errore sconosciuto'}` })
-      localStorage.removeItem(AUTOFILL_JOB_KEY(id))
-      setAutofillJobId(null)
-    }
-  }, [jobStatus, id])
+  // ── Background auto-fill job tracking (global context) ───────────────────────
+  const { runningJobIds, completedResults, registerJob, clearResult } = useAutofillJobs()
+  const hasRunningJob = id ? runningJobIds.has(id) : false
+  const pendingAutofill = id ? (completedResults[id] ?? null) : null
 
   const handleJobStarted = (jobId: string) => {
     if (!id) return
-    localStorage.setItem(AUTOFILL_JOB_KEY(id), jobId)
-    setAutofillJobId(jobId)
+    registerJob(id, jobId, project?.name)
   }
 
   const handleApplyAutofill = () => {
     setActiveTab('brief')
-    // pendingAutofill stays set — BriefForm will consume it via prop
+    // pendingAutofill stays in context — BriefForm consumes it via prop
   }
 
   const handleDismissAutofill = () => {
-    setPendingAutofill(null)
-    if (id) localStorage.removeItem(AUTOFILL_JOB_KEY(id))
-    setAutofillJobId(null)
+    if (id) clearResult(id)
   }
 
   const { data: project } = useQuery({
@@ -896,12 +861,12 @@ export default function ProjectDetailPage() {
       )}
 
       {/* Auto-fill job in progress */}
-      {autofillJobId && !pendingAutofill && (
+      {hasRunningJob && !pendingAutofill && (
         <div style={{ ...s.alert, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span>⏳</span>
           <span style={{ flex: 1 }}>
-            Auto-fill in elaborazione in background — puoi cambiare scheda liberamente. Questa notifica
-            apparirà aggiornata al tuo ritorno.
+            Auto-fill in elaborazione in background — puoi cambiare scheda o pagina liberamente.
+            Riceverai una notifica in basso a destra quando il brief è pronto.
           </span>
         </div>
       )}
@@ -1058,7 +1023,7 @@ export default function ProjectDetailPage() {
               onSaved={() => {
                 qc.invalidateQueries({ queryKey: ['project', id] })
                 qc.invalidateQueries({ queryKey: ['brief', id] })
-                setPendingAutofill(null)
+                if (id) clearResult(id)
                 setMessage({ type: 'success', text: 'Brief salvato con successo!' })
                 setActiveTab('overview')
               }}

@@ -587,7 +587,7 @@ Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1107,7 +1107,7 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
         import anthropic
         client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         message = await client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=1500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -1276,7 +1276,7 @@ async def _bg_sitelinks(
     )
 
     message = await client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -1327,7 +1327,7 @@ async def _bg_type_copy(
     )
 
     message = await client.messages.create(
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}],
     )
