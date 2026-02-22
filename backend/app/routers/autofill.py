@@ -105,6 +105,29 @@ def _scan_entry(level: str, msg: str) -> dict:
     return {"ts": datetime.utcnow().isoformat(), "level": level, "msg": msg}
 
 
+# Model pricing: (input USD/MTok, output USD/MTok)
+_MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-haiku-4-5-20251001": (0.80,  4.00),
+    "claude-sonnet-4-6":         (3.00, 15.00),
+}
+
+
+def _api_log_entry(agent: str, reason: str, endpoint: str, model: str, usage) -> dict:
+    """Build a structured API call log entry from a Claude API call's usage metadata."""
+    in_p, out_p = _MODEL_PRICING.get(model, (1.0, 5.0))
+    cost_usd = (usage.input_tokens * in_p + usage.output_tokens * out_p) / 1_000_000
+    return {
+        "ts":            datetime.utcnow().isoformat(),
+        "agent":         agent,
+        "reason":        reason,
+        "endpoint":      endpoint,
+        "model":         model,
+        "input_tokens":  usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "cost_usd":      round(cost_usd, 6),
+    }
+
+
 async def _discover_sitemaps(
     base_url: str,
     client: httpx.AsyncClient,
@@ -950,6 +973,13 @@ Regole:
     return {
         "kw_themes_text": "\n".join(theme_lines),
         "kw_negative_text": "\n".join(negative_lines),
+        "api_call_log": _api_log_entry(
+            agent="KeywordAgent",
+            reason=f"Generazione keyword themes — {lang_name} ({lang_code})",
+            endpoint="POST /api/autofill/keywords",
+            model="claude-haiku-4-5-20251001",
+            usage=message.usage,
+        ),
     }
 
 
@@ -1057,7 +1087,16 @@ Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
             "final_url": str(sl.get("final_url", payload.landing_page)),
         })
 
-    return {"sitelinks": result}
+    return {
+        "sitelinks": result,
+        "api_call_log": _api_log_entry(
+            agent="SitelinkAgent",
+            reason=f"Generazione sitelink — {lang_name} ({lang_code})",
+            endpoint="POST /api/autofill/sitelinks",
+            model="claude-haiku-4-5-20251001",
+            usage=message.usage,
+        ),
+    }
 
 
 @router.post("")
@@ -1293,6 +1332,7 @@ class BudgetStrategyResponse(BaseModel):
     daily_by_type_lang: dict
     rationale: dict
     overall_strategy: str
+    api_call_log: Optional[dict] = None
     suggested_total_monthly_eur: float
     min_budget_warning: Optional[str] = None
 
@@ -1446,6 +1486,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
   {', '.join(f'"{t}": "..."' for t in recommended)}
 }}"""
 
+        budget_ai_usage = None
         try:
             import anthropic
             client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
@@ -1455,6 +1496,7 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
                 system=combined_skills(BID_STRATEGY_RECOMMENDATIONS, BUDGET_SCENARIO_PLANNER),
                 messages=[{"role": "user", "content": prompt}],
             )
+            budget_ai_usage = message.usage
             raw = message.content[0].text.strip()
             json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
             raw = json_match.group(1) if json_match else raw[raw.find('{'):raw.rfind('}') + 1]
@@ -1488,6 +1530,13 @@ Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo:
         overall_strategy=overall_strategy,
         suggested_total_monthly_eur=total_monthly,
         min_budget_warning=warning,
+        api_call_log=_api_log_entry(
+            agent="BudgetStrategyAgent",
+            reason=f"Generazione rationale strategia budget — {payload.hotel_category} {payload.stars}★",
+            endpoint="POST /api/autofill/budget-strategy",
+            model="claude-haiku-4-5-20251001",
+            usage=budget_ai_usage,
+        ) if budget_ai_usage else None,
     )
 
 
@@ -1592,7 +1641,17 @@ Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:
     headlines = [_trim_to_word(h, 30) for h in data.get("headlines", []) if isinstance(h, str) and h.strip()]
     descriptions = [_trim_to_word(d, 90) for d in data.get("descriptions", []) if isinstance(d, str) and d.strip()]
 
-    return {"headlines": headlines, "descriptions": descriptions}
+    return {
+        "headlines": headlines,
+        "descriptions": descriptions,
+        "api_call_log": _api_log_entry(
+            agent=f"TypeCopyAgent ({camp_type})",
+            reason=f"Generazione copy RSA {meta['label']} — {lang_name}",
+            endpoint="POST /api/autofill/type-copy",
+            model="claude-haiku-4-5-20251001",
+            usage=message.usage,
+        ),
+    }
 
 
 # ─── Background Auto-fill Jobs ────────────────────────────────────────────────
@@ -1778,7 +1837,7 @@ async def _bg_sitelinks(
         if s != -1 and e != -1:
             raw = raw[s:e + 1]
     sitelinks = json.loads(raw)
-    return [
+    result = [
         {
             "text": _trim_to_word(str(sl.get("text", "")), 25),
             "description_1": _trim_to_word(str(sl.get("description_1", "")), 35),
@@ -1787,14 +1846,25 @@ async def _bg_sitelinks(
         }
         for sl in sitelinks if isinstance(sl, dict) and sl.get("text")
     ]
+    log = _api_log_entry(
+        agent="SitelinkAgent",
+        reason=f"Generazione sitelink (background) — {lang_name} ({lang_code})",
+        endpoint="_bg_sitelinks",
+        model="claude-haiku-4-5-20251001",
+        usage=message.usage,
+    )
+    return result, log
 
 
 async def _bg_type_copy(
     client, common: dict, lang_code: str, usp: str | None, campaign_type: str
-) -> dict:
-    """Generate RSA headlines/descriptions for one language + campaign type in the background task."""
+) -> tuple[dict, dict]:
+    """Generate RSA headlines/descriptions for one language + campaign type in the background task.
+
+    Returns ``(result_dict, api_log_entry)`` tuple.
+    """
     if campaign_type not in _TYPE_COPY_PROMPTS:
-        return {"headlines": [], "descriptions": []}
+        return {"headlines": [], "descriptions": []}, {}
     meta = _TYPE_COPY_PROMPTS[campaign_type]
     lang_name = LANG_NAMES.get(lang_code, lang_code)
     services_txt = ", ".join(common.get("services") or []) or "non specificati"
@@ -1830,10 +1900,18 @@ async def _bg_type_copy(
         if s != -1 and e != -1:
             raw = raw[s:e + 1]
     parsed = json.loads(raw)
-    return {
+    result = {
         "headlines": [_trim_to_word(h, 30) for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()],
         "descriptions": [_trim_to_word(d, 90) for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()],
     }
+    log = _api_log_entry(
+        agent=f"TypeCopyAgent ({campaign_type})",
+        reason=f"Generazione copy RSA {meta['label']} (background) — {lang_name}",
+        endpoint="_bg_type_copy",
+        model="claude-haiku-4-5-20251001",
+        usage=message.usage,
+    )
+    return result, log
 
 
 async def _run_autofill_job(
@@ -1915,6 +1993,17 @@ async def _run_autofill_job(
 
         data['_scan_log'] = scan_log
 
+        # API call log — collect usage from every Claude call in this job
+        api_log: List[dict] = [
+            _api_log_entry(
+                agent="BriefCompiler",
+                reason="Generazione brief da contenuto sito web",
+                endpoint="POST /api/autofill/jobs",
+                model="claude-sonnet-4-6",
+                usage=message.usage,
+            )
+        ]
+
         # 3. Enrich each language with sitelinks + type copies (all in parallel)
         common = {
             "brand_name": data.get("brand_name", ""),
@@ -1934,16 +2023,20 @@ async def _run_autofill_job(
 
             async def _safe_sitelinks():
                 try:
-                    return await _bg_sitelinks(
+                    sl, log = await _bg_sitelinks(
                         client, common, code, landing, booking_url, sitemap_lang_urls
                     )
+                    api_log.append(log)
+                    return sl
                 except Exception as exc:
                     logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
                     return []
 
             async def _safe_copy(ctype):
                 try:
-                    return await _bg_type_copy(client, common, code, usp, ctype)
+                    result, log = await _bg_type_copy(client, common, code, usp, ctype)
+                    api_log.append(log)
+                    return result
                 except Exception as exc:
                     logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
                     return {"headlines": [], "descriptions": []}
@@ -1967,6 +2060,7 @@ async def _run_autofill_job(
 
         enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
         data["languages"] = list(enriched)
+        data["_api_log"] = api_log
 
         await _update_job_status(job_id, "completed", result=data)
         logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")

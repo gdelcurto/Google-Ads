@@ -736,8 +736,30 @@ function PerTypeCopySection({
 
 // ── component ─────────────────────────────────────────────────────────────────
 
+// Default stars per hotel vertical (matches project creation options)
+const VERTICAL_DEFAULT_STARS: Record<string, string> = {
+  city_hotel: '4',
+  resort:     '4',
+  boutique:   '4',
+  business:   '4',
+  agriturismo:'3',
+}
+
+/** Append a single API call log entry to the project's persisted log in localStorage. */
+function appendApiLog(projectId: string, entry: Record<string, unknown>): void {
+  const key = `autofill_apilog_${projectId}`
+  try {
+    const raw = localStorage.getItem(key)
+    const existing: unknown[] = raw ? JSON.parse(raw) : []
+    existing.push(entry)
+    localStorage.setItem(key, JSON.stringify(existing))
+  } catch { /* ignore storage errors */ }
+}
+
 interface BriefFormProps {
   projectId: string
+  /** Project metadata used to seed form defaults when no brief exists yet. */
+  project?: { preset?: string; vertical?: string; name?: string; client_slug?: string } | null
   existingBrief?: Record<string, unknown> | null
   onSaved: () => void
   /** Enriched autofill result from a completed background job — applied automatically on mount/change. */
@@ -746,12 +768,25 @@ interface BriefFormProps {
   onJobStarted?: (jobId: string) => void
 }
 
-export default function BriefForm({ projectId, existingBrief, onSaved, pendingAutofill, onJobStarted }: BriefFormProps) {
+export default function BriefForm({ projectId, project, existingBrief, onSaved, pendingAutofill, onJobStarted }: BriefFormProps) {
   const qc = useQueryClient()
   const [step, setStep] = useState(0)
-  const [form, setForm] = useState<FormState>(() =>
-    existingBrief ? briefToForm(existingBrief) : { ...DEFAULT_FORM, created_by: getUserEmail() }
-  )
+  const [form, setForm] = useState<FormState>(() => {
+    if (existingBrief) return briefToForm(existingBrief)
+    // Seed form from project metadata so new briefs start with the right category/preset
+    const base = { ...DEFAULT_FORM, created_by: getUserEmail() }
+    if (project) {
+      if (project.preset)      base.preset        = project.preset
+      if (project.vertical) {
+        base.vertical       = project.vertical
+        base.hotel_category = project.vertical
+        base.stars          = VERTICAL_DEFAULT_STARS[project.vertical] ?? '4'
+      }
+      if (project.name)        base.project_name  = project.name
+      if (project.client_slug) base.brand_slug    = project.client_slug
+    }
+    return base
+  })
   const [langs, setLangs] = useState<LangState[]>(() =>
     existingBrief ? briefToLangs(existingBrief) : [{ ...DEFAULT_LANG }]
   )
@@ -889,6 +924,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
         )
       }
       setBudgetByTypeLang(newBudget)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
     },
     onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })
@@ -962,6 +998,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
         : l
       ))
       setKwSuggestingLang(null)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
     },
     onError: (e: Error) => {
       setErrors([`Suggerimento keyword: ${e.message}`])
@@ -988,6 +1025,7 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
         : l
       ))
       setSlSuggestingLang(null)
+      if (data.api_call_log) appendApiLog(projectId, data.api_call_log as Record<string, unknown>)
     },
     onError: (e: Error) => {
       setErrors([`Suggerimento sitelink: ${e.message}`])

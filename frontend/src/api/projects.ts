@@ -152,6 +152,17 @@ export interface ScanLogEntry {
   msg: string
 }
 
+export interface ApiCallLogEntry {
+  ts: string
+  agent: string
+  reason: string
+  endpoint: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+
 /** Enriched result returned by a completed background job — includes sitelinks + per-type RSA copies. */
 export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'> {
   languages: (AutofillResult['languages'][0] & {
@@ -164,6 +175,7 @@ export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'
     retargeting_descriptions: string[]
   })[]
   _scan_log?: ScanLogEntry[]
+  _api_log?: ApiCallLogEntry[]
 }
 
 export interface AutofillJobStatus {
@@ -197,7 +209,7 @@ export const autofillApi = {
     services?: string[]
     strengths?: string[]
   }) =>
-    api.post<{ kw_themes_text: string; kw_negative_text: string }>('/autofill/keywords', data).then((r) => r.data),
+    api.post<{ kw_themes_text: string; kw_negative_text: string; api_call_log?: ApiCallLogEntry }>('/autofill/keywords', data).then((r) => r.data),
 
   suggestSitelinks: (data: {
     brand_name: string
@@ -210,7 +222,7 @@ export const autofillApi = {
     strengths?: string[]
     booking_engine_url?: string
   }) =>
-    api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[] }>(
+    api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[]; api_call_log?: ApiCallLogEntry }>(
       '/autofill/sitelinks', data
     ).then((r) => r.data),
 
@@ -225,7 +237,7 @@ export const autofillApi = {
     services?: string[]
     strengths?: string[]
   }) =>
-    api.post<{ headlines: string[]; descriptions: string[] }>('/autofill/type-copy', data).then((r) => r.data),
+    api.post<{ headlines: string[]; descriptions: string[]; api_call_log?: ApiCallLogEntry }>('/autofill/type-copy', data).then((r) => r.data),
 
   suggestBudgetStrategy: (data: {
     brand_name: string
@@ -244,6 +256,7 @@ export const autofillApi = {
       overall_strategy: string
       suggested_total_monthly_eur: number
       min_budget_warning: string | null
+      api_call_log?: ApiCallLogEntry
     }>('/autofill/budget-strategy', data).then((r) => r.data),
 }
 

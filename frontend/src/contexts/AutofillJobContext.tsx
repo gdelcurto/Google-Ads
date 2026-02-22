@@ -21,6 +21,7 @@ const JOB_KEY           = (p: string) => `autofill_job_${p}`
 const META_KEY          = (p: string) => `autofill_job_meta_${p}`
 const RESULT_KEY        = (p: string) => `autofill_result_${p}`
 const SCANLOG_KEY       = (p: string) => `autofill_scanlog_${p}`
+const APILOG_KEY        = (p: string) => `autofill_apilog_${p}`
 const NOTIF_HISTORY_KEY = 'notifications_history'
 
 function scanRunningProjectIds(): string[] {
@@ -194,6 +195,16 @@ export function AutofillJobProvider({ children }: { children: React.ReactNode })
             // Persist scan log separately so it stays visible even after clearResult()
             if (status.result._scan_log) {
               localStorage.setItem(SCANLOG_KEY(projectId), JSON.stringify(status.result._scan_log))
+            }
+            // Persist API call log so it accumulates across sessions
+            if (status.result._api_log) {
+              try {
+                const existing = JSON.parse(localStorage.getItem(APILOG_KEY(projectId)) || '[]')
+                const merged = [...existing, ...status.result._api_log]
+                localStorage.setItem(APILOG_KEY(projectId), JSON.stringify(merged))
+              } catch {
+                localStorage.setItem(APILOG_KEY(projectId), JSON.stringify(status.result._api_log))
+              }
             }
             localStorage.removeItem(JOB_KEY(projectId))
 

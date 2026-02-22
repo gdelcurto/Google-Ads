@@ -82,7 +82,7 @@ const s: Record<string, React.CSSProperties> = {
   },
 }
 
-type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log'
+type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log'
 
 function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
   const [expanded, setExpanded] = useState(false)
@@ -916,7 +916,7 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'preview', 'brief', 'action_plan', 'plan_json', 'audit', 'scan_log'] as Tab[]).map(t => (
+        {(['overview', 'campaigns', 'preview', 'brief', 'action_plan', 'plan_json', 'audit', 'scan_log', 'api_log'] as Tab[]).map(t => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
@@ -929,7 +929,8 @@ export default function ProjectDetailPage() {
               : t === 'action_plan'? 'Piano d\'azione'
               : t === 'plan_json'  ? 'Modifica Piano'
               : t === 'audit'      ? 'Audit Log'
-              : 'Scan Log'}
+              : t === 'scan_log'   ? 'Scan Log'
+              : 'API Log'}
           </button>
         ))}
       </div>
@@ -1018,6 +1019,7 @@ export default function ProjectDetailPage() {
             <BriefForm
               key={brief ? 'loaded' : 'new'}
               projectId={id!}
+              project={project}
               existingBrief={brief ?? null}
               pendingAutofill={pendingAutofill}
               onJobStarted={handleJobStarted}
@@ -1113,6 +1115,10 @@ export default function ProjectDetailPage() {
       {activeTab === 'scan_log' && (
         <ScanLogTab projectId={id!} />
       )}
+
+      {activeTab === 'api_log' && (
+        <ApiLogTab projectId={id!} />
+      )}
     </div>
   )
 }
@@ -1190,6 +1196,128 @@ function ScanLogTab({ projectId }: { projectId: string }) {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+// ── API Log tab ───────────────────────────────────────────────────────────────
+
+interface ApiLogEntry {
+  ts: string
+  agent: string
+  reason: string
+  endpoint: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+
+function ApiLogTab({ projectId }: { projectId: string }) {
+  const raw = localStorage.getItem(`autofill_apilog_${projectId}`)
+  const entries: ApiLogEntry[] = raw ? (() => { try { return JSON.parse(raw) } catch { return [] } })() : []
+
+  if (entries.length === 0) {
+    return (
+      <div style={{ padding: '40px 0', textAlign: 'center', color: T.textGray, fontSize: 14 }}>
+        Nessuna chiamata API registrata. Esegui l'auto-fill o usa i suggerimenti AI per vedere qui il dettaglio.
+      </div>
+    )
+  }
+
+  const totalCost = entries.reduce((acc, e) => acc + e.cost_usd, 0)
+  const totalIn   = entries.reduce((acc, e) => acc + e.input_tokens, 0)
+  const totalOut  = entries.reduce((acc, e) => acc + e.output_tokens, 0)
+
+  const modelShort = (m: string) =>
+    m.replace('claude-haiku-4-5-20251001', 'Haiku 4.5').replace('claude-sonnet-4-6', 'Sonnet 4.6')
+
+  const modelColor = (m: string) =>
+    m.includes('sonnet') ? T.primary : T.textGray
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 24, fontSize: 13, color: T.textGray, flexWrap: 'wrap' as const }}>
+          <span>{entries.length} chiamate totali</span>
+          <span>Token in: <strong style={{ color: T.text }}>{totalIn.toLocaleString('it-IT')}</strong></span>
+          <span>Token out: <strong style={{ color: T.text }}>{totalOut.toLocaleString('it-IT')}</strong></span>
+          <span>
+            Costo stimato:{' '}
+            <strong style={{ color: T.text }}>${totalCost.toFixed(4)}</strong>
+            <span style={{ fontSize: 11, marginLeft: 4 }}>USD</span>
+          </span>
+        </div>
+        <button
+          style={{
+            background: 'transparent', border: `1px solid ${T.border}`,
+            color: T.textGray, padding: '4px 12px', borderRadius: T.radiusSm,
+            cursor: 'pointer', fontSize: 12,
+          }}
+          onClick={() => {
+            localStorage.removeItem(`autofill_apilog_${projectId}`)
+            window.location.reload()
+          }}
+        >
+          Cancella log
+        </button>
+      </div>
+
+      <div style={{
+        border: `1px solid ${T.borderLight}`, borderRadius: T.radius, overflow: 'hidden', fontSize: 12.5,
+      }}>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '90px 155px 1fr 105px 75px 75px 68px',
+          gap: 8, padding: '8px 14px', background: T.bgMuted,
+          borderBottom: `1px solid ${T.borderLight}`,
+          fontWeight: 700, fontSize: 11, color: T.textGray, letterSpacing: 0.3,
+        }}>
+          <span>ORA</span><span>AGENTE</span><span>MOTIVO</span><span>MODELLO</span>
+          <span style={{ textAlign: 'right' }}>TOK IN</span>
+          <span style={{ textAlign: 'right' }}>TOK OUT</span>
+          <span style={{ textAlign: 'right' }}>$ USD</span>
+        </div>
+        {entries.map((e, i) => (
+          <div key={i} style={{
+            display: 'grid', gridTemplateColumns: '90px 155px 1fr 105px 75px 75px 68px',
+            gap: 8, padding: '7px 14px', alignItems: 'center',
+            background: i % 2 === 0 ? '#fff' : '#fafafa',
+            borderTop: i === 0 ? 'none' : `1px solid ${T.borderLight}`,
+          }}>
+            <span style={{ color: T.textGray, fontSize: 11, fontFamily: 'monospace' }}>
+              {new Date(e.ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+            <span style={{ fontWeight: 600, color: T.text, fontSize: 12 }}>{e.agent}</span>
+            <span style={{ color: T.textGray, fontSize: 12 }}>{e.reason}</span>
+            <span style={{ fontFamily: 'monospace', fontSize: 11, color: modelColor(e.model), fontWeight: 600 }}>
+              {modelShort(e.model)}
+            </span>
+            <span style={{ textAlign: 'right', fontFamily: 'monospace', color: T.textGray }}>
+              {e.input_tokens.toLocaleString('it-IT')}
+            </span>
+            <span style={{ textAlign: 'right', fontFamily: 'monospace', color: T.textGray }}>
+              {e.output_tokens.toLocaleString('it-IT')}
+            </span>
+            <span style={{ textAlign: 'right', fontFamily: 'monospace', color: T.text, fontWeight: 600 }}>
+              {e.cost_usd.toFixed(4)}
+            </span>
+          </div>
+        ))}
+        <div style={{
+          display: 'grid', gridTemplateColumns: '90px 155px 1fr 105px 75px 75px 68px',
+          gap: 8, padding: '8px 14px', background: T.bgMuted,
+          borderTop: `1px solid ${T.border}`, fontWeight: 700, fontSize: 12,
+        }}>
+          <span style={{ gridColumn: '1 / 5', color: T.textGray }}>TOTALE</span>
+          <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{totalIn.toLocaleString('it-IT')}</span>
+          <span style={{ textAlign: 'right', fontFamily: 'monospace' }}>{totalOut.toLocaleString('it-IT')}</span>
+          <span style={{ textAlign: 'right', fontFamily: 'monospace', color: T.primary }}>{totalCost.toFixed(4)}</span>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 11, color: T.textGray }}>
+        * Costo stimato USD — prezzi pubblici Anthropic: Haiku 4.5 $0.80/MTok in · $4.00/MTok out · Sonnet 4.6 $3.00/MTok in · $15.00/MTok out
       </div>
     </div>
   )
