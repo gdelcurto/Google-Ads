@@ -74,6 +74,7 @@ export function useBudgetStrategy({
 
   return {
     strategyResult,
+    setStrategyResult,
     strategyPanelOpen,
     setStrategyPanelOpen,
     budgetStrategyMutation,

@@ -1,7 +1,7 @@
 // ── useSitelinkSuggest ────────────────────────────────────────────────────────
 // Sitelink suggestion mutation for the BriefForm wizard.
 
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { autofillApi } from '../../../api/projects'
 import { FormState, LangState } from '../types'

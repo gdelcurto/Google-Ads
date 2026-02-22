@@ -1,13 +1,13 @@
 // ── useAutofillBinding ────────────────────────────────────────────────────────
 // Applies an enriched autofill result from a completed background job to form state.
 
-import { useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { EnrichedAutofillResult } from '../../../api/projects'
-import { LangState } from '../types'
+import { FormState, LangState } from '../types'
 
 interface UseAutofillBindingParams {
   pendingAutofill: EnrichedAutofillResult | null | undefined
-  setForm: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  setForm: React.Dispatch<React.SetStateAction<FormState>>
   setLangs: React.Dispatch<React.SetStateAction<LangState[]>>
   setAutofillSuccess: (v: boolean) => void
 }
