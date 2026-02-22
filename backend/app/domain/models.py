@@ -49,6 +49,7 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
 
     owner: Mapped["User"] = relationship("User", back_populates="projects")
     campaigns: Mapped[list["CampaignRecord"]] = relationship(

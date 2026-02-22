@@ -2,6 +2,7 @@ import { BrowserRouter, Link, Navigate, Route, Routes } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import TrashPage from './pages/TrashPage'
 import Layout from './components/Layout'
 import { AutofillJobProvider, useAutofillJobs, type AutofillNotification } from './contexts/AutofillJobContext'
 
@@ -115,6 +116,7 @@ function AppRoutes() {
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="trash" element={<TrashPage />} />
         </Route>
       </Routes>
       <GlobalAutofillToasts />

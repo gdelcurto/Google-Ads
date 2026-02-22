@@ -118,6 +118,18 @@ export const projectsApi = {
 
   savePlan: (id: string, planData: Record<string, unknown>) =>
     api.put<{ status: string; campaigns: number }>(`/projects/${id}/plan`, planData).then((r) => r.data),
+
+  softDelete: (id: string) =>
+    api.delete<{ detail: string }>(`/projects/${id}`).then((r) => r.data),
+
+  listTrash: () =>
+    api.get<Project[]>('/projects/trash/list').then((r) => r.data),
+
+  restore: (id: string) =>
+    api.post<{ detail: string }>(`/projects/${id}/restore`).then((r) => r.data),
+
+  permanentDelete: (id: string) =>
+    api.delete<{ detail: string }>(`/projects/${id}/permanent`).then((r) => r.data),
 }
 
 export interface AutofillResult {

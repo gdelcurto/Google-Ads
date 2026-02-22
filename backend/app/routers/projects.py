@@ -1,6 +1,7 @@
 """Projects CRUD and brief management."""
 import json
 import logging
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -61,7 +62,11 @@ async def list_projects(
     current_user: TokenData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Project).order_by(Project.created_at.desc()))
+    result = await db.execute(
+        select(Project)
+        .where(Project.deleted_at.is_(None))
+        .order_by(Project.created_at.desc())
+    )
     projects = result.scalars().all()
     return [_to_response(p) for p in projects]
 
@@ -94,6 +99,21 @@ async def create_project(
 
     logger.info(f"Project created: {project.id} by {current_user.email}")
     return _to_response(project)
+
+
+@router.get("/trash/list", response_model=List[ProjectResponse])
+async def list_trash(
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all soft-deleted projects."""
+    result = await db.execute(
+        select(Project)
+        .where(Project.deleted_at.is_not(None))
+        .order_by(Project.deleted_at.desc())
+    )
+    projects = result.scalars().all()
+    return [_to_response(p) for p in projects]
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)
@@ -189,6 +209,88 @@ async def get_audit_log(
         }
         for l in logs
     ]
+
+
+@router.delete("/{project_id}")
+async def soft_delete_project(
+    project_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Soft-delete a project (move to trash)."""
+    project = await _get_project_or_404(project_id, db)
+    if project.deleted_at is not None:
+        raise HTTPException(status_code=400, detail="Progetto già nel cestino")
+    project.deleted_at = datetime.utcnow()
+
+    log = AuditLog(
+        project_id=project.id,
+        user_id=current_user.user_id,
+        action="soft_delete_project",
+        entity_type="project",
+        entity_id=project.id,
+        details=json.dumps({"name": project.name}),
+    )
+    db.add(log)
+
+    logger.info(f"Project soft-deleted: {project.id} by {current_user.email}")
+    return {"detail": "Progetto spostato nel cestino"}
+
+
+@router.post("/{project_id}/restore")
+async def restore_project(
+    project_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a soft-deleted project from trash."""
+    project = await _get_project_or_404(project_id, db)
+    if project.deleted_at is None:
+        raise HTTPException(status_code=400, detail="Progetto non nel cestino")
+    project.deleted_at = None
+
+    log = AuditLog(
+        project_id=project.id,
+        user_id=current_user.user_id,
+        action="restore_project",
+        entity_type="project",
+        entity_id=project.id,
+        details=json.dumps({"name": project.name}),
+    )
+    db.add(log)
+
+    logger.info(f"Project restored: {project.id} by {current_user.email}")
+    return {"detail": "Progetto ripristinato"}
+
+
+@router.delete("/{project_id}/permanent")
+async def permanent_delete_project(
+    project_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Permanently delete a project (must be in trash first)."""
+    project = await _get_project_or_404(project_id, db)
+    if project.deleted_at is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Il progetto deve essere nel cestino prima di eliminarlo definitivamente",
+        )
+
+    log = AuditLog(
+        project_id=None,
+        user_id=current_user.user_id,
+        action="permanent_delete_project",
+        entity_type="project",
+        entity_id=project.id,
+        details=json.dumps({"name": project.name, "project_id": project.id}),
+    )
+    db.add(log)
+
+    await db.delete(project)
+
+    logger.info(f"Project permanently deleted: {project_id} by {current_user.email}")
+    return {"detail": "Progetto eliminato definitivamente"}
 
 
 async def _get_project_or_404(project_id: str, db: AsyncSession) -> Project:
