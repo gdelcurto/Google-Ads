@@ -1,63 +1,99 @@
 """
-Brand Search Campaign Agent.
+Brand Search Campaign Agent — Senior Google Ads Strategist: Hospitality.
 
-Philosophy: Brand campaigns exist to protect your brand SERP and intercept users
-who already know the hotel. The ad copy must reinforce trust and the advantage
-of booking directly. Every headline should feel like it belongs to the hotel,
-not to a generic destination search.
+SKILL: Difendi la domanda esistente e intercetta utenti che già conoscono il brand.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
+
+if TYPE_CHECKING:
+    from app.domain.schemas.brief import Brief
 
 
 class BrandAgent(CampaignAgent):
     TYPE_KEY = "search_brand"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "BRAND_NO_HEADLINES",
+        "BRAND_NO_BRAND_IN_HEADLINES",
+        "BRAND_NO_BRAND_TERMS",
+    ]
+
+    # Brand copy = RSA copy generation + full account audit knowledge (QS, structure, negatives)
+    SKILL_FILES = (
+        "09-google-and-meta-ad-copy-variant-generator.md",
+        "37-google-ads-audit.md",
+        "14-google-quality-score-breakdown.md",
+    )
 
     GUIDELINES = """
-    BRAND SEARCH — Rules for ad copy and keywords
-    ══════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════
+    BRAND SEARCH STRATEGIST — Hospitality Google Ads
+    ══════════════════════════════════════════════════════════════════
 
-    PURPOSE
-    Capture users who search for the hotel by name. These users already have
-    intent. The goal is to win the click over OTAs and competitor bidders, and
-    steer them to direct booking.
+    OBIETTIVO STRATEGICO
+    Difendere la domanda esistente. Intercettare utenti che già conoscono
+    il brand prima che le OTA (Booking, Expedia) li convertano con brand bidding.
+    Questi utenti sono in fase FINALE di prenotazione: la conversione è quasi
+    certa — l'unica domanda è dove prenotano (sito diretto vs OTA).
 
-    COPY RULES
-    ✅ Headline 1: MUST contain the brand/hotel name — pin it at position 1
-    ✅ Other headlines: reinforce the direct booking advantage:
-       "Sito Ufficiale", "Miglior Tariffa Garantita", "Prenota Direttamente",
-       "Sconto Esclusivo Online", "Cancellazione Gratuita"
-    ❌ NO generic location/category terms (e.g. "Hotel Roma Centro") —
-       those belong in Acquisition campaigns
-    ❌ NO keyword insertion ({KeyWord}) — brand campaigns have fixed intent
+    INTENTO UTENTE
+    Consapevole, spesso in fase finale di prenotazione.
+    Cerca il nome esatto dell'hotel o varianti conosciute.
+    ROAS atteso: il più alto di tutte le campagne dell'account.
 
-    RSA PINNING
-    - Pin brand name headline at position 1 (always visible)
-    - Positions 2–3 can rotate from direct-booking benefit headlines
+    ── STRUTTURA CORRETTA ──────────────────────────────────────────
+    ✅ Una campagna per mercato/lingua
+    ✅ Un solo ad group "Brand" (o due: Exact + Phrase)
+    ✅ Solo keyword brand:
+       • Exact match: [nome hotel], [variante 1]
+       • Phrase match: "nome hotel", "nome hotel prenota"
+    ❌ NO broad match — troppo impreciso per query branded
+    ✅ Negative: recensioni, lavoro, informazioni non rilevanti
 
-    KEYWORD RULES
-    ✅ Exact match + Phrase match ONLY for brand terms and variants
-    ✅ Include: misspellings, abbreviations, branded product names
-    ❌ Negative: all generic non-brand terms (shared negative list "Non-Brand Negatives")
+    ── MESSAGGIO ──────────────────────────────────────────────────
+    ✅ Headline 1 (PINNATA): DEVE contenere il nome brand/hotel
+       es. "Grand Hotel Bellevue" | "Hotel Roma Ufficiale"
+    ✅ Altre headline: vantaggio esclusivo prenotazione diretta
+       • "Miglior Tariffa Garantita"     (24 chars)
+       • "Prenota sul Sito Ufficiale"    (26 chars)
+       • "Senza Commissioni OTA"         (21 chars)
+       • "Cancellazione Gratuita"        (22 chars)
+       • "Check-in Anticipato Incluso"   (27 chars)
+       • "Sconto 10% Solo Online"        (21 chars)
+    ❌ NO termini generici di categoria → quelli vanno in Acquisition
+    ❌ NO keyword insertion ({KeyWord}) — brand ha intento fisso
 
-    BID STRATEGY
-    - If max_cpc_brand is set → Manual CPC with that cap
-    - Otherwise → Maximize Conversions
-    - Rationale: brand terms are cheap; control spend, protect margin
+    COPY RULE: Brand copy = "Sito ufficiale + miglior tariffa + vantaggi esclusivi"
+    NON deve sembrare la stessa campagna dell'Acquisition.
 
-    CONFIGURE IN BRIEF
-    Set lang.brand_assets.headlines with branded copy to get type-specific RSA.
-    Without brand_assets, the generic brief headlines are used — this works but
-    may include non-brand terms in a brand context.
+    ── BUDGET ─────────────────────────────────────────────────────
+    🎯 5–15% del budget totale mensile
+    Rationale: le query brand sono poche e cheap — proteggere il brand
+    non richiede molto budget, ma è criticamente importante farlo.
+    Brand ha il ROAS PIÙ ALTO dell'account → non sottoinvestire.
 
-    WARNING SIGNS
-    ⚠ Brand name not in any headline → ad won't reinforce brand identity
-    ⚠ Generic copy in brand campaign → diluted message, lower CTR
-    ⚠ Missing brand_assets → system uses generic pool (suboptimal)
+    ── KPI / BID STRATEGY ─────────────────────────────────────────
+    • Se max_cpc_brand impostato → Manual CPC con quel cap
+    • Se target_cpa_eur impostato → Target CPA
+    • Altrimenti → Maximize Conversions
+    ROAS atteso: più alto rispetto a Acquisition e PMax.
+
+    ── ERRORI DA BLOCCARE ─────────────────────────────────────────
+    ⛔ Keyword generiche in campagna Brand → sprechi e confusione
+    ⛔ Copy da Acquisition (senza brand name, toni generici)
+    ⛔ Stesso ROAS target della Search non-brand → segnale di misconfigurazione
+    ⛔ Budget > 20% → sovrainvestimento su traffico già intenzionato
+    ⛔ Brand terms mancanti → campagna non genera nulla
+
+    ── DIFFERENZIAZIONE OBBLIGATORIA ──────────────────────────────
+    Brand ≠ Acquisition: copy, intento, match type, bid strategy sono TUTTI diversi.
+    Se Brand e Acquisition sembrano strategicamente simili → errore da correggere.
     """
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
@@ -70,16 +106,23 @@ class BrandAgent(CampaignAgent):
             return lang.brand_assets.descriptions
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
         if not headlines:
-            warnings.append(
-                f"[Brand/{lang.code}] Nessun headline configurato. "
-                "Aggiungere almeno 3 headline in 'headlines' o in 'brand_assets.headlines'."
-            )
-            return warnings
+            issues.append(ValidationIssue(
+                code="BRAND_NO_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Nessun headline configurato. "
+                    "Aggiungere almeno 3 headline in 'headlines' o in 'brand_assets.headlines'."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
+            return issues
 
         # Brand name must appear in at least one headline
         brand_lower = [t.lower() for t in lang.brand_terms]
@@ -89,18 +132,84 @@ class BrandAgent(CampaignAgent):
         )
         if not brand_found:
             example = lang.brand_terms[0] if lang.brand_terms else "nome hotel"
-            warnings.append(
-                f"[Brand/{lang.code}] Nessun headline contiene il brand name '{example}'. "
-                "Le campagne Brand devono sempre includere il nome dell'hotel "
-                "(configurare 'brand_assets.headlines' con copy branded)."
-            )
+            issues.append(ValidationIssue(
+                code="BRAND_NO_BRAND_IN_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Nessun headline contiene il brand name '{example}'. "
+                    "Brand campaigns DEVONO includere il nome dell'hotel (pinnato in posizione 1). "
+                    "Configura 'brand_assets.headlines' con copy branded."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
 
         # Warn if no type-specific assets configured
         if not (lang.brand_assets and lang.brand_assets.headlines):
-            warnings.append(
-                f"[Brand/{lang.code}] Usando gli headline generici del brief per le campagne Brand. "
-                "Per copy ottimizzata, configurare 'brand_assets.headlines' con testi specificamente "
-                "branded (es. nome hotel + vantaggi prenotazione diretta)."
-            )
+            issues.append(ValidationIssue(
+                code="BRAND_GENERIC_HEADLINES",
+                message=(
+                    f"[Brand/{lang.code}] Usando headline generici per le campagne Brand. "
+                    "Per copy ottimizzata, configura 'brand_assets.headlines' con: "
+                    "nome hotel + vantaggi prenotazione diretta (sito ufficiale, miglior tariffa, cancellazione gratis)."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="BrandAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
+
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
+        total = brief.budgets.total_monthly_eur
+        if total <= 0:
+            return issues
+
+        entry = brief.budgets.by_campaign_type.get("search_brand")
+        if entry and entry.total > 0:
+            pct = entry.total / total * 100
+            if pct < 5:
+                issues.append(ValidationIssue(
+                    code="BRAND_BUDGET_TOO_LOW",
+                    message=(
+                        f"[Brand] Budget {pct:.1f}% del totale (consigliato 5–15%). "
+                        "Budget Brand troppo basso: le OTA possono superarti nell'asta sulle query branded. "
+                        "Aumenta ad almeno il 5% per proteggere il tuo brand SERP."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="BrandAgent",
+                ))
+            elif pct > 20:
+                issues.append(ValidationIssue(
+                    code="BRAND_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[Brand] Budget {pct:.1f}% del totale (max consigliato 15%). "
+                        "Sovrainvestimento su Brand: il traffico brand è già intenzionato e costa poco. "
+                        "Redistribuisci verso Acquisition o PMax per crescita."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="BrandAgent",
+                ))
+
+        # Brand terms must be configured per language
+        for lang in brief.languages:
+            if not lang.brand_terms:
+                issues.append(ValidationIssue(
+                    code="BRAND_NO_BRAND_TERMS",
+                    message=(
+                        f"[Brand/{lang.code}] Nessun brand term configurato. "
+                        "Senza brand terms la campagna Brand non può essere strutturata correttamente. "
+                        "Aggiungi nome hotel + varianti in 'brand_terms'."
+                    ),
+                    level="error",
+                    blocks_publish=True,
+                    agent="BrandAgent",
+                    language=lang.code,
+                ))
+
+        return issues

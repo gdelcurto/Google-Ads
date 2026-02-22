@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, type AccountPlanPreview, type CampaignPreview } from '../api/projects'
+import { projectsApi } from '../api/projects'
 import BriefForm from '../components/BriefForm'
-import { GoogleAdPreview } from '../components/GoogleAdPreview'
 import { T } from '../styles/theme'
+import { useAutofillJobs } from '../contexts/AutofillJobContext'
+import { CampaignCard } from '../components/project/CampaignCard'
+import { PlanSummary } from '../components/project/PlanSummary'
+import { ActionPlanTab } from '../components/project/ActionPlanTab'
+import { CampaignPreviewCard } from '../components/project/CampaignPreviewCard'
+import { ScanLogTab } from '../components/project/ScanLogTab'
+import { ApiLogTab } from '../components/project/ApiLogTab'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 28 },
@@ -81,287 +87,8 @@ const s: Record<string, React.CSSProperties> = {
   },
 }
 
-type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'plan_json' | 'audit'
+type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log'
 
-function CampaignCard({ campaign }: { campaign: CampaignPreview }) {
-  const [expanded, setExpanded] = useState(false)
-
-  return (
-    <div style={s.card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <div style={s.campaignName}>{campaign.campaign_name}</div>
-          <div style={s.metaRow}>
-            <span>{campaign.campaign_type}</span>
-            <span>Lang: {campaign.language_code}</span>
-            <span>Budget: €{campaign.budget_daily_eur.toFixed(2)}/d</span>
-            <span>Bid: {campaign.bid_strategy}</span>
-            <span>Ad Groups: {campaign.ad_groups_count}</span>
-          </div>
-        </div>
-        <span style={campaign.can_publish ? s.badgeGreen : s.badgeRed}>
-          {campaign.can_publish ? 'Publishable' : 'Blocked'}
-        </span>
-      </div>
-
-      {campaign.publish_blockers.length > 0 && (
-        <div style={s.blockers}>
-          <strong>Blockers:</strong>
-          <ul style={{ marginLeft: 16, marginTop: 4 }}>
-            {campaign.publish_blockers.map((b, i) => <li key={i}>{b}</li>)}
-          </ul>
-        </div>
-      )}
-
-      <button
-        onClick={() => setExpanded(!expanded)}
-        style={{ marginTop: 10, padding: '5px 12px', fontSize: 12, background: T.bgPage, color: T.text, border: `1px solid ${T.border}`, borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 500 }}
-      >
-        {expanded ? '▲ Nascondi' : '▼ Ad Groups'} ({campaign.ad_groups_count})
-      </button>
-
-      {expanded && (
-        <div style={s.adGroups}>
-          {campaign.ad_groups.map((ag, i) => (
-            <div key={i} style={s.agRow}>
-              <strong>{ag.name}</strong>
-              {' · '}KW: {ag.keywords_count}
-              {' · '}Ads: {ag.ads_count}
-              {ag.audience_targeting.length > 0 && ` · Audience: ${ag.audience_targeting.join(', ')}`}
-            </div>
-          ))}
-          {campaign.pmax_asset_groups.map((ag, i) => (
-            <div key={`pmax-${i}`} style={{ ...s.agRow, background: T.secondary }}>
-              <strong>Asset Group:</strong> {ag.name}
-              {ag.has_missing_assets && <span style={{ color: '#dc2626' }}> ⚠ Asset mancanti</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function PlanSummary({ plan }: { plan: AccountPlanPreview }) {
-  const publishable = plan.campaigns.filter(c => c.can_publish).length
-  const blocked = plan.campaigns.filter(c => !c.can_publish).length
-  const totalBudget = plan.campaigns.reduce((sum, c) => sum + c.budget_daily_eur, 0)
-
-  return (
-    <div>
-      <div style={s.summary}>
-        <div style={s.summaryCard}>
-          <div style={s.summaryNum}>{plan.total_campaigns}</div>
-          <div style={s.summaryLabel}>Campagne totali</div>
-        </div>
-        <div style={s.summaryCard}>
-          <div style={{ ...s.summaryNum, color: T.success }}>{publishable}</div>
-          <div style={s.summaryLabel}>Pronte per publish</div>
-        </div>
-        <div style={s.summaryCard}>
-          <div style={{ ...s.summaryNum, color: T.error }}>{blocked}</div>
-          <div style={s.summaryLabel}>Bloccate</div>
-        </div>
-        <div style={s.summaryCard}>
-          <div style={s.summaryNum}>€{totalBudget.toFixed(0)}</div>
-          <div style={s.summaryLabel}>Budget/giorno totale</div>
-        </div>
-      </div>
-
-      {plan.validation_errors.length > 0 && (
-        <div style={s.error}>
-          <strong>Errori validazione:</strong>
-          <ul style={{ marginLeft: 16 }}>{plan.validation_errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-        </div>
-      )}
-      {plan.validation_warnings.length > 0 && (
-        <div style={s.alert}>
-          <strong>Warning:</strong>
-          <ul style={{ marginLeft: 16 }}>{plan.validation_warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </div>
-      )}
-    </div>
-  )
-}
-
-const TYPE_COLOR: Record<string, string> = {
-  search_brand:       '#1a73e8',
-  search_acquisition: '#ea8600',
-  retargeting:        '#7c3aed',
-  performance_max:    '#059669',
-  demand_gen:         '#e10098',
-}
-
-const TYPE_LABEL: Record<string, string> = {
-  search_brand:       'Brand',
-  search_acquisition: 'Acquisition',
-  retargeting:        'Retargeting',
-  performance_max:    'Performance Max',
-  demand_gen:         'Demand Gen',
-}
-
-function CampaignPreviewCard({
-  campaign, briefLang, domain,
-}: {
-  campaign: CampaignPreview
-  briefLang: Record<string, unknown> | undefined
-  domain: string
-}) {
-  const [open, setOpen] = useState(false)
-  const isPMax = campaign.campaign_type === 'performance_max'
-  const color = TYPE_COLOR[campaign.campaign_type] || T.primary
-  const label = TYPE_LABEL[campaign.campaign_type] || campaign.campaign_type
-
-  return (
-    <div style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg, marginBottom: 12, overflow: 'hidden' }}>
-
-      {/* ── Header row (always visible) ── */}
-      <div
-        style={{
-          padding: '12px 16px', background: T.bgMuted, cursor: 'pointer',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          borderBottom: open ? `1px solid ${T.borderLight}` : 'none',
-        }}
-        onClick={() => setOpen(o => !o)}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' as const }}>
-          <span style={{ background: color, color: '#fff', borderRadius: 4, fontSize: 11, padding: '2px 8px', fontWeight: 700 }}>
-            {label}
-          </span>
-          <span style={{ fontWeight: 700, fontSize: 14 }}>{campaign.campaign_name}</span>
-          <span style={{ fontSize: 12, color: T.textGray }}>
-            {campaign.language_code} · €{campaign.budget_daily_eur.toFixed(2)}/d · {campaign.bid_strategy}
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          {campaign.publish_blockers.length > 0 && (
-            <span style={{ fontSize: 11, color: T.error, fontWeight: 700 }}>
-              {campaign.publish_blockers.length} {campaign.publish_blockers.length === 1 ? 'blocco' : 'blocchi'}
-            </span>
-          )}
-          <span style={{ fontSize: 11, fontWeight: 700, color: campaign.can_publish ? T.success : T.error }}>
-            {campaign.can_publish ? '✓ Pronta' : '✗ Bloccata'}
-          </span>
-          <span style={{ fontSize: 12, color: T.textGray }}>{open ? '▲' : '▼'}</span>
-        </div>
-      </div>
-
-      {/* ── Expanded body ── */}
-      {open && (
-        <div style={{ padding: 20 }}>
-
-          {/* Publish blockers */}
-          {campaign.publish_blockers.length > 0 && (
-            <div style={{ background: '#fff0f0', border: '1px solid #fca5a5', borderRadius: T.radiusSm, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: T.error }}>
-              <strong>Blocchi:</strong>
-              <ul style={{ marginLeft: 16, marginTop: 4 }}>
-                {campaign.publish_blockers.map((b, i) => <li key={i}>{b}</li>)}
-              </ul>
-            </div>
-          )}
-
-          {/* ── Performance Max ── */}
-          {isPMax ? (
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>Asset Groups</div>
-              {campaign.pmax_asset_groups.length === 0
-                ? <p style={{ color: T.textGray, fontSize: 13 }}>Nessun asset group trovato.</p>
-                : campaign.pmax_asset_groups.map((ag, i) => (
-                  <div key={i} style={{ border: `1px solid ${T.borderLight}`, borderRadius: T.radiusSm, padding: '10px 14px', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <strong style={{ fontSize: 13 }}>📦 {ag.name}</strong>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: ag.has_missing_assets ? T.error : T.success }}>
-                        {ag.has_missing_assets ? '⚠ Asset mancanti' : '✓ Completo'}
-                      </span>
-                    </div>
-                    {ag.missing_asset_notes.length > 0 && (
-                      <ul style={{ fontSize: 12, color: T.error, marginLeft: 16 }}>
-                        {ag.missing_asset_notes.map((n, j) => <li key={j}>{n}</li>)}
-                      </ul>
-                    )}
-                    {ag.audience_signals.length > 0 && (
-                      <div style={{ fontSize: 12, color: T.textGray, marginTop: 4 }}>
-                        Audience signals: {ag.audience_signals.join(', ')}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12, color: T.textGray, marginTop: 2 }}>
-                      Headline asset: {ag.headlines_count}
-                    </div>
-                  </div>
-                ))
-              }
-              {/* Brief assets recap */}
-              {briefLang && (
-                <div style={{ marginTop: 16, padding: '12px 14px', background: T.bgMuted, borderRadius: T.radiusSm, fontSize: 13 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Asset testo da brief ({campaign.language_code})</div>
-                  <div style={{ marginBottom: 4 }}>
-                    <strong>Headline:</strong>{' '}
-                    {(briefLang.headlines as string[] || []).slice(0, 3).join(' | ')}
-                    {(briefLang.headlines as string[] || []).length > 3
-                      ? ` +${(briefLang.headlines as string[] || []).length - 3} altri` : ''}
-                  </div>
-                  <div>
-                    <strong>Description:</strong>{' '}
-                    {(briefLang.descriptions as string[] || []).slice(0, 1).join('')}
-                  </div>
-                </div>
-              )}
-            </div>
-
-          ) : (
-            /* ── Search / Retargeting / Demand Gen — RSA preview ── */
-            /* Priority: actual RSA from plan ad_group[0] → brief lang fallback */
-            (() => {
-              const firstAg = campaign.ad_groups[0]
-              const planH = firstAg?.rsa_headlines?.length > 0 ? firstAg.rsa_headlines : null
-              const planD = firstAg?.rsa_descriptions?.length > 0 ? firstAg.rsa_descriptions : null
-              const previewH = planH || (briefLang?.headlines as string[] || [])
-              const previewD = planD || (briefLang?.descriptions as string[] || [])
-
-              if (!previewH.length) {
-                return (
-                  <div style={{ padding: 16, background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 13 }}>
-                    Asset non trovati per la lingua <strong>{campaign.language_code}</strong> nel brief.
-                  </div>
-                )
-              }
-              return (
-                <GoogleAdPreview
-                  lang={{
-                    headlines:    previewH,
-                    descriptions: previewD,
-                    callouts:     briefLang?.callouts  as string[] || [],
-                    sitelinks:    briefLang?.sitelinks as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
-                  }}
-                  domain={domain}
-                />
-              )
-            })()
-          )}
-
-          {/* ── Ad Groups table ── */}
-          {campaign.ad_groups.length > 0 && (
-            <div style={{ marginTop: 20, borderTop: `1px solid ${T.borderLight}`, paddingTop: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.textGray, marginBottom: 8 }}>
-                Ad Groups ({campaign.ad_groups_count})
-              </div>
-              {campaign.ad_groups.map((ag, i) => (
-                <div key={i} style={{ fontSize: 12, padding: '5px 0', borderBottom: `1px solid ${T.borderLight}`, display: 'flex', gap: 16, flexWrap: 'wrap' as const }}>
-                  <span style={{ fontWeight: 600 }}>📁 {ag.name}</span>
-                  <span style={{ color: T.textGray }}>KW: {ag.keywords_count}</span>
-                  <span style={{ color: T.textGray }}>Annunci: {ag.ads_count}</span>
-                  {ag.audience_targeting.length > 0 && (
-                    <span style={{ color: T.textGray }}>Audience: {ag.audience_targeting.join(', ')}</span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -369,6 +96,25 @@ export default function ProjectDetailPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [planJsonText, setPlanJsonText] = useState('')
   const qc = useQueryClient()
+
+  // ── Background auto-fill job tracking (global context) ───────────────────────
+  const { runningJobIds, completedResults, registerJob, clearResult } = useAutofillJobs()
+  const hasRunningJob = id ? runningJobIds.has(id) : false
+  const pendingAutofill = id ? (completedResults[id] ?? null) : null
+
+  const handleJobStarted = (jobId: string) => {
+    if (!id) return
+    registerJob(id, jobId, project?.name)
+  }
+
+  const handleApplyAutofill = () => {
+    setActiveTab('brief')
+    // pendingAutofill stays in context — BriefForm consumes it via prop
+  }
+
+  const handleDismissAutofill = () => {
+    if (id) clearResult(id)
+  }
 
   const { data: project } = useQuery({
     queryKey: ['project', id],
@@ -378,14 +124,14 @@ export default function ProjectDetailPage() {
   const { data: plan } = useQuery({
     queryKey: ['plan', id],
     queryFn: () => projectsApi.getPlan(id!),
-    enabled: activeTab === 'campaigns' || activeTab === 'overview' || activeTab === 'preview',
+    enabled: activeTab === 'campaigns' || activeTab === 'overview' || activeTab === 'preview' || activeTab === 'action_plan',
     retry: false,
   })
 
-  const { data: brief, isFetching: briefFetching } = useQuery({
+  const { data: brief, isLoading: briefFetching } = useQuery({
     queryKey: ['brief', id],
     queryFn: () => projectsApi.getBrief(id!),
-    enabled: (activeTab === 'brief' || activeTab === 'preview') && (project?.has_brief ?? false),
+    enabled: (activeTab === 'brief' || activeTab === 'preview' || activeTab === 'action_plan') && (project?.has_brief ?? false),
     retry: false,
   })
 
@@ -440,7 +186,39 @@ export default function ProjectDetailPage() {
       {message && (
         <div style={message.type === 'success' ? s.success : s.error}>
           {message.text}
-          <button onClick={() => setMessage(null)} style={{ marginLeft: 12, cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700 }}>✕</button>
+          <button onClick={() => setMessage(null)} style={{ marginLeft: 12, cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700 }}><i className="fa-solid fa-xmark"></i></button>
+        </div>
+      )}
+
+      {/* Auto-fill job in progress */}
+      {hasRunningJob && !pendingAutofill && (
+        <div style={{ ...s.alert, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <i className="fa-solid fa-hourglass-half"></i>
+          <span style={{ flex: 1 }}>
+            Auto-fill in elaborazione in background — puoi cambiare scheda o pagina liberamente.
+            Riceverai una notifica in basso a destra quando il brief è pronto.
+          </span>
+        </div>
+      )}
+
+      {/* Auto-fill result ready banner */}
+      {pendingAutofill && (
+        <div style={{ ...s.success, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ flex: 1 }}>
+            <i className="fa-solid fa-circle-check"></i> <strong>Auto-fill completato!</strong> Il brief per <em>{pendingAutofill.brand_name}</em> è pronto.
+          </span>
+          <button
+            style={{ ...s.btn, fontSize: 13, padding: '6px 14px' }}
+            onClick={handleApplyAutofill}
+          >
+            Applica al progetto
+          </button>
+          <button
+            onClick={handleDismissAutofill}
+            style={{ cursor: 'pointer', background: 'none', border: 'none', fontWeight: 700, fontSize: 16 }}
+          >
+            <i className="fa-solid fa-xmark"></i>
+          </button>
         </div>
       )}
 
@@ -468,18 +246,21 @@ export default function ProjectDetailPage() {
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'preview', 'brief', 'plan_json', 'audit'] as Tab[]).map(t => (
+        {(['overview', 'campaigns', 'preview', 'brief', 'action_plan', 'plan_json', 'audit', 'scan_log', 'api_log'] as Tab[]).map(t => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview'   ? 'Overview'
-              : t === 'campaigns' ? 'Campagne'
-              : t === 'preview'   ? 'Anteprima'
-              : t === 'brief'     ? 'Brief'
-              : t === 'plan_json' ? 'Modifica Piano'
-              : 'Audit Log'}
+            {t === 'overview'     ? 'Overview'
+              : t === 'campaigns'  ? 'Campagne'
+              : t === 'preview'    ? 'Anteprima'
+              : t === 'brief'      ? 'Brief'
+              : t === 'action_plan'? 'Piano d\'azione'
+              : t === 'plan_json'  ? 'Modifica Piano'
+              : t === 'audit'      ? 'Audit Log'
+              : t === 'scan_log'   ? 'Scan Log'
+              : 'API Log'}
           </button>
         ))}
       </div>
@@ -568,14 +349,34 @@ export default function ProjectDetailPage() {
             <BriefForm
               key={brief ? 'loaded' : 'new'}
               projectId={id!}
+              project={project}
               existingBrief={brief ?? null}
+              pendingAutofill={pendingAutofill}
+              onJobStarted={handleJobStarted}
               onSaved={() => {
                 qc.invalidateQueries({ queryKey: ['project', id] })
                 qc.invalidateQueries({ queryKey: ['brief', id] })
+                if (id) clearResult(id)
                 setMessage({ type: 'success', text: 'Brief salvato con successo!' })
                 setActiveTab('overview')
               }}
             />
+          )}
+        </div>
+      )}
+
+      {activeTab === 'action_plan' && (
+        <div>
+          {!project?.has_brief ? (
+            <div style={s.card}>
+              <p style={{ color: T.textGray }}>Carica prima il brief per generare il Piano d'azione.</p>
+            </div>
+          ) : briefFetching ? (
+            <p style={{ color: T.textGray }}>Caricamento brief...</p>
+          ) : brief ? (
+            <ActionPlanTab brief={brief} />
+          ) : (
+            <div style={s.card}><p style={{ color: T.textGray }}>Brief non disponibile.</p></div>
           )}
         </div>
       )}
@@ -639,6 +440,14 @@ export default function ProjectDetailPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {activeTab === 'scan_log' && (
+        <ScanLogTab projectId={id!} />
+      )}
+
+      {activeTab === 'api_log' && (
+        <ApiLogTab projectId={id!} />
       )}
     </div>
   )

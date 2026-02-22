@@ -3,188 +3,29 @@ from __future__ import annotations
 
 import json
 import logging
-import re
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import TokenData, require_strategist_or_admin
 from app.config import get_settings
+from app.connectors.claude_enricher import ClaudeEnricher, run_autofill_job
+from app.connectors.web_scraper import scrape_hotel_site, ScrapedSite, scan_entry
+from app.database import AsyncSessionLocal, get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/autofill", tags=["autofill"])
 
-LANG_IDS: dict[str, int] = {
-    "IT": 1004, "EN": 1000, "DE": 1001, "FR": 1002, "ES": 1003,
-    "NL": 1010, "PT": 1014, "RU": 1031, "ZH": 1017, "JA": 1005,
-    "PL": 1030, "SV": 1040, "NO": 1013, "DA": 1009,
-}
-LANG_NAMES: dict[str, str] = {
-    "IT": "Italiano", "EN": "English", "DE": "Deutsch",
-    "FR": "Français", "ES": "Español", "NL": "Nederlands",
-    "PT": "Português", "RU": "Русский", "ZH": "中文",
-    "JA": "日本語", "PL": "Polski", "SV": "Svenska",
-    "NO": "Norsk", "DA": "Dansk",
-}
 
-SYSTEM_PROMPT = """\
-Sei un esperto certificato Google Ads per hotel e turismo.
-Analizzi il contenuto di siti web di hotel e generi dati strutturati per campagne Google Ads.
-
-REGOLE ASSOLUTE (non derogabili):
-1. HEADLINE: massimo 30 caratteri ciascuna, spazi inclusi. Conta ogni carattere.
-   Esempi OK: "Prenota Diretto Online" (22), "Hotel 4 Stelle Roma" (20)
-   Esempi ERRATI: "Prenota sul Sito Ufficiale e Risparmia" (troppo lungo)
-2. DESCRIZIONI: massimo 90 caratteri ciascuna, spazi inclusi.
-3. CALLOUT: massimo 25 caratteri ciascuno, spazi inclusi.
-4. Genera solo contenuti REALI trovati nel sito. Non inventare servizi non menzionati.
-5. Le headline devono avere un beneficio o CTA chiaro, specifico per quell'hotel.
-6. Rispondi ESCLUSIVAMENTE con JSON valido, zero testo aggiuntivo.
-"""
-
-USER_PROMPT_TEMPLATE = """\
-Analizza il seguente sito web di un hotel e genera un brief strutturato per Google Ads.
-
-URL: {url}
-Lingue richieste: {languages}
-
---- CONTENUTO DEL SITO ---
-{content}
---- FINE CONTENUTO ---
-
-Genera il JSON con questa struttura esatta:
-{{
-  "brand_name": "Nome commerciale dell'hotel",
-  "brand_slug": "nome-in-slug",
-  "domain": "www.dominio.it",
-  "country": "IT",
-  "hotel_category": "city_hotel|resort|boutique|business|agriturismo",
-  "stars": 4,
-  "rooms": null,
-  "address": "Via Esempio 1, 00100 Roma",
-  "services": ["Piscina", "Spa", "Ristorante"],
-  "strengths": ["Posizione centrale", "Vista panoramica"],
-  "booking_engine_url": "https://www.dominio.it/prenota",
-  "target_countries": ["IT", "DE", "GB"],
-  "languages": [
-    {{
-      "code": "IT",
-      "name": "Italiano",
-      "google_language_id": 1004,
-      "landing_page": "https://www.dominio.it/",
-      "brand_terms": ["nome hotel", "variante 1", "variante 2"],
-      "usp_main": "Proposta di valore unica max 90 caratteri",
-      "headlines": [
-        "Max 30 Caratteri Ciascuna",
-        "Prenota Diretto Online",
-        "Miglior Tariffa Garantita",
-        "Posizione Centrale",
-        "Colazione Inclusa",
-        "Cancellazione Gratuita",
-        "Wi-Fi Gratuito",
-        "Navetta Aeroporto"
-      ],
-      "descriptions": [
-        "Descrizione di max 90 caratteri con beneficio principale e call to action chiaro.",
-        "Seconda descrizione con altri vantaggi e differenziatori reali dell'hotel. Max 90."
-      ],
-      "callouts": [
-        "Miglior Prezzo",
-        "Cancellazione Gratis",
-        "Wi-Fi Gratuito",
-        "Check-in Flessibile"
-      ]
-    }}
-  ]
-}}
-
-Genera {n_langs} oggetti nella lista "languages", uno per ciascuna lingua: {languages}.
-Per ogni lingua, scrivi headline, descrizioni e callout nella lingua corretta.
-Brand terms: come gli utenti cercano l'hotel su Google in quella lingua.
-Callouts: sintetici, fatti concreti dell'hotel.
-"""
-
-
-def _strip_html(html: str) -> str:
-    """Remove HTML tags, scripts, styles. Return plain text max 10000 chars."""
-    html = re.sub(r'<(script|style|noscript)[^>]*>.*?</(script|style|noscript)>', ' ', html,
-                  flags=re.DOTALL | re.IGNORECASE)
-    html = re.sub(r'<!--.*?-->', ' ', html, flags=re.DOTALL)
-    html = re.sub(r'<[^>]+>', ' ', html)
-    html = re.sub(r'&nbsp;', ' ', html)
-    html = re.sub(r'&[a-z]+;', '', html)
-    html = re.sub(r'\s+', ' ', html).strip()
-    return html[:10000]
-
-
-async def _fetch_pages(base_url: str) -> str:
-    """Fetch homepage and one subpage. Return combined plain text."""
-    if not base_url.startswith(('http://', 'https://')):
-        base_url = 'https://' + base_url
-
-    headers = {
-        'User-Agent': (
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/120.0.0.0 Safari/537.36'
-        ),
-        'Accept-Language': 'it-IT,it;q=0.9,en;q=0.8,de;q=0.7',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    }
-
-    base = base_url.rstrip('/')
-    candidates = [base_url, f"{base}/camere", f"{base}/rooms", f"{base}/servizi", f"{base}/about"]
-    collected: list[str] = []
-    errors: list[str] = []
-
-    async with httpx.AsyncClient(
-        timeout=15.0,
-        follow_redirects=True,
-        verify=False,
-        headers=headers,
-    ) as client:
-        for url in candidates[:3]:
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200 and 'text/html' in resp.headers.get('content-type', ''):
-                    text = _strip_html(resp.text)
-                    if len(text) > 200:
-                        collected.append(f"[{url}]\n{text}")
-                        if len('\n\n'.join(collected)) > 14000:
-                            break
-                else:
-                    errors.append(f"{url} → HTTP {resp.status_code}")
-            except Exception as exc:
-                errors.append(f"{url} → {type(exc).__name__}: {exc}")
-                continue
-
-    if not collected:
-        detail = "Impossibile recuperare il sito web dal server. "
-        if errors:
-            detail += "Dettagli: " + " | ".join(errors)
-        detail += " Usa la modalità manuale: incolla il testo del sito nell'apposita area."
-        logger.warning(f"_fetch_pages failed for {base_url}: {errors}")
-        raise HTTPException(status_code=422, detail=detail)
-    return '\n\n'.join(collected)[:14000]
-
-
-def _truncate_assets(data: dict) -> dict:
-    """Post-process: hard-truncate headlines/descriptions/callouts to Google Ads limits."""
-    for lang in data.get('languages', []):
-        lang['headlines'] = [h[:30] for h in lang.get('headlines', [])]
-        lang['descriptions'] = [d[:90] for d in lang.get('descriptions', [])]
-        lang['callouts'] = [c[:25] for c in lang.get('callouts', [])]
-        if lang.get('usp_main'):
-            lang['usp_main'] = lang['usp_main'][:90]
-    return data
-
+# ── Request / Response models ─────────────────────────────────────────────────
 
 class AutofillRequest(BaseModel):
     url: str
     languages: List[str] = ["IT", "EN"]
-    content: Optional[str] = None  # manual fallback: paste website text directly
+    content: Optional[str] = None
 
 
 class KeywordsRequest(BaseModel):
@@ -209,82 +50,127 @@ class SitelinksRequest(BaseModel):
     booking_engine_url: Optional[str] = None
 
 
+class TypeCopyRequest(BaseModel):
+    campaign_type: str   # "brand" | "acquisition" | "retargeting"
+    brand_name: str
+    hotel_category: str
+    stars: int
+    language_code: str
+    domain: Optional[str] = None
+    usp_main: Optional[str] = None
+    services: Optional[List[str]] = None
+    strengths: Optional[List[str]] = None
+
+
+class BudgetStrategyRequest(BaseModel):
+    brand_name: str
+    hotel_category: str
+    stars: int
+    languages: List[str]
+    vertical: str = "hotel"
+    country: str = "IT"
+    total_monthly_budget_eur: float = 0.0
+
+
+class BudgetStrategyResponse(BaseModel):
+    recommended_types: List[str]
+    budget_split: dict
+    daily_by_type_lang: dict
+    rationale: dict
+    overall_strategy: str
+    api_call_log: Optional[dict] = None
+    suggested_total_monthly_eur: float
+    min_budget_warning: Optional[str] = None
+
+
+class StartJobRequest(BaseModel):
+    url: str
+    languages: List[str] = ["IT", "EN"]
+    project_id: str
+    content: Optional[str] = None
+
+
+# ── DB helper (background tasks open their own session) ───────────────────────
+
+async def _update_job_status(
+    job_id: str,
+    status: str,
+    result: dict | None = None,
+    error: str | None = None,
+) -> None:
+    from sqlalchemy import select
+    from app.domain.models import AutofillJob
+
+    async with AsyncSessionLocal() as db:
+        res = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
+        job = res.scalar_one_or_none()
+        if not job:
+            return
+        job.status = status
+        if result is not None:
+            job.result_json = json.dumps(result)
+        if error is not None:
+            job.error_message = str(error)[:2000]
+        if status in ("completed", "failed"):
+            job.completed_at = datetime.utcnow()
+        await db.commit()
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.post("")
+async def autofill_from_url(
+    payload: AutofillRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+):
+    """Fetch a hotel website and generate a complete brief draft using Claude."""
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+
+    langs = [l.upper() for l in payload.languages if l.strip()]
+    if not langs:
+        raise HTTPException(status_code=422, detail="Almeno una lingua richiesta")
+
+    if payload.content and payload.content.strip():
+        logger.info(f"Autofill: using manual content for {payload.url}")
+        scraped = ScrapedSite(
+            content=payload.content.strip()[:14000],
+            lang_urls={},
+            lang_landings={},
+            scan_log=[scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata")],
+        )
+    else:
+        logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
+        scraped = await scrape_hotel_site(payload.url, langs)
+
+    try:
+        enricher = ClaudeEnricher(settings.anthropic_api_key)
+        data, _ = await enricher.enrich_brief(scraped, langs, url=payload.url)
+    except Exception as exc:
+        logger.error(f"Anthropic call failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore chiamata AI: {exc}")
+
+    logger.info(f"Autofill OK: {data.get('brand_name')} — {len(data.get('languages', []))} langs")
+    return data
+
+
 @router.post("/keywords")
 async def suggest_keywords(
     payload: KeywordsRequest,
     current_user: TokenData = Depends(require_strategist_or_admin),
 ):
-    """
-    Generate acquisition keyword themes for a hotel using AI.
-    Returns kw_themes_text and kw_negative_text ready to paste into the brief form.
-    """
+    """Generate acquisition keyword themes for a hotel using AI."""
     settings = get_settings()
-
     if not settings.anthropic_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Chiave API Anthropic non configurata.",
-        )
-
-    lang_code = payload.language_code.upper()
-    lang_name = LANG_NAMES.get(lang_code, lang_code)
-
-    services_txt = ", ".join(payload.services or []) or "non specificati"
-    strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
-
-    prompt = f"""Sei un esperto SEA/PPC per hotel. Genera keyword themes di acquisizione per Google Ads.
-
-Hotel: {payload.brand_name}
-Categoria: {payload.hotel_category}
-Stelle: {payload.stars}
-Dominio: {payload.domain or 'non specificato'}
-Servizi: {services_txt}
-Punti di forza: {strengths_txt}
-Lingua: {lang_name} ({lang_code})
-
-Genera keyword themes per campagne Search Acquisition. Restituisci SOLO testo in questo formato:
-prenotazione: kw1, kw2, kw3, kw4
-categoria: kw1, kw2, kw3
-posizione: kw1, kw2, kw3
-servizi: kw1, kw2, kw3
-[negatives]: kw_neg1, kw_neg2, kw_neg3, kw_neg4, kw_neg5
-
-Regole:
-- 4-6 temi con 4-8 keyword ciascuno
-- Keyword REALI che un utente cercherebbe per trovare questo hotel
-- Scrivi in {lang_name}
-- Ultima riga sempre [negatives]: con 5-8 keyword negative (es. gratis, recensioni, immagini)
-- Zero testo aggiuntivo, solo le righe richieste"""
-
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
     try:
-        import anthropic
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = message.content[0].text.strip()
+        enricher = ClaudeEnricher(settings.anthropic_api_key)
+        result, log = await enricher.suggest_keywords(payload.model_dump())
     except Exception as exc:
         logger.error(f"Keywords suggestion failed: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
-
-    # Split negatives from themes
-    lines = [l.strip() for l in raw.split('\n') if l.strip()]
-    theme_lines = []
-    negative_lines = []
-    for line in lines:
-        if line.lower().startswith('[negatives]') or line.lower().startswith('negatives'):
-            colon = line.find(':')
-            if colon != -1:
-                negative_lines = [k.strip() for k in line[colon + 1:].split(',') if k.strip()]
-        else:
-            theme_lines.append(line)
-
-    return {
-        "kw_themes_text": "\n".join(theme_lines),
-        "kw_negative_text": "\n".join(negative_lines),
-    }
+    return {**result, "api_call_log": log}
 
 
 @router.post("/sitelinks")
@@ -292,176 +178,156 @@ async def suggest_sitelinks(
     payload: SitelinksRequest,
     current_user: TokenData = Depends(require_strategist_or_admin),
 ):
-    """
-    Generate 4–6 Google Ads sitelinks for a hotel using AI.
-    Returns a list of sitelink objects ready to populate the brief form.
-    """
+    """Generate 4–6 Google Ads sitelinks for a hotel using AI."""
     settings = get_settings()
-
     if not settings.anthropic_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Chiave API Anthropic non configurata.",
-        )
-
-    lang_code = payload.language_code.upper()
-    lang_name = LANG_NAMES.get(lang_code, lang_code)
-    services_txt = ", ".join(payload.services or []) or "non specificati"
-    strengths_txt = ", ".join(payload.strengths or []) or "non specificati"
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+    common = {
+        "brand_name": payload.brand_name,
+        "hotel_category": payload.hotel_category,
+        "stars": payload.stars,
+        "services": payload.services,
+        "strengths": payload.strengths,
+    }
     booking_url = payload.booking_engine_url or payload.landing_page
-
-    prompt = f"""Sei un esperto Google Ads per hotel. Genera esattamente 5 sitelink per Google Ads.
-
-Hotel: {payload.brand_name}
-Categoria: {payload.hotel_category} — {payload.stars} stelle
-Lingua: {lang_name} ({lang_code})
-Landing page: {payload.landing_page}
-Booking engine: {booking_url}
-Servizi: {services_txt}
-Punti di forza: {strengths_txt}
-
-REGOLE ASSOLUTE:
-- text: MASSIMO 25 caratteri, spazi inclusi. Conta ogni carattere.
-- description_1: MASSIMO 35 caratteri, spazi inclusi.
-- description_2: MASSIMO 35 caratteri, spazi inclusi.
-- final_url: URL reale basata sulla landing page (modifica il path, non inventare domini)
-- Scrivi text, description_1, description_2 in {lang_name}
-- Temi suggeriti: prenotazione diretta, offerte speciali, camere, servizi, posizione/attrazioni
-
-Restituisci SOLO questo JSON (array di 5 oggetti), zero testo aggiuntivo:
-[
-  {{"text": "Prenota Ora", "description_1": "Miglior tariffa garantita", "description_2": "Cancellazione gratuita inclusa", "final_url": "{booking_url}"}},
-  {{"text": "Offerte Speciali", "description_1": "Pacchetti esclusivi per soggiorni", "description_2": "Risparmia prenotando online", "final_url": "{payload.landing_page}/offerte"}},
-  {{"text": "Le Nostre Camere", "description_1": "Camere eleganti e confortevoli", "description_2": "Vista panoramica e servizi top", "final_url": "{payload.landing_page}/camere"}},
-  {{"text": "Servizi Hotel", "description_1": "SPA, ristorante e molto altro", "description_2": "Tutto per il tuo relax", "final_url": "{payload.landing_page}/servizi"}},
-  {{"text": "Come Raggiungerci", "description_1": "Posizione centrale e accessibile", "description_2": "Navetta aeroporto disponibile", "final_url": "{payload.landing_page}/contatti"}}
-]"""
-
     try:
-        import anthropic
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        message = await client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            messages=[{"role": "user", "content": prompt}],
+        enricher = ClaudeEnricher(settings.anthropic_api_key)
+        sitelinks, log = await enricher.suggest_sitelinks(
+            common, payload.language_code, payload.landing_page, booking_url
         )
-        raw = message.content[0].text.strip()
     except Exception as exc:
         logger.error(f"Sitelinks suggestion failed: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
-
-    # Parse JSON array from response
-    try:
-        json_match = re.search(r'```(?:json)?\s*(\[.*?\])\s*```', raw, re.DOTALL)
-        if json_match:
-            raw = json_match.group(1)
-        else:
-            start = raw.find('[')
-            end = raw.rfind(']')
-            if start != -1 and end != -1:
-                raw = raw[start:end + 1]
-        sitelinks = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.error(f"Sitelinks JSON parse error: {exc}\nRaw: {raw[:500]}")
-        raise HTTPException(status_code=500, detail="Risposta AI non parsabile. Riprova.")
-
-    # Hard-enforce character limits
-    result = []
-    for sl in sitelinks:
-        if not isinstance(sl, dict) or not sl.get("text"):
-            continue
-        result.append({
-            "text": str(sl.get("text", ""))[:25],
-            "description_1": str(sl.get("description_1", ""))[:35],
-            "description_2": str(sl.get("description_2", ""))[:35],
-            "final_url": str(sl.get("final_url", payload.landing_page)),
-        })
-
-    return {"sitelinks": result}
+    return {"sitelinks": sitelinks, "api_call_log": log}
 
 
-@router.post("")
-async def autofill_from_url(
-    payload: AutofillRequest,
+@router.post("/type-copy")
+async def suggest_type_copy(
+    payload: TypeCopyRequest,
     current_user: TokenData = Depends(require_strategist_or_admin),
 ):
-    """
-    Fetch a hotel website and use Claude to generate a complete brief draft.
-    Returns structured data ready to pre-populate the brief form.
-    If `content` is provided, the HTTP fetch is skipped and that text is used directly.
-    """
+    """Generate per-type RSA headlines and descriptions using Claude."""
     settings = get_settings()
-
     if not settings.anthropic_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Chiave API Anthropic non configurata. Imposta ANTHROPIC_API_KEY nel file .env",
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+    if payload.campaign_type.lower() not in ("brand", "acquisition", "retargeting"):
+        raise HTTPException(status_code=422, detail="campaign_type deve essere: brand, acquisition, retargeting")
+    common = {
+        "brand_name": payload.brand_name,
+        "hotel_category": payload.hotel_category,
+        "stars": payload.stars,
+        "domain": payload.domain,
+        "services": payload.services,
+        "strengths": payload.strengths,
+    }
+    try:
+        enricher = ClaudeEnricher(settings.anthropic_api_key)
+        copy, log = await enricher.suggest_type_copy(
+            common, payload.language_code, payload.usp_main, payload.campaign_type.lower()
         )
+    except Exception as exc:
+        logger.error(f"TypeCopy suggestion failed: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Errore AI: {exc}")
+    return {**copy, "api_call_log": log}
 
-    langs = [l.upper() for l in payload.languages if l.strip()]
+
+@router.post("/budget-strategy")
+async def suggest_budget_strategy(
+    payload: BudgetStrategyRequest,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+) -> BudgetStrategyResponse:
+    """Suggest campaign types, budget allocation and rationale based on hotel profile."""
+    settings = get_settings()
+    enricher = ClaudeEnricher(settings.anthropic_api_key) if settings.anthropic_api_key else None
+    if enricher:
+        result = await enricher.suggest_budget_strategy(payload.model_dump())
+    else:
+        from app.connectors.claude_enricher import (
+            _suggest_budget, _select_campaign_types, _compute_split, _compute_daily,
+            _STATIC_RATIONALE, _FRONTEND_KEYS,
+        )
+        total = _suggest_budget(payload.stars, payload.hotel_category)
+        recommended, warning = _select_campaign_types(total)
+        split = _compute_split(recommended)
+        daily = _compute_daily(split, total, payload.languages)
+        result = {
+            "recommended_types": recommended,
+            "budget_split": {k: round(v * 100, 1) for k, v in split.items()},
+            "daily_by_type_lang": daily,
+            "rationale": {t: _STATIC_RATIONALE.get(t, "") for t in recommended},
+            "overall_strategy": f"Strategia full-funnel con {len(recommended)} campagne — €{total:.0f}/mese.",
+            "suggested_total_monthly_eur": total,
+            "min_budget_warning": warning,
+            "api_call_log": None,
+        }
+    return BudgetStrategyResponse(**result)
+
+
+@router.post("/jobs")
+async def start_autofill_job(
+    payload: StartJobRequest,
+    background_tasks: BackgroundTasks,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a background auto-fill job and return the job ID immediately."""
+    settings = get_settings()
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+
+    langs = [lang.upper() for lang in payload.languages if lang.strip()]
     if not langs:
         raise HTTPException(status_code=422, detail="Almeno una lingua richiesta")
 
-    # 1. Fetch the website (or use manually provided content)
-    if payload.content and payload.content.strip():
-        logger.info(f"Autofill: using manual content for {payload.url}, langs={langs}")
-        content = payload.content.strip()[:14000]
-    else:
-        logger.info(f"Autofill: fetching {payload.url} for languages {langs}")
-        content = await _fetch_pages(payload.url)
-
-    # 2. Call Claude
-    user_prompt = USER_PROMPT_TEMPLATE.format(
+    from app.domain.models import AutofillJob
+    job = AutofillJob(
+        project_id=payload.project_id,
         url=payload.url,
-        languages=", ".join(langs),
-        content=content,
-        n_langs=len(langs),
+        languages_json=json.dumps(langs),
+        status="pending",
+    )
+    db.add(job)
+    await db.flush()
+    job_id = job.id
+
+    background_tasks.add_task(
+        run_autofill_job,
+        job_id=job_id,
+        url=payload.url,
+        langs=langs,
+        content=payload.content,
+        api_key=settings.anthropic_api_key,
+        update_status=_update_job_status,
     )
 
-    try:
-        import anthropic
-        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-        message = await client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
-        raw = message.content[0].text.strip()
-    except Exception as exc:
-        logger.error(f"Anthropic call failed: {exc}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Errore chiamata AI: {exc}")
+    logger.info(f"AutofillJob {job_id} queued for project {payload.project_id}")
+    return {"job_id": job_id, "status": "pending"}
 
-    # 3. Parse JSON from response
-    try:
-        # Claude sometimes wraps in ```json ... ```
-        json_match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
-        if json_match:
-            raw = json_match.group(1)
-        else:
-            # Find first { ... } block
-            start = raw.find('{')
-            end = raw.rfind('}')
-            if start != -1 and end != -1:
-                raw = raw[start:end + 1]
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        logger.error(f"JSON parse error: {exc}\nRaw: {raw[:500]}")
-        raise HTTPException(
-            status_code=500,
-            detail="Il modello AI ha restituito una risposta non parsabile. Riprova.",
-        )
 
-    # 4. Enrich language metadata and truncate to Google Ads limits
-    for lang in data.get('languages', []):
-        code = str(lang.get('code', '')).upper()
-        lang['code'] = code
-        if not lang.get('google_language_id'):
-            lang['google_language_id'] = LANG_IDS.get(code, 0)
-        if not lang.get('name'):
-            lang['name'] = LANG_NAMES.get(code, code)
+@router.get("/jobs/{job_id}")
+async def get_autofill_job(
+    job_id: str,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Poll the status and result of a background auto-fill job."""
+    from sqlalchemy import select
+    from app.domain.models import AutofillJob
 
-    data = _truncate_assets(data)
+    result = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
 
-    logger.info(f"Autofill OK: {data.get('brand_name')} — {len(data.get('languages', []))} langs")
-    return data
+    resp: dict = {
+        "id": job.id,
+        "project_id": job.project_id,
+        "status": job.status,
+        "created_at": job.created_at.isoformat(),
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error_message": job.error_message,
+        "result": None,
+    }
+    if job.status == "completed" and job.result_json:
+        resp["result"] = json.loads(job.result_json)
+    return resp

@@ -1,86 +1,124 @@
 """
-Performance Max Campaign Agent.
+Performance Max Campaign Agent — Senior Google Ads Strategist: Hospitality.
 
-Philosophy: PMax is Google's fully automated, omni-channel campaign type.
-You don't control placements or targeting — you provide assets and audience
-signals, and Google decides everything else. The most critical risks are:
-1) Brand cannibalization (PMax will steal branded queries from brand campaigns)
-2) Missing image assets (campaign runs at limited scale without them)
-3) URL expansion (Google may send traffic to unintended pages)
-
-Configure these constraints before publishing, or performance will be unpredictable.
+SKILL: Scala performance full-funnel e massimizza conversion value cross-network.
 """
 from __future__ import annotations
 
-from typing import List
+from typing import TYPE_CHECKING, List
 
-from app.agents.base import CampaignAgent
+from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
 from app.domain.schemas.brief import LanguagePlan
 
-# Minimum recommended headline count for "Good" ad strength
+if TYPE_CHECKING:
+    from app.domain.schemas.brief import Brief
+
+
 _MIN_HEADLINES_GOOD = 5
 _MIN_HEADLINES_EXCELLENT = 8
 
 
 class PMaxAgent(CampaignAgent):
     TYPE_KEY = "performance_max"
+    LEVEL = AgentLevel.SPECIALIST
+    BLOCKS_PUBLISH = True
+    BLOCKING_RULES = [
+        "PMAX_NO_BRAND_TERMS",
+    ]
+
+    # PMax = bid strategy selection + budget scenario planning + landing page quality
+    SKILL_FILES = (
+        "11-google-bid-strategy-recommendations.md",
+        "03-google-and-meta-budget-scenario-planner.md",
+        "10-google-and-meta-landing-page-audit.md",
+    )
 
     GUIDELINES = """
-    PERFORMANCE MAX — Rules for asset groups and configuration
-    ══════════════════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════
+    PERFORMANCE MAX STRATEGIST — Hospitality Google Ads
+    ══════════════════════════════════════════════════════════════════
 
-    PURPOSE
-    Automated omni-channel campaign across Search, Display, YouTube, Gmail,
-    Maps, and Shopping. Google optimises placements and creative combinations.
-    Best for reaching new audiences at scale and capturing demand across channels.
+    OBIETTIVO STRATEGICO
+    Scalare le performance full-funnel e massimizzare conversion value.
+    PMax non è una Search estesa: è cross-network (Search, Display,
+    YouTube, Gmail, Maps). Google decide placement e combinazioni creative.
+    Fornisci asset + audience signals di qualità e lascia che l'algoritmo
+    ottimizzi.
 
-    ASSET GROUP REQUIREMENTS
-    ✅ Headlines: 3 required, 8+ recommended for "Excellent" ad strength (max 30 chars)
-    ✅ Long headlines: 1 required (max 90 chars — used in Display/YouTube)
-    ✅ Descriptions: 2 required, 4 recommended (max 90 chars)
-    ✅ Images: REQUIRED
-       - Landscape 1200×628 (hotel exterior / destination)
-       - Square 1200×1200 (room, pool, or signature experience)
-    ✅ Logo: 1200×1200 PNG with transparent background
-    ◐ Video: optional but strongly recommended (16:9 YouTube hosted)
-       → Without video, Google auto-generates one (usually low quality)
+    ⚠ CONCETTO CHIAVE: PMax ≠ Search estesa.
+    PMax si basa su asset e audience signals, non su keyword.
+    Un PMax con asset scadenti e senza audience signals è denaro sprecato.
 
-    BRAND EXCLUSION — CRITICAL before publishing
-    ❌ Without brand exclusion lists, PMax will compete with your Brand campaign
-       on branded queries — cannibalization drives up your own CPC costs.
-    ✅ Add brand exclusion list (exact match: hotel name + variants)
-       before publishing the PMax campaign.
+    INTENTO UTENTE
+    Mid/bottom funnel: Google ottimizza per catturare l'intent rilevante
+    attraverso tutti i canali. Reach più ampio della Search pura.
+    tROAS o Max Conversion Value come strategia di bid raccomandata.
 
-    URL EXPANSION
-    - Start with url_expansion = False (disabled)
-    - Enable only after validating which landing pages Google is using
-    - Disable again if Google sends traffic to irrelevant hotel pages
+    ── STRUTTURA CORRETTA ──────────────────────────────────────────
+    ✅ Una campagna per mercato/lingua
+    ✅ Asset group per lingua (o per segmento: Luxury, Family, Business)
+       → Final URL corretto per lingua in ogni asset group
+       → Asset NON identici tra asset group: temi diversi
+    ✅ Audience signals OBBLIGATORI in ogni asset group:
+       • Remarketing lists (visitatori sito, checkout abandoners)
+       • In-market: Travel, Hotel & Accommodation, Luxury Travel
+       • Customer match (se disponibile)
+       → Più signals = periodo apprendimento 1–2 settimane (vs 3–6 senza)
+    ✅ Una sola conversione primaria chiara per campagna
 
-    AUDIENCE SIGNALS (not targeting — signals only)
-    ✅ Add remarketing lists → tells Google "users like these convert"
-    ✅ Add in-market segments → Travel, Hotels, Luxury Travel
-    ✅ Add custom intent → paste keywords from Acquisition campaign
-    → More signals = faster learning period
+    ── ASSET GROUP REQUIREMENTS ────────────────────────────────────
+    ✅ Headlines: min 3, consigliati 8+ per "Excellent" ad strength (≤30 chars)
+    ✅ Long headlines: min 1 (≤90 chars — usato su Display/YouTube)
+    ✅ Descriptions: min 2, consigliati 4 (≤90 chars)
+    ✅ Immagini OBBLIGATORIE:
+       • Landscape 1200×628 (hotel facade/destination)
+       • Square 1200×1200 (camera, piscina, esperienza signature)
+    ✅ Logo 1200×1200 PNG trasparente
+    ◐ Video: opzionale ma fortemente consigliato (16:9 YouTube)
+       → Senza video Google ne genera uno automatico (bassa qualità)
 
-    BID STRATEGY
-    - Target ROAS (preferred if you have 30+ conversions/month)
-    - Maximize Conversion Value (if starting fresh)
-    - Target CPA (for lead-gen / phone-call objectives)
+    ── BRAND EXCLUSION — CRITICO PRIMA DEL PUBLISH ────────────────
+    ❌ SENZA brand exclusion list, PMax competiterà con la Brand Search
+       sulle query branded → cannibalization → costi CPC più alti.
+    ✅ Aggiungere brand exclusion list (exact match: nome hotel + varianti)
+       PRIMA di pubblicare la campagna PMax.
+    ✅ URL expansion = OFF per default negli hotel (mantenere controllo LP)
 
-    CONFIGURE IN BRIEF
-    Asset images and videos must be uploaded separately (cannot be in brief JSON).
-    The brief tracks what's missing via missing_asset_notes in each asset group.
+    ── MESSAGGIO ──────────────────────────────────────────────────
+    Mix tra performance e storytelling. NON è la stessa cosa della Search:
+    ✅ Headlines mix: alcuni orientati conversion, altri aspirazionali
+       • "Prenota Diretto e Risparmia"    (30 chars)
+       • "Suite Vista Mare con Terrazza"  (30 chars)
+       • "Miglior Tariffa Garantita"      (25 chars)
+       • "Colazione Inclusa Ogni Giorno"  (29 chars)
+    ✅ Long headlines: evocativi, usati su Display/YouTube
+    ❌ NON copiare asset identici dalla Search — PMax ha reach diverso
 
-    WARNING SIGNS
-    ⚠ < 5 headlines → low ad strength, limited creative combinations
-    ⚠ No images → campaign runs only on text/Search inventory (poor scale)
-    ⚠ No brand exclusion → expect brand cannibalization within 2 weeks
-    ⚠ No audience signals → longer learning period (3–6 weeks vs 1–2 weeks)
-    ⚠ url_expansion enabled too early → irrelevant traffic to blog/careers pages
+    ── BUDGET ─────────────────────────────────────────────────────
+    🎯 30–50% del budget totale mensile
+    PMax è la campagna con il maggior potenziale di scala nell'account.
+    tROAS o Max Conversion Value come bid strategy raccomandata.
+
+    ── KPI / BID STRATEGY ─────────────────────────────────────────
+    • Target ROAS (se 30+ conversioni/mese) → maximize_conversion_value
+    • Target CPA (per lead-gen/telefonate)
+    • Maximize Conversion Value (avvio, dati limitati)
+
+    ── ERRORI DA BLOCCARE ─────────────────────────────────────────
+    ⛔ Nessun audience signal → apprendimento lentissimo (3–6 settimane)
+    ⛔ Nessuna differenziazione asset per lingua → copy sbagliata per mercato
+    ⛔ Asset identici alla Search → perdi l'opportunità cross-channel
+    ⛔ Nessuna brand exclusion → cannibalization Brand Search garantita
+    ⛔ URL expansion abilitata subito → traffico su pagine irrilevanti
+    ⛔ < 5 headlines → ad strength "Poor", reach limitatissimo
+
+    ── DIFFERENZIAZIONE OBBLIGATORIA ──────────────────────────────
+    PMax ≠ Search Brand, ≠ Search Acquisition.
+    Struttura, asset, obiettivo e reach sono completamente diversi.
     """
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
-        # PMax uses a mix: if brand_assets configured use those, else generic
+        # PMax: prefer brand_assets if configured, else generic
         if lang.brand_assets and lang.brand_assets.headlines:
             return lang.brand_assets.headlines
         return lang.headlines
@@ -90,15 +128,94 @@ class PMaxAgent(CampaignAgent):
             return lang.brand_assets.descriptions
         return lang.descriptions
 
-    def validate_copy(self, lang: LanguagePlan) -> List[str]:
-        warnings: List[str] = []
+    def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
         headlines = self.get_headlines(lang)
 
         if len(headlines) < _MIN_HEADLINES_GOOD:
-            warnings.append(
-                f"[PMax/{lang.code}] Solo {len(headlines)} headline configurati (minimo 3, "
-                f"raccomandati {_MIN_HEADLINES_EXCELLENT}+ per ad strength 'Excellent'). "
-                "Aggiungere più headline per migliorare la copertura creativa."
-            )
+            issues.append(ValidationIssue(
+                code="PMAX_TOO_FEW_HEADLINES",
+                message=(
+                    f"[PMax/{lang.code}] Solo {len(headlines)} headline configurati "
+                    f"(min 3, consigliati {_MIN_HEADLINES_EXCELLENT}+ per ad strength 'Excellent'). "
+                    "Con pochi headline Google ha combinazioni creative limitate e performance ridotte."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="PMaxAgent",
+                language=lang.code,
+            ))
 
-        return warnings
+        return issues
+
+    def validate_strategy(self, brief: "Brief") -> List[ValidationIssue]:
+        issues: List[ValidationIssue] = []
+        total = brief.budgets.total_monthly_eur
+        if total <= 0:
+            return issues
+
+        entry = brief.budgets.by_campaign_type.get("performance_max")
+        if entry and entry.total > 0:
+            pct = entry.total / total * 100
+            if pct < 30:
+                issues.append(ValidationIssue(
+                    code="PMAX_BUDGET_TOO_LOW",
+                    message=(
+                        f"[PMax] Budget {pct:.1f}% del totale (consigliato 30–50%). "
+                        "Performance Max richiede volume sufficiente per l'algoritmo di ottimizzazione. "
+                        "Con budget basso il periodo di apprendimento si allunga e le performance soffrono."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="PMaxAgent",
+                ))
+            elif pct > 60:
+                issues.append(ValidationIssue(
+                    code="PMAX_BUDGET_TOO_HIGH",
+                    message=(
+                        f"[PMax] Budget {pct:.1f}% del totale (max consigliato 50%). "
+                        "PMax dominante: rischio che cannibalizzi le campagne Brand e Acquisition. "
+                        "Mantieni Brand Search attivo con budget dedicato per proteggere le query branded."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="PMaxAgent",
+                ))
+
+        # Audience signals check
+        has_signals = (
+            bool(brief.audiences.remarketing_lists)
+            or bool(brief.audiences.in_market_segments)
+            or brief.audiences.customer_match.enabled
+        )
+        if not has_signals:
+            issues.append(ValidationIssue(
+                code="PMAX_NO_AUDIENCE_SIGNALS",
+                message=(
+                    "[PMax] Nessun audience signal configurato. "
+                    "Senza segnali (remarketing lists, in-market segments, customer match), "
+                    "il periodo di apprendimento sarà 3–6 settimane invece di 1–2. "
+                    "Configura almeno: remarketing list sito (30 giorni), in-market Travel."
+                ),
+                level="warning",
+                blocks_publish=False,
+                agent="PMaxAgent",
+            ))
+
+        # Brand exclusion — blocks publish if no brand terms (can't build exclusion list)
+        brand_configured = any(bool(l.brand_terms) for l in brief.languages)
+        if not brand_configured:
+            issues.append(ValidationIssue(
+                code="PMAX_NO_BRAND_TERMS",
+                message=(
+                    "[PMax] Nessun brand term configurato. "
+                    "Senza brand terms non è possibile impostare la brand exclusion list in PMax. "
+                    "PMax senza brand exclusion cannibalizzerà le campagne Brand Search "
+                    "e farà aumentare i CPC delle query branded."
+                ),
+                level="error",
+                blocks_publish=True,
+                agent="PMaxAgent",
+            ))
+
+        return issues

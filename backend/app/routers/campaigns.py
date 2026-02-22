@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import TokenData, require_strategist_or_admin
+from app.config import Settings, get_settings
 from app.database import get_db
 from app.domain.models import AuditLog, CampaignRecord, Project
 from app.domain.schemas.brief import Brief
@@ -25,6 +26,7 @@ async def generate_campaign_plan(
     dry_run: bool = True,
     current_user: TokenData = Depends(require_strategist_or_admin),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings),
 ):
     """
     Generate the full campaign plan from the project's brief.
@@ -53,12 +55,21 @@ async def generate_campaign_plan(
     ]
 
     try:
-        plan = orchestrator.generate_plan(
-            brief=brief,
-            project_id=project_id,
-            dry_run=dry_run,
-            existing_campaigns=existing,
-        )
+        if settings.anthropic_api_key:
+            plan = await orchestrator.generate_plan_ai(
+                brief=brief,
+                project_id=project_id,
+                api_key=settings.anthropic_api_key,
+                dry_run=dry_run,
+                existing_campaigns=existing,
+            )
+        else:
+            plan = orchestrator.generate_plan(
+                brief=brief,
+                project_id=project_id,
+                dry_run=dry_run,
+                existing_campaigns=existing,
+            )
     except Exception as exc:
         logger.error(f"Generation failed for project {project_id}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Errore generazione: {exc}")
@@ -190,9 +201,20 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
                         "display_ads_count": len(ag.display_ads),
                         "demand_gen_ads_count": len(ag.demand_gen_ads),
                         "audience_targeting": ag.audience_targeting,
-                        # RSA copy: actual headlines/descriptions from the generated plan
-                        "rsa_headlines": [ph.text for ph in ag.ads[0].headlines] if ag.ads else [],
-                        "rsa_descriptions": list(ag.ads[0].descriptions) if ag.ads else [],
+                        # RSA copy: actual headlines/descriptions from the generated plan.
+                        # Falls back to display_ads or demand_gen_ads text when no RSA.
+                        "rsa_headlines": (
+                            [ph.text for ph in ag.ads[0].headlines] if ag.ads
+                            else ag.display_ads[0].headlines if ag.display_ads
+                            else ag.demand_gen_ads[0].headlines if ag.demand_gen_ads
+                            else []
+                        ),
+                        "rsa_descriptions": (
+                            list(ag.ads[0].descriptions) if ag.ads
+                            else list(ag.display_ads[0].descriptions) if ag.display_ads
+                            else list(ag.demand_gen_ads[0].descriptions) if ag.demand_gen_ads
+                            else []
+                        ),
                     }
                     for ag in c.ad_groups
                 ],

@@ -35,19 +35,18 @@ class DemandGenGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        campaign_name = self.build_campaign_name(brief, lang.code, "DemandGen", "Remarketing")
-        external_key = self.build_external_key(brief, lang.code, "demandgen", "remarketing")
-
         kpi = brief.objectives.kpi
-        bid_strategy = BidStrategy.maximize_conversions
-
-        settings = self.build_campaign_settings(
-            brief=brief,
-            lang=lang,
-            camp_type_key=self.CAMPAIGN_TYPE_KEY,
-            network_types=[NetworkType.display],
-            bid_strategy=bid_strategy,
-            target_cpa=kpi.target_cpa_eur,
+        campaign_name, external_key, settings, _tracking, _assets = (
+            self._generate_campaign_skeleton(
+                brief=brief,
+                lang=lang,
+                camp_type="DemandGen",
+                subtype="Remarketing",
+                camp_type_key=self.CAMPAIGN_TYPE_KEY,
+                network_types=[NetworkType.display],
+                bid_strategy=BidStrategy.maximize_conversions,
+                target_cpa=kpi.target_cpa_eur,
+            )
         )
 
         ad_groups = self._build_ad_groups(brief, lang)
@@ -78,6 +77,8 @@ class DemandGenGenerator(BaseGenerator):
     def _build_ad_groups(self, brief: Brief, lang: LanguagePlan) -> List[AdGroupPlan]:
         groups = []
 
+        ag_index = 0
+
         # Group 1: All visitors remarketing
         if brief.audiences.remarketing_lists:
             all_visitors = [
@@ -89,8 +90,10 @@ class DemandGenGenerator(BaseGenerator):
                     brief, lang,
                     audience_name=all_visitors[0].name,
                     group_label="AllVisitors",
+                    ag_index=ag_index,
                 )
                 groups.append(ag)
+                ag_index += 1
 
         # Group 2: Abandoned intent (shorter lookback)
         abandoned = [
@@ -102,12 +105,14 @@ class DemandGenGenerator(BaseGenerator):
                 brief, lang,
                 audience_name=abandoned[0].name,
                 group_label="AbandonedBooking",
+                ag_index=ag_index,
             )
             groups.append(ag)
+            ag_index += 1
 
         # Group 3: In-market (prospecting)
         if brief.audiences.in_market_segments:
-            ag = self._build_inmarket_group(brief, lang)
+            ag = self._build_inmarket_group(brief, lang, ag_index=ag_index)
             groups.append(ag)
 
         if not groups:
@@ -118,13 +123,22 @@ class DemandGenGenerator(BaseGenerator):
 
     def _build_remarketing_group(
         self, brief: Brief, lang: LanguagePlan,
-        audience_name: str, group_label: str
+        audience_name: str, group_label: str, ag_index: int = 0
     ) -> AdGroupPlan:
         group_name = f"{lang.code} | DemandGen | {group_label}"
 
+        h_all = list(lang.headlines)
+        if ag_index > 0 and len(h_all) > 3:
+            offset = (ag_index * max(1, len(h_all) // 3)) % len(h_all)
+            h_all = h_all[offset:] + h_all[:offset]
+        d_all = list(lang.descriptions)
+        if ag_index > 0 and len(d_all) > 2:
+            d_offset = ag_index % len(d_all)
+            d_all = d_all[d_offset:] + d_all[:d_offset]
+
         demand_gen_ad = DemandGenAd(
-            headlines=lang.headlines[:5],
-            descriptions=lang.descriptions[:4],
+            headlines=h_all[:5],
+            descriptions=d_all[:4],
             images=[
                 "TODO: immagine landscape 1200x628 (hotel esterno)",
                 "TODO: immagine quadrata 1200x1200 (camera/piscina)",
@@ -148,13 +162,22 @@ class DemandGenGenerator(BaseGenerator):
             targeting_setting="targeting",
         )
 
-    def _build_inmarket_group(self, brief: Brief, lang: LanguagePlan) -> AdGroupPlan:
+    def _build_inmarket_group(self, brief: Brief, lang: LanguagePlan, ag_index: int = 0) -> AdGroupPlan:
         group_name = f"{lang.code} | DemandGen | InMarket"
         segment = brief.audiences.in_market_segments[0] if brief.audiences.in_market_segments else "Travel"
 
+        h_all = list(lang.headlines)
+        if ag_index > 0 and len(h_all) > 3:
+            offset = (ag_index * max(1, len(h_all) // 3)) % len(h_all)
+            h_all = h_all[offset:] + h_all[:offset]
+        d_all = list(lang.descriptions)
+        if ag_index > 0 and len(d_all) > 2:
+            d_offset = ag_index % len(d_all)
+            d_all = d_all[d_offset:] + d_all[:d_offset]
+
         demand_gen_ad = DemandGenAd(
-            headlines=lang.headlines[:5],
-            descriptions=lang.descriptions[:4],
+            headlines=h_all[:5],
+            descriptions=d_all[:4],
             images=["TODO: immagine prospecting 1200x628"],
             final_url=lang.landing_page,
             has_missing_assets=True,

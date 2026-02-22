@@ -84,6 +84,7 @@ class BaseGenerator:
         pinned_headlines: Optional[List[tuple]] = None,
         headlines: Optional[List[str]] = None,
         descriptions: Optional[List[str]] = None,
+        ad_group_index: int = 0,
     ) -> RSAd:
         """
         Build RSA from brief language plan.
@@ -92,15 +93,46 @@ class BaseGenerator:
           When provided, these replace lang.headlines / lang.descriptions.
           Use CampaignAgent.get_headlines(lang) to resolve the right source.
         - pinned_headlines: list of (text, pin_position) tuples for brand name pinning.
+        - ad_group_index: 0-based index of the ad group within the campaign.
+          When > 0, the headline pool is rotated deterministically so each ad
+          group shows a different creative variation (different subset of headlines).
+          The pinned headline (if any) is always kept at position 1.
         """
-        h_source = headlines if headlines is not None else lang.headlines
-        d_source = descriptions if descriptions is not None else lang.descriptions
+        h_source = list(headlines if headlines is not None else lang.headlines)
 
-        pin_map = {text: pos for text, pos in (pinned_headlines or [])}
+        # Rotate the headline pool for each ad group so previews differ.
+        # Rotation step = 1/3 of pool size, minimum 1, ensuring meaningful shift.
+        if ad_group_index > 0 and len(h_source) > 3:
+            n = len(h_source)
+            step = max(1, n // 3)
+            offset = (ad_group_index * step) % n
+            # Keep any pinned headline first to avoid losing it in the rotation.
+            pin_map_lookup = {text: pos for text, pos in (pinned_headlines or [])}
+            pinned_texts = [t for t in h_source if t in pin_map_lookup]
+            unpinned = [t for t in h_source if t not in pin_map_lookup]
+            rotated_unpinned = unpinned[offset % len(unpinned):] + unpinned[:offset % len(unpinned)] if unpinned else []
+            h_source = pinned_texts + rotated_unpinned
+        else:
+            pin_map_lookup = {text: pos for text, pos in (pinned_headlines or [])}
+
+        # Merge per-type descriptions with generic pool to always meet RSAd min (2).
+        # Rotate descriptions too so each ad group emphasises different selling points.
+        if descriptions is not None:
+            merged = list(descriptions)
+            for d in lang.descriptions:
+                if d not in merged:
+                    merged.append(d)
+            d_source = merged
+        else:
+            d_source = list(lang.descriptions)
+
+        if ad_group_index > 0 and len(d_source) > 2:
+            d_offset = ad_group_index % len(d_source)
+            d_source = d_source[d_offset:] + d_source[:d_offset]
 
         rsa_headlines = []
         for h in h_source[:15]:
-            pin = pin_map.get(h)
+            pin = pin_map_lookup.get(h)
             rsa_headlines.append(PinnedHeadline(text=h, pin_position=pin))
 
         return RSAd(
@@ -141,6 +173,80 @@ class BaseGenerator:
 
     def get_labels(self, brief: Brief) -> List[str]:
         return brief.labels.copy()
+
+    def _generate_campaign_skeleton(
+        self,
+        brief: Brief,
+        lang: LanguagePlan,
+        camp_type: str,
+        subtype: str,
+        camp_type_key: str,
+        network_types: list,
+        bid_strategy,
+        target_cpa: Optional[float] = None,
+        target_roas: Optional[float] = None,
+    ) -> tuple:
+        """
+        Return (campaign_name, external_key, settings, tracking_template, asset_pack).
+
+        Consolidates the 5 boilerplate lines that every generator repeats at the start
+        of _generate_for_language():
+            campaign_name = self.build_campaign_name(...)
+            external_key  = self.build_external_key(...)
+            settings      = self.build_campaign_settings(...)
+            tracking_template = self.build_tracking_template(...)
+            asset_pack    = self.build_asset_pack(...)
+        """
+        campaign_name = self.build_campaign_name(brief, lang.code, camp_type, subtype)
+        external_key  = self.build_external_key(
+            brief, lang.code, camp_type.lower(), subtype.lower()
+        )
+        settings = self.build_campaign_settings(
+            brief=brief,
+            lang=lang,
+            camp_type_key=camp_type_key,
+            network_types=network_types,
+            bid_strategy=bid_strategy,
+            target_cpa=target_cpa,
+            target_roas=target_roas,
+        )
+        tracking_template = self.build_tracking_template(brief.utm_config)
+        asset_pack = self.build_asset_pack(lang)
+        return campaign_name, external_key, settings, tracking_template, asset_pack
+
+    def _build_rsa_ad(
+        self,
+        lang: LanguagePlan,
+        asset_key: str,
+        final_url: str,
+        tracking_template: str,
+        pinned_headlines: Optional[List[tuple]] = None,
+        ad_group_index: int = 0,
+    ) -> RSAd:
+        """
+        Build an RSAd from lang.{asset_key}_headlines / lang.{asset_key}_descriptions
+        when per-type copy overrides are stored in the LanguagePlan under a specific key.
+
+        Falls back to lang.headlines / lang.descriptions when the asset_key attributes
+        are absent or empty.
+        """
+        headlines = (
+            getattr(lang, f"{asset_key}_headlines", None)
+            or lang.headlines
+        )
+        descriptions = (
+            getattr(lang, f"{asset_key}_descriptions", None)
+            or lang.descriptions
+        )
+        return self.build_rsa(
+            lang=lang,
+            final_url=final_url,
+            tracking_template=tracking_template,
+            pinned_headlines=pinned_headlines,
+            headlines=headlines or None,
+            descriptions=descriptions or None,
+            ad_group_index=ad_group_index,
+        )
 
 
 def _slugify(text: str, max_len: int = 15) -> str:

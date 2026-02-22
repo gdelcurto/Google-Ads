@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi } from '../api/projects'
+import { projectsApi, type Project } from '../api/projects'
 import { T } from '../styles/theme'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -132,6 +132,34 @@ const s: Record<string, React.CSSProperties> = {
     color: T.textGray,
     fontSize: 14,
   },
+  deleteBtn: {
+    background: 'transparent',
+    border: `1px solid ${T.borderLight}`,
+    color: T.textGray,
+    padding: '6px 12px',
+    borderRadius: T.radiusSm,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: 500,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+  },
+  cardFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  trashLink: {
+    color: T.textGray,
+    textDecoration: 'none',
+    fontSize: 13,
+    fontWeight: 500,
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+  },
 }
 
 function CreateProjectModal({ onClose }: { onClose: () => void }) {
@@ -192,15 +220,30 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
 
 export default function ProjectsPage() {
   const [showCreate, setShowCreate] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<Project | null>(null)
+  const qc = useQueryClient()
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
     queryFn: projectsApi.list,
   })
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => projectsApi.softDelete(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['projects'] })
+      setConfirmDelete(null)
+    },
+  })
+
   return (
     <div>
       <div style={s.header}>
-        <h1 style={s.h1}>Progetti Campagne</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <h1 style={s.h1}>Progetti Campagne</h1>
+          <Link to="/trash" style={s.trashLink}>
+            <i className="fa-solid fa-trash-can"></i> Cestino
+          </Link>
+        </div>
         <button style={s.btn} onClick={() => setShowCreate(true)}>+ Nuovo Progetto</button>
       </div>
 
@@ -208,22 +251,34 @@ export default function ProjectsPage() {
 
       <div style={s.grid}>
         {projects.map(p => (
-          <Link key={p.id} to={`/projects/${p.id}`} style={s.card}>
-            <div style={s.cardTitle}>{p.name}</div>
-            <div style={s.cardSlug}>{p.client_slug} · {p.preset} · {p.vertical}</div>
-            <span style={{ ...s.badge, background: STATUS_COLORS[p.status] || T.textGray }}>
-              {STATUS_LABELS[p.status] || p.status}
-            </span>
-            <div style={s.cardDivider} />
-            <div style={s.cardMeta}>
-              {p.has_brief ? '✓ Brief caricato' : '○ Brief mancante'}
-              {' · '}
-              {p.has_plan ? '✓ Piano generato' : '○ Piano non generato'}
+          <div key={p.id} style={s.card}>
+            <Link to={`/projects/${p.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <div style={s.cardTitle}>{p.name}</div>
+              <div style={s.cardSlug}>{p.client_slug} · {p.preset} · {p.vertical}</div>
+              <span style={{ ...s.badge, background: STATUS_COLORS[p.status] || T.textGray }}>
+                {STATUS_LABELS[p.status] || p.status}
+              </span>
+              <div style={s.cardDivider} />
+              <div style={s.cardMeta}>
+                {p.has_brief ? '✓ Brief caricato' : '○ Brief mancante'}
+                {' · '}
+                {p.has_plan ? '✓ Piano generato' : '○ Piano non generato'}
+              </div>
+            </Link>
+            <div style={s.cardFooter}>
+              <div style={{ fontSize: 12, color: T.textGray }}>
+                Aggiornato: {new Date(p.updated_at).toLocaleDateString('it-IT')}
+              </div>
+              <button
+                style={s.deleteBtn}
+                onClick={(e) => { e.preventDefault(); setConfirmDelete(p) }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.error; (e.currentTarget as HTMLButtonElement).style.color = T.error }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = T.borderLight; (e.currentTarget as HTMLButtonElement).style.color = T.textGray }}
+              >
+                <i className="fa-solid fa-trash-can"></i> Elimina
+              </button>
             </div>
-            <div style={{ ...s.cardMeta, marginTop: 4 }}>
-              Aggiornato: {new Date(p.updated_at).toLocaleDateString('it-IT')}
-            </div>
-          </Link>
+          </div>
         ))}
         {!isLoading && projects.length === 0 && (
           <div style={{ ...s.emptyState, gridColumn: '1 / -1' }}>
@@ -234,6 +289,28 @@ export default function ProjectsPage() {
       </div>
 
       {showCreate && <CreateProjectModal onClose={() => setShowCreate(false)} />}
+
+      {confirmDelete && (
+        <div style={s.modal} onClick={() => setConfirmDelete(null)}>
+          <div style={s.modalBox} onClick={e => e.stopPropagation()}>
+            <div style={s.modalTitle}>Eliminare il progetto?</div>
+            <p style={{ fontSize: 14, color: T.textGray, marginBottom: 20, lineHeight: 1.5 }}>
+              Il progetto <strong style={{ color: T.text }}>{confirmDelete.name}</strong> verrà
+              spostato nel cestino. Potrai recuperarlo in qualsiasi momento dalla pagina Cestino.
+            </p>
+            <div style={s.row}>
+              <button style={s.cancelBtn} onClick={() => setConfirmDelete(null)}>Annulla</button>
+              <button
+                style={{ ...s.btn, background: T.error }}
+                onClick={() => deleteMutation.mutate(confirmDelete.id)}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending ? 'Eliminando...' : 'Sposta nel cestino'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

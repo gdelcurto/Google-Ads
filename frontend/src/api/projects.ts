@@ -118,6 +118,18 @@ export const projectsApi = {
 
   savePlan: (id: string, planData: Record<string, unknown>) =>
     api.put<{ status: string; campaigns: number }>(`/projects/${id}/plan`, planData).then((r) => r.data),
+
+  softDelete: (id: string) =>
+    api.delete<{ detail: string }>(`/projects/${id}`).then((r) => r.data),
+
+  listTrash: () =>
+    api.get<Project[]>('/projects/trash/list').then((r) => r.data),
+
+  restore: (id: string) =>
+    api.post<{ detail: string }>(`/projects/${id}/restore`).then((r) => r.data),
+
+  permanentDelete: (id: string) =>
+    api.delete<{ detail: string }>(`/projects/${id}/permanent`).then((r) => r.data),
 }
 
 export interface AutofillResult {
@@ -146,9 +158,59 @@ export interface AutofillResult {
   }[]
 }
 
+export interface ScanLogEntry {
+  ts: string
+  level: 'info' | 'warn' | 'error'
+  msg: string
+}
+
+export interface ApiCallLogEntry {
+  ts: string
+  agent: string
+  reason: string
+  endpoint: string
+  model: string
+  input_tokens: number
+  output_tokens: number
+  cost_usd: number
+}
+
+/** Enriched result returned by a completed background job — includes sitelinks + per-type RSA copies. */
+export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'> {
+  languages: (AutofillResult['languages'][0] & {
+    sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[]
+    brand_headlines: string[]
+    brand_descriptions: string[]
+    acquisition_headlines: string[]
+    acquisition_descriptions: string[]
+    retargeting_headlines: string[]
+    retargeting_descriptions: string[]
+  })[]
+  _scan_log?: ScanLogEntry[]
+  _api_log?: ApiCallLogEntry[]
+}
+
+export interface AutofillJobStatus {
+  id: string
+  project_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  created_at: string
+  completed_at: string | null
+  error_message: string | null
+  result: EnrichedAutofillResult | null
+}
+
 export const autofillApi = {
   fromUrl: (url: string, languages: string[], content?: string) =>
     api.post<AutofillResult>('/autofill', { url, languages, content }).then((r) => r.data),
+
+  startJob: (url: string, languages: string[], projectId: string, content?: string) =>
+    api.post<{ job_id: string; status: string }>('/autofill/jobs', {
+      url, languages, project_id: projectId, content,
+    }).then((r) => r.data),
+
+  getJob: (jobId: string) =>
+    api.get<AutofillJobStatus>(`/autofill/jobs/${jobId}`).then((r) => r.data),
 
   suggestKeywords: (data: {
     brand_name: string
@@ -159,7 +221,7 @@ export const autofillApi = {
     services?: string[]
     strengths?: string[]
   }) =>
-    api.post<{ kw_themes_text: string; kw_negative_text: string }>('/autofill/keywords', data).then((r) => r.data),
+    api.post<{ kw_themes_text: string; kw_negative_text: string; api_call_log?: ApiCallLogEntry }>('/autofill/keywords', data).then((r) => r.data),
 
   suggestSitelinks: (data: {
     brand_name: string
@@ -172,9 +234,42 @@ export const autofillApi = {
     strengths?: string[]
     booking_engine_url?: string
   }) =>
-    api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[] }>(
+    api.post<{ sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[]; api_call_log?: ApiCallLogEntry }>(
       '/autofill/sitelinks', data
     ).then((r) => r.data),
+
+  suggestTypeCopy: (data: {
+    campaign_type: 'brand' | 'acquisition' | 'retargeting'
+    brand_name: string
+    hotel_category: string
+    stars: number
+    language_code: string
+    domain?: string
+    usp_main?: string
+    services?: string[]
+    strengths?: string[]
+  }) =>
+    api.post<{ headlines: string[]; descriptions: string[]; api_call_log?: ApiCallLogEntry }>('/autofill/type-copy', data).then((r) => r.data),
+
+  suggestBudgetStrategy: (data: {
+    brand_name: string
+    hotel_category: string
+    stars: number
+    languages: string[]
+    vertical?: string
+    country?: string
+    total_monthly_budget_eur?: number
+  }) =>
+    api.post<{
+      recommended_types: string[]
+      budget_split: Record<string, number>
+      daily_by_type_lang: Record<string, Record<string, number>>
+      rationale: Record<string, string>
+      overall_strategy: string
+      suggested_total_monthly_eur: number
+      min_budget_warning: string | null
+      api_call_log?: ApiCallLogEntry
+    }>('/autofill/budget-strategy', data).then((r) => r.data),
 }
 
 export const authApi = {

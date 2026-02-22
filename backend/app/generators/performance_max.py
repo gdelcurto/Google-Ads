@@ -36,25 +36,24 @@ class PerformanceMaxGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        campaign_name = self.build_campaign_name(brief, lang.code, "PMax", "Hotel")
-        external_key = self.build_external_key(brief, lang.code, "pmax", "hotel")
-
         kpi = brief.objectives.kpi
-        if kpi.target_roas:
-            bid_strategy = BidStrategy.maximize_conversion_value
-        elif kpi.target_cpa_eur:
-            bid_strategy = BidStrategy.maximize_conversions
-        else:
-            bid_strategy = BidStrategy.maximize_conversion_value
-
-        settings = self.build_campaign_settings(
-            brief=brief,
-            lang=lang,
-            camp_type_key=self.CAMPAIGN_TYPE_KEY,
-            network_types=[NetworkType.search, NetworkType.display],
-            bid_strategy=bid_strategy,
-            target_roas=kpi.target_roas,
-            target_cpa=kpi.target_cpa_eur,
+        bid_strategy = (
+            BidStrategy.maximize_conversion_value if kpi.target_roas
+            else BidStrategy.maximize_conversions if kpi.target_cpa_eur
+            else BidStrategy.maximize_conversion_value
+        )
+        campaign_name, external_key, settings, _tracking, _assets = (
+            self._generate_campaign_skeleton(
+                brief=brief,
+                lang=lang,
+                camp_type="PMax",
+                subtype="Hotel",
+                camp_type_key=self.CAMPAIGN_TYPE_KEY,
+                network_types=[NetworkType.search, NetworkType.display],
+                bid_strategy=bid_strategy,
+                target_roas=kpi.target_roas,
+                target_cpa=kpi.target_cpa_eur,
+            )
         )
 
         asset_group = self._build_asset_group(brief, lang)
