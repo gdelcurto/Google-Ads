@@ -39,14 +39,50 @@ logger = logging.getLogger(__name__)
 
 
 def _run_alembic_upgrade() -> None:
-    """Run Alembic migrations synchronously (called via run_in_executor)."""
+    """Run Alembic migrations synchronously (called via run_in_executor).
+
+    Handles the case where the DB was bootstrapped via create_all without
+    Alembic tracking (no alembic_version table). In that scenario we stamp
+    the DB at revision 002 (last migration already covered by create_all)
+    so that only new migrations (003+) get applied.
+    """
     try:
         from alembic.config import Config as AlembicConfig
         from alembic import command as alembic_command
+        from sqlalchemy import create_engine, inspect
 
-        # alembic.ini lives one level up from app/ (i.e. /app/alembic.ini in Docker)
         ini_path = Path(__file__).parent.parent / "alembic.ini"
         alembic_cfg = AlembicConfig(str(ini_path))
+
+        # Build a sync URL from the async DATABASE_URL env var
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        sync_url = (
+            db_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("sqlite+aiosqlite:///", "sqlite:///")
+        )
+        if not sync_url:
+            # Fall back to the value in alembic.ini
+            from configparser import ConfigParser
+            cp = ConfigParser()
+            cp.read(str(ini_path))
+            sync_url = cp.get("alembic", "sqlalchemy.url", fallback="")
+
+        if not sync_url:
+            logger.warning("No DATABASE_URL found — skipping Alembic upgrade")
+            return
+
+        sync_engine = create_engine(sync_url)
+        insp = inspect(sync_engine)
+        if "alembic_version" not in insp.get_table_names():
+            # DB was created by create_all without Alembic tracking.
+            # Stamp at 002 so only migrations after 002 (i.e. 003+) run.
+            logger.info("No alembic_version table found — stamping DB at revision 002")
+            alembic_command.stamp(alembic_cfg, "002")
+        sync_engine.dispose()
+
         alembic_command.upgrade(alembic_cfg, "head")
         logger.info("Alembic migrations applied (upgrade head)")
     except Exception as exc:
