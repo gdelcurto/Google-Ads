@@ -146,9 +146,40 @@ export interface AutofillResult {
   }[]
 }
 
+/** Enriched result returned by a completed background job — includes sitelinks + per-type RSA copies. */
+export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'> {
+  languages: (AutofillResult['languages'][0] & {
+    sitelinks: { text: string; description_1: string; description_2: string; final_url: string }[]
+    brand_headlines: string[]
+    brand_descriptions: string[]
+    acquisition_headlines: string[]
+    acquisition_descriptions: string[]
+    retargeting_headlines: string[]
+    retargeting_descriptions: string[]
+  })[]
+}
+
+export interface AutofillJobStatus {
+  id: string
+  project_id: string
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  created_at: string
+  completed_at: string | null
+  error_message: string | null
+  result: EnrichedAutofillResult | null
+}
+
 export const autofillApi = {
   fromUrl: (url: string, languages: string[], content?: string) =>
     api.post<AutofillResult>('/autofill', { url, languages, content }).then((r) => r.data),
+
+  startJob: (url: string, languages: string[], projectId: string, content?: string) =>
+    api.post<{ job_id: string; status: string }>('/autofill/jobs', {
+      url, languages, project_id: projectId, content,
+    }).then((r) => r.data),
+
+  getJob: (jobId: string) =>
+    api.get<AutofillJobStatus>(`/autofill/jobs/${jobId}`).then((r) => r.data),
 
   suggestKeywords: (data: {
     brand_name: string
