@@ -1,0 +1,227 @@
+import React from 'react'
+import { FormState } from '../types'
+import { css, langPillStyle } from '../styles'
+import { T } from '../../../styles/theme'
+
+interface Props {
+  form: FormState
+  setField: (key: keyof FormState, val: string) => void
+  autofillUrl: string
+  setAutofillUrl: (url: string) => void
+  autofillLangs: string[]
+  toggleAutofillLang: (code: string) => void
+  autofillManual: boolean
+  setAutofillManual: React.Dispatch<React.SetStateAction<boolean>>
+  autofillContent: string
+  setAutofillContent: (v: string) => void
+  autofillSuccess: boolean
+  startJobMutation: { mutate: () => void; isPending: boolean; isSuccess: boolean }
+  setErrors: (errs: string[]) => void
+}
+
+export function Step0InfoBase({
+  form, setField,
+  autofillUrl, setAutofillUrl, autofillLangs, toggleAutofillLang,
+  autofillManual, setAutofillManual, autofillContent, setAutofillContent,
+  autofillSuccess, startJobMutation, setErrors,
+}: Props) {
+  return (
+    <>
+      {/* ── Auto-fill Panel ── */}
+      <div style={css.autofillPanel}>
+        <div style={css.autofillTitle}>
+          <i className="fa-solid fa-wand-magic-sparkles"></i> Auto-compila dal sito dell'hotel
+        </div>
+        <div style={css.autofillSubtitle}>
+          Inserisci l'URL del sito dell'hotel: l'AI analizzerà il sito e compilerà automaticamente
+          tutti i campi del brief. L'elaborazione avviene in background — puoi cambiare scheda
+          e tornerai notificato quando è pronta.
+        </div>
+        <div style={css.autofillRow}>
+          <input
+            style={css.autofillUrlInput}
+            type="url"
+            value={autofillUrl}
+            onChange={e => { setAutofillUrl(e.target.value); }}
+            placeholder="https://www.nomedelhotel.it"
+            disabled={startJobMutation.isPending || startJobMutation.isSuccess}
+          />
+          <button
+            style={{ ...css.btnAutofill, opacity: startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim() ? 0.6 : 1 }}
+            onClick={() => { setErrors([]); startJobMutation.mutate() }}
+            disabled={startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim()}
+          >
+            {startJobMutation.isPending
+              ? <><i className="fa-solid fa-hourglass-half"></i> Avvio...</>
+              : <><i className="fa-solid fa-magnifying-glass"></i> Analizza e compila</>}
+          </button>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 12, color: '#fff', fontWeight: 600 }}>
+          Lingue da generare:
+        </div>
+        <div style={css.autofillLangPills}>
+          {['IT', 'EN', 'DE', 'FR', 'ES', 'NL', 'PT'].map(code => (
+            <span
+              key={code}
+              style={langPillStyle(autofillLangs.includes(code))}
+              onClick={() => !startJobMutation.isPending && !startJobMutation.isSuccess && toggleAutofillLang(code)}
+            >
+              {code}
+            </span>
+          ))}
+        </div>
+        {/* Modalità manuale: incolla il testo del sito */}
+        <div style={{ marginTop: 10 }}>
+          <button
+            style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
+            onClick={() => setAutofillManual(v => !v)}
+          >
+            {autofillManual ? '▲ Nascondi modalità manuale' : '▼ Il server non riesce a raggiungere il sito? Incolla il testo manualmente'}
+          </button>
+        </div>
+        {autofillManual && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: T.textGray, marginBottom: 4 }}>
+              Vai sul sito dell'hotel, seleziona tutto il testo (Ctrl+A → Ctrl+C) e incollalo qui sotto.
+              Oppure copia il testo della homepage e delle pagine camere/servizi.
+            </div>
+            <textarea
+              style={{ width: '100%', minHeight: 120, fontSize: 12, padding: 8, border: '1px solid #d1d5db', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box' }}
+              placeholder="Incolla qui il contenuto del sito web dell'hotel..."
+              value={autofillContent}
+              onChange={e => setAutofillContent(e.target.value)}
+              disabled={startJobMutation.isPending || startJobMutation.isSuccess}
+            />
+          </div>
+        )}
+        {startJobMutation.isSuccess && (
+          <div style={{ marginTop: 10, fontSize: 12, color: T.blue, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '8px 12px' }}>
+            <i className="fa-solid fa-hourglass-half"></i> Elaborazione in corso in background — puoi cambiare scheda liberamente.
+            Riceverai una notifica in questa pagina quando il brief sarà pronto.
+          </div>
+        )}
+        {autofillSuccess && (
+          <div style={css.autofillSuccessBox}>
+            <i className="fa-solid fa-circle-check"></i> Campi compilati con successo! Scorri il form per rivedere e correggere i dati generati.
+          </div>
+        )}
+      </div>
+
+      <div style={css.section}>
+        <div style={css.sectionTitle}>Informazioni Progetto</div>
+        <div style={css.grid2}>
+          <div style={css.field}>
+            <label style={css.label}>Nome progetto *</label>
+            <input
+              style={css.input}
+              value={form.project_name}
+              onChange={e => setField('project_name', e.target.value)}
+              placeholder="es. Hotel Bella Vista — Search 2024"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Email strategist</label>
+            <input
+              style={css.input}
+              value={form.created_by}
+              onChange={e => setField('created_by', e.target.value)}
+              placeholder="nome@agenzia.com"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Preset</label>
+            <select style={css.select} value={form.preset} onChange={e => setField('preset', e.target.value)}>
+              <option value="blastness">Blastness</option>
+              <option value="mentefredda">Mentefredda</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Tipologia struttura</label>
+            <select style={css.select} value={form.vertical} onChange={e => setField('vertical', e.target.value)}>
+              <option value="city_hotel">City Hotel</option>
+              <option value="resort">Resort</option>
+              <option value="boutique">Boutique</option>
+              <option value="business">Business</option>
+              <option value="agriturismo">Agriturismo</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div style={css.section}>
+        <div style={css.sectionTitle}>Dati Cliente</div>
+        <div style={css.grid2}>
+          <div style={css.field}>
+            <label style={css.label}>Nome brand *</label>
+            <input
+              style={css.input}
+              value={form.brand_name}
+              onChange={e => setField('brand_name', e.target.value)}
+              placeholder="es. Hotel Bella Vista"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Brand slug *</label>
+            <span style={css.hint}>Solo lettere minuscole, numeri e trattini</span>
+            <input
+              style={css.input}
+              value={form.brand_slug}
+              onChange={e => setField('brand_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
+              placeholder="hotel-bella-vista"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Dominio *</label>
+            <span style={css.hint}>Senza https://</span>
+            <input
+              style={css.input}
+              value={form.domain}
+              onChange={e => setField('domain', e.target.value)}
+              placeholder="www.hotelbella.it"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Timezone</label>
+            <input
+              style={css.input}
+              value={form.timezone}
+              onChange={e => setField('timezone', e.target.value)}
+              placeholder="Europe/Rome"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Paese (ISO 2) *</label>
+            <input
+              style={css.input}
+              value={form.country}
+              onChange={e => setField('country', e.target.value.toUpperCase().slice(0, 2))}
+              placeholder="IT"
+              maxLength={2}
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Valuta (ISO 3)</label>
+            <input
+              style={css.input}
+              value={form.currency}
+              onChange={e => setField('currency', e.target.value.toUpperCase().slice(0, 3))}
+              placeholder="EUR"
+              maxLength={3}
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Google Ads Customer ID</label>
+            <span style={css.hint}>Formato: 123-456-7890</span>
+            <input
+              style={css.input}
+              value={form.google_ads_customer_id}
+              onChange={e => setField('google_ads_customer_id', e.target.value)}
+              placeholder="123-456-7890"
+            />
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}

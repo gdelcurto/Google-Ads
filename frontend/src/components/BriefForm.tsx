@@ -1,226 +1,27 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, autofillApi, EnrichedAutofillResult } from '../api/projects'
 import { T } from '../styles/theme'
-import { GoogleAdPreview } from './GoogleAdPreview'
 
-// Re-export types and constants from the new modules
 import {
   FormState, LangState, SitelinkState, RemarketingListState, TypeObjective,
   LANG_IDS, STEPS, CAMPAIGN_TYPES, DEFAULT_FORM, DEFAULT_LANG,
-  DEFAULT_TYPE_OBJECTIVE, OBJECTIVE_OPTIONS, VERTICAL_DEFAULT_STARS,
+  VERTICAL_DEFAULT_STARS,
 } from './brief/types'
 import {
   toLines, getUserEmail, buildBrief,
   briefToForm, briefToSelectedTypes, briefToBudgetByTypeLang, briefToLangs,
   briefToRemarketingLists, briefToObjectivesByType, appendApiLog,
 } from './brief/utils'
+import { css } from './brief/styles'
+import { StrategyResult } from './brief/hooks/useBudgetStrategy'
 
-// ── styles ────────────────────────────────────────────────────────────────────
-
-const css: Record<string, React.CSSProperties> = {
-  stepBubble: {
-    width: 28, height: 28, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 13, fontWeight: 700, flexShrink: 0,
-  },
-  stepLine: { flex: 1, height: 2, marginBottom: 16, marginLeft: 4, marginRight: 4 },
-  stepLabel: { fontSize: 11, marginTop: 4, textAlign: 'center' },
-  section: {
-    background: T.bgCard, borderRadius: T.radiusLg, padding: 24,
-    boxShadow: T.shadow, marginBottom: 16, border: `1px solid ${T.borderLight}`,
-  },
-  sectionTitle: {
-    fontWeight: 700, fontSize: 15, color: T.text,
-    marginBottom: 16, paddingBottom: 8, borderBottom: `1px solid ${T.borderLight}`,
-  },
-  grid2: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 },
-  field: { marginBottom: 16 },
-  label: { display: 'block', fontSize: 13, fontWeight: 600, color: T.text, marginBottom: 4 },
-  hint: { display: 'block', fontSize: 11, color: T.textGray, marginBottom: 4 },
-  input: {
-    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
-    borderRadius: T.radiusSm, fontSize: 14, boxSizing: 'border-box',
-    background: T.bgCard, color: T.text,
-  },
-  inputErr: { borderColor: '#fca5a5' },
-  select: {
-    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
-    borderRadius: T.radiusSm, fontSize: 14, background: T.bgCard, boxSizing: 'border-box',
-    color: T.text,
-  },
-  textarea: {
-    width: '100%', padding: '8px 10px', border: `1px solid ${T.border}`,
-    borderRadius: T.radiusSm, fontSize: 13, fontFamily: 'inherit',
-    resize: 'vertical', boxSizing: 'border-box', color: T.text,
-  },
-  charCount: { fontSize: 11, color: T.textGray, textAlign: 'right', marginTop: 2 },
-  langCard: {
-    border: `1px solid ${T.borderLight}`, borderRadius: T.radiusLg,
-    padding: 16, marginBottom: 16, background: T.bgMuted,
-  },
-  langHeader: {
-    display: 'flex', justifyContent: 'space-between',
-    alignItems: 'center', marginBottom: 12,
-  },
-  nav: {
-    display: 'flex', justifyContent: 'space-between',
-    alignItems: 'center', marginTop: 24,
-  },
-  btn: {
-    background: T.primary, color: '#fff', border: 'none',
-    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
-  },
-  btnGhost: {
-    background: T.bgPage, color: T.text, border: `1px solid ${T.border}`,
-    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
-  },
-  btnGreen: {
-    background: T.success, color: '#fff', border: 'none',
-    padding: '10px 24px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
-  },
-  btnRed: {
-    background: 'transparent', color: T.error, border: '1px solid #fca5a5',
-    padding: '4px 10px', borderRadius: 4, cursor: 'pointer', fontSize: 12,
-  },
-  btnAdd: {
-    background: 'transparent', color: T.primary, border: `1px solid ${T.primary}`,
-    padding: '8px 16px', borderRadius: T.radiusSm, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-  },
-  errBox: {
-    background: '#fff0f0', border: '1px solid #fca5a5', padding: '12px 14px',
-    borderRadius: T.radiusSm, fontSize: 13, color: T.error, marginBottom: 16,
-  },
-  successBox: {
-    background: '#f0fdf4', border: '1px solid #86efac', padding: '12px 14px',
-    borderRadius: T.radiusSm, fontSize: 13, color: '#166534', marginBottom: 16,
-  },
-  reviewCode: {
-    background: T.bgPage, border: `1px solid ${T.border}`, borderRadius: T.radiusSm,
-    padding: 16, fontSize: 12, fontFamily: 'monospace',
-    overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
-  },
-  autofillPanel: {
-    background: '#e10098',
-    border: 'none', borderRadius: T.radiusLg,
-    padding: 20, marginBottom: 24,
-  },
-  autofillTitle: {
-    fontWeight: 700, fontSize: 15, color: '#fff',
-    marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
-  },
-  autofillSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginBottom: 14 },
-  autofillRow: { display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const },
-  autofillUrlInput: {
-    flex: 1, minWidth: 220, padding: '9px 12px',
-    border: `1px solid ${T.border}`, borderRadius: T.radiusSm, fontSize: 14,
-    boxSizing: 'border-box' as const, background: T.bgPage,
-  },
-  autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
-  btnAutofill: {
-    background: '#fff', color: '#e10098', border: 'none',
-    padding: '9px 20px', borderRadius: T.radiusSm, cursor: 'pointer',
-    fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' as const,
-  },
-  autofillSuccessBox: {
-    background: '#f0fdf4', border: '1px solid #86efac', padding: '10px 14px',
-    borderRadius: T.radiusSm, fontSize: 13, color: '#166534', marginTop: 10,
-  },
-}
-
-const langPillStyle = (active: boolean): React.CSSProperties => ({
-  padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-  cursor: 'pointer', border: active ? `2px solid ${T.primary}` : `1px solid ${T.border}`,
-  background: active ? T.primary : T.bgCard, color: active ? '#fff' : T.textGray,
-})
-
-// ── PerTypeCopySection ────────────────────────────────────────────────────────
-
-function PerTypeCopySection({
-  label, description,
-  headlinesValue, descriptionsValue,
-  headlinesPlaceholder, descriptionsPlaceholder,
-  onHeadlinesChange, onDescriptionsChange,
-}: {
-  label: string
-  description: string
-  headlinesValue: string
-  descriptionsValue: string
-  headlinesPlaceholder: string
-  descriptionsPlaceholder: string
-  onHeadlinesChange: (v: string) => void
-  onDescriptionsChange: (v: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const hasContent = headlinesValue.trim().length > 0 || descriptionsValue.trim().length > 0
-
-  return (
-    <div style={{ border: `1px solid ${hasContent ? T.primary : T.borderLight}`, borderRadius: T.radiusSm, marginBottom: 10 }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          width: '100%', textAlign: 'left', padding: '10px 14px',
-          background: hasContent ? '#eff6ff' : T.bgPage,
-          border: 'none', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          borderRadius: T.radiusSm,
-        }}
-      >
-        <span style={{ fontWeight: 600, fontSize: 13, color: hasContent ? T.primary : T.textGray }}>
-          {hasContent ? '✓ ' : ''}{label}
-          {!hasContent && <span style={{ fontWeight: 400, fontSize: 11, marginLeft: 8, color: T.textGray }}>(opzionale)</span>}
-        </span>
-        <span style={{ fontSize: 11, color: T.textGray }}>{open ? '▲' : '▼'}</span>
-      </button>
-
-      {open && (
-        <div style={{ padding: '14px 14px 10px', borderTop: `1px solid ${T.borderLight}` }}>
-          <p style={{ fontSize: 12, color: T.textGray, marginBottom: 12, marginTop: 0 }}>{description}</p>
-
-          <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 4 }}>
-              Headline dedicate (una per riga — max 30 car.)
-            </label>
-            <textarea
-              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 90, resize: 'vertical', boxSizing: 'border-box' as const }}
-              value={headlinesValue}
-              onChange={e => onHeadlinesChange(e.target.value)}
-              placeholder={headlinesPlaceholder}
-            />
-            {toLines(headlinesValue).map((h, j) => h.length > 30 && (
-              <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
-                Riga {j + 1} troppo lunga ({h.length}/30)
-              </div>
-            ))}
-            <div style={{ fontSize: 11, color: T.textGray, textAlign: 'right', marginTop: 2 }}>
-              {toLines(headlinesValue).length} headline
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 4 }}>
-              Descrizioni dedicate (una per riga — max 90 car.)
-            </label>
-            <textarea
-              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 70, resize: 'vertical', boxSizing: 'border-box' as const }}
-              value={descriptionsValue}
-              onChange={e => onDescriptionsChange(e.target.value)}
-              placeholder={descriptionsPlaceholder}
-            />
-            {toLines(descriptionsValue).map((d, j) => d.length > 90 && (
-              <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
-                Riga {j + 1} troppo lunga ({d.length}/90)
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── component ─────────────────────────────────────────────────────────────────
-
+import { Step0InfoBase } from './brief/steps/Step0InfoBase'
+import { Step1Obiettivi } from './brief/steps/Step1Obiettivi'
+import { Step2Lingue } from './brief/steps/Step2Lingue'
+import { Step3Hotel } from './brief/steps/Step3Hotel'
+import { Step4Anteprima } from './brief/steps/Step4Anteprima'
+import { Step5Revisione } from './brief/steps/Step5Revisione'
 
 interface BriefFormProps {
   projectId: string
@@ -239,7 +40,6 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(() => {
     if (existingBrief) return briefToForm(existingBrief)
-    // Seed form from project metadata so new briefs start with the right category/preset
     const base = { ...DEFAULT_FORM, created_by: getUserEmail() }
     if (project) {
       if (project.preset)      base.preset        = project.preset
@@ -276,15 +76,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
   const [previewLangIdx, setPreviewLangIdx] = useState(0)
 
   // ── Budget Strategy state ──────────────────────────────────────────────────
-  const [strategyResult, setStrategyResult] = useState<{
-    recommended_types: string[]
-    budget_split: Record<string, number>
-    daily_by_type_lang: Record<string, Record<string, number>>
-    rationale: Record<string, string>
-    overall_strategy: string
-    suggested_total_monthly_eur: number
-    min_budget_warning: string | null
-  } | null>(null)
+  const [strategyResult, setStrategyResult] = useState<StrategyResult | null>(null)
   const [strategyPanelOpen, setStrategyPanelOpen] = useState(false)
 
   // ── Auto-fill state ────────────────────────────────────────────────────────
@@ -338,7 +130,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     setAutofillSuccess(true)
   }, [pendingAutofill])
 
-  // Start a background auto-fill job (returns immediately — result arrives via polling in parent)
+  // Start a background auto-fill job
   const startJobMutation = useMutation({
     mutationFn: () => autofillApi.startJob(
       autofillUrl.trim(),
@@ -373,20 +165,15 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
       setStrategyResult(data)
       setStrategyPanelOpen(true)
       const backendToFrontend: Record<string, string> = {
-        'search_brand': 'brand',
-        'search_acquisition': 'acquisition',
-        'performance_max': 'pmax',
-        'retargeting': 'retargeting',
-        'demand_gen': 'demand_gen',
+        search_brand: 'brand', search_acquisition: 'acquisition',
+        performance_max: 'pmax', retargeting: 'retargeting', demand_gen: 'demand_gen',
       }
-      setSelectedTypes(new Set(data.recommended_types.map(t => backendToFrontend[t] || t)))
-      // Apply suggested total budget to form field
+      setSelectedTypes(new Set(data.recommended_types.map((t: string) => backendToFrontend[t] || t)))
       setField('total_monthly_eur', String(data.suggested_total_monthly_eur))
-      // Apply daily budgets to budget table
       const newBudget: Record<string, Record<string, string>> = {}
       for (const [feKey, byLang] of Object.entries(data.daily_by_type_lang)) {
         newBudget[feKey] = Object.fromEntries(
-          Object.entries(byLang).map(([lang, val]) => [lang, String(val)])
+          Object.entries(byLang as Record<string, number>).map(([lang, val]) => [lang, String(val)])
         )
       }
       setBudgetByTypeLang(newBudget)
@@ -395,29 +182,22 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })
 
-  // ── Recalculate budget using AI ratios after user deselects campaign types ──
-  const backendToFrontendMap: Record<string, string> = {
-    search_brand: 'brand', search_acquisition: 'acquisition',
-    performance_max: 'pmax', retargeting: 'retargeting', demand_gen: 'demand_gen',
-  }
+  // Recalculate budget using AI ratios after user deselects campaign types
   const frontendToBackendMap: Record<string, string> = {
     brand: 'search_brand', acquisition: 'search_acquisition',
     pmax: 'performance_max', retargeting: 'retargeting', demand_gen: 'demand_gen',
   }
-
-  // Types the AI suggested (frontend keys) — null if AI hasn't run yet
   const aiSuggestedKeys = strategyResult
-    ? new Set(strategyResult.recommended_types.map(t => backendToFrontendMap[t] || t))
+    ? new Set(strategyResult.recommended_types.map(t => ({
+        search_brand: 'brand', search_acquisition: 'acquisition',
+        performance_max: 'pmax', retargeting: 'retargeting', demand_gen: 'demand_gen',
+      }[t] || t)))
     : null
-
-  // Show the recalculate button when AI suggested at least one type that the user has now deselected
-  const canRecalculate = aiSuggestedKeys !== null &&
-    [...aiSuggestedKeys].some(k => !selectedTypes.has(k))
+  const canRecalculate = aiSuggestedKeys !== null && [...aiSuggestedKeys].some(k => !selectedTypes.has(k))
 
   const handleRecalculateBudget = () => {
     const total = parseFloat(form.total_monthly_eur) || (strategyResult?.suggested_total_monthly_eur ?? 0)
     if (!total || !strategyResult) return
-    // Accumulate AI-split ratios only for currently selected types
     let totalRatio = 0
     const ratios: Record<string, number> = {}
     for (const ct of CAMPAIGN_TYPES) {
@@ -441,11 +221,8 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     setBudgetByTypeLang(prev => ({ ...prev, ...newBudget }))
   }
 
-  const toggleAutofillLang = (code: string) => {
-    setAutofillLangs(prev =>
-      prev.includes(code) ? prev.filter(l => l !== code) : [...prev, code]
-    )
-  }
+  const toggleAutofillLang = (code: string) =>
+    setAutofillLangs(prev => prev.includes(code) ? prev.filter(l => l !== code) : [...prev, code])
 
   const kwSuggestMutation = useMutation({
     mutationFn: ({ lang }: { langIdx: number; lang: LangState }) =>
@@ -486,10 +263,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
         booking_engine_url: form.booking_engine_url || undefined,
       }),
     onSuccess: (data, { langIdx }) => {
-      setLangs(prev => prev.map((l, i) => i === langIdx
-        ? { ...l, sitelinks: data.sitelinks }
-        : l
-      ))
+      setLangs(prev => prev.map((l, i) => i === langIdx ? { ...l, sitelinks: data.sitelinks } : l))
       setSlSuggestingLang(null)
       if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
     },
@@ -504,10 +278,9 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ['brief', projectId] })
       qc.invalidateQueries({ queryKey: ['project', projectId] })
-      // Brief is always saved by backend — always navigate after save
       setSaveSuccess(true)
       if (result.validation.errors.length > 0) {
-        setErrors(result.validation.errors.map(e => e.message))
+        setErrors(result.validation.errors.map((e: { message: string }) => e.message))
         setSaveHadWarnings(true)
       }
       setTimeout(onSaved, 1800)
@@ -518,7 +291,6 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
   const setField = (key: keyof FormState, val: string) =>
     setForm(prev => ({ ...prev, [key]: val }))
 
-  // Redistribute total monthly budget across active campaign types when selection changes
   const redistributeBudget = (nextTypes: Set<string>) => {
     const totalMonthly = parseFloat(form.total_monthly_eur) || 0
     if (!totalMonthly || nextTypes.size === 0) return
@@ -689,973 +461,66 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
         </div>
       )}
 
-      {/* ── STEP 0 — Info Base ── */}
+      {/* ── Steps ── */}
       {step === 0 && (
-        <>
-          {/* ── Auto-fill Panel ── */}
-          <div style={css.autofillPanel}>
-            <div style={css.autofillTitle}>
-              <i className="fa-solid fa-wand-magic-sparkles"></i> Auto-compila dal sito dell'hotel
-            </div>
-            <div style={css.autofillSubtitle}>
-              Inserisci l'URL del sito dell'hotel: l'AI analizzerà il sito e compilerà automaticamente
-              tutti i campi del brief. L'elaborazione avviene in background — puoi cambiare scheda
-              e tornerai notificato quando è pronta.
-            </div>
-            <div style={css.autofillRow}>
-              <input
-                style={css.autofillUrlInput}
-                type="url"
-                value={autofillUrl}
-                onChange={e => { setAutofillUrl(e.target.value); setAutofillSuccess(false) }}
-                placeholder="https://www.nomedelhotel.it"
-                disabled={startJobMutation.isPending || startJobMutation.isSuccess}
-              />
-              <button
-                style={{ ...css.btnAutofill, opacity: startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim() ? 0.6 : 1 }}
-                onClick={() => { setErrors([]); setAutofillSuccess(false); startJobMutation.mutate() }}
-                disabled={startJobMutation.isPending || startJobMutation.isSuccess || !autofillUrl.trim()}
-              >
-                {startJobMutation.isPending
-                  ? <><i className="fa-solid fa-hourglass-half"></i> Avvio...</>
-                  : <><i className="fa-solid fa-magnifying-glass"></i> Analizza e compila</>}
-              </button>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 12, color: '#fff', fontWeight: 600 }}>
-              Lingue da generare:
-            </div>
-            <div style={css.autofillLangPills}>
-              {['IT', 'EN', 'DE', 'FR', 'ES', 'NL', 'PT'].map(code => (
-                <span
-                  key={code}
-                  style={langPillStyle(autofillLangs.includes(code))}
-                  onClick={() => !startJobMutation.isPending && !startJobMutation.isSuccess && toggleAutofillLang(code)}
-                >
-                  {code}
-                </span>
-              ))}
-            </div>
-            {/* Modalità manuale: incolla il testo del sito */}
-            <div style={{ marginTop: 10 }}>
-              <button
-                style={{ background: 'none', border: 'none', color: '#6366f1', fontSize: 12, cursor: 'pointer', padding: 0, textDecoration: 'underline' }}
-                onClick={() => setAutofillManual(v => !v)}
-              >
-                {autofillManual ? '▲ Nascondi modalità manuale' : '▼ Il server non riesce a raggiungere il sito? Incolla il testo manualmente'}
-              </button>
-            </div>
-            {autofillManual && (
-              <div style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, color: T.textGray, marginBottom: 4 }}>
-                  Vai sul sito dell'hotel, seleziona tutto il testo (Ctrl+A → Ctrl+C) e incollalo qui sotto.
-                  Oppure copia il testo della homepage e delle pagine camere/servizi.
-                </div>
-                <textarea
-                  style={{ width: '100%', minHeight: 120, fontSize: 12, padding: 8, border: '1px solid #d1d5db', borderRadius: 6, resize: 'vertical', boxSizing: 'border-box' }}
-                  placeholder="Incolla qui il contenuto del sito web dell'hotel..."
-                  value={autofillContent}
-                  onChange={e => setAutofillContent(e.target.value)}
-                  disabled={startJobMutation.isPending || startJobMutation.isSuccess}
-                />
-              </div>
-            )}
-            {startJobMutation.isSuccess && (
-              <div style={{ marginTop: 10, fontSize: 12, color: T.blue, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, padding: '8px 12px' }}>
-                <i className="fa-solid fa-hourglass-half"></i> Elaborazione in corso in background — puoi cambiare scheda liberamente.
-                Riceverai una notifica in questa pagina quando il brief sarà pronto.
-              </div>
-            )}
-            {autofillSuccess && (
-              <div style={css.autofillSuccessBox}>
-                <i className="fa-solid fa-circle-check"></i> Campi compilati con successo! Scorri il form per rivedere e correggere i dati generati.
-              </div>
-            )}
-          </div>
-
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Informazioni Progetto</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Nome progetto *</label>
-                <input
-                  style={css.input}
-                  value={form.project_name}
-                  onChange={e => setField('project_name', e.target.value)}
-                  placeholder="es. Hotel Bella Vista — Search 2024"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Email strategist</label>
-                <input
-                  style={css.input}
-                  value={form.created_by}
-                  onChange={e => setField('created_by', e.target.value)}
-                  placeholder="nome@agenzia.com"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Preset</label>
-                <select style={css.select} value={form.preset} onChange={e => setField('preset', e.target.value)}>
-                  <option value="blastness">Blastness</option>
-                  <option value="mentefredda">Mentefredda</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Tipologia struttura</label>
-                <select style={css.select} value={form.vertical} onChange={e => setField('vertical', e.target.value)}>
-                  <option value="city_hotel">City Hotel</option>
-                  <option value="resort">Resort</option>
-                  <option value="boutique">Boutique</option>
-                  <option value="business">Business</option>
-                  <option value="agriturismo">Agriturismo</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Dati Cliente</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Nome brand *</label>
-                <input
-                  style={css.input}
-                  value={form.brand_name}
-                  onChange={e => setField('brand_name', e.target.value)}
-                  placeholder="es. Hotel Bella Vista"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Brand slug *</label>
-                <span style={css.hint}>Solo lettere minuscole, numeri e trattini</span>
-                <input
-                  style={css.input}
-                  value={form.brand_slug}
-                  onChange={e => setField('brand_slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))}
-                  placeholder="hotel-bella-vista"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Dominio *</label>
-                <span style={css.hint}>Senza https://</span>
-                <input
-                  style={css.input}
-                  value={form.domain}
-                  onChange={e => setField('domain', e.target.value)}
-                  placeholder="www.hotelbella.it"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Timezone</label>
-                <input
-                  style={css.input}
-                  value={form.timezone}
-                  onChange={e => setField('timezone', e.target.value)}
-                  placeholder="Europe/Rome"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Paese (ISO 2) *</label>
-                <input
-                  style={css.input}
-                  value={form.country}
-                  onChange={e => setField('country', e.target.value.toUpperCase().slice(0, 2))}
-                  placeholder="IT"
-                  maxLength={2}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Valuta (ISO 3)</label>
-                <input
-                  style={css.input}
-                  value={form.currency}
-                  onChange={e => setField('currency', e.target.value.toUpperCase().slice(0, 3))}
-                  placeholder="EUR"
-                  maxLength={3}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Google Ads Customer ID</label>
-                <span style={css.hint}>Formato: 123-456-7890</span>
-                <input
-                  style={css.input}
-                  value={form.google_ads_customer_id}
-                  onChange={e => setField('google_ads_customer_id', e.target.value)}
-                  placeholder="123-456-7890"
-                />
-              </div>
-            </div>
-          </div>
-        </>
+        <Step0InfoBase
+          form={form} setField={setField}
+          autofillUrl={autofillUrl} setAutofillUrl={setAutofillUrl}
+          autofillLangs={autofillLangs} toggleAutofillLang={toggleAutofillLang}
+          autofillManual={autofillManual} setAutofillManual={setAutofillManual}
+          autofillContent={autofillContent} setAutofillContent={setAutofillContent}
+          autofillSuccess={autofillSuccess}
+          startJobMutation={startJobMutation}
+          setErrors={setErrors}
+        />
       )}
-
-      {/* ── STEP 1 — Obiettivi & Budget ── */}
       {step === 1 && (
-        <>
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Obiettivi per tipologia di campagna</div>
-            <div style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
-              Definisci obiettivo primario e azione di conversione per ogni tipo attivo.
-              Le campagne non selezionate nella tabella budget non vengono mostrate.
-            </div>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                      Tipo campagna
-                    </th>
-                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                      Obiettivo primario *
-                    </th>
-                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                      Azione di conversione primaria
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {CAMPAIGN_TYPES.map(ct => {
-                    const isSel = selectedTypes.has(ct.key)
-                    if (!isSel) return null
-                    const obj: TypeObjective = objectivesByType[ct.key] ?? DEFAULT_TYPE_OBJECTIVE
-                    return (
-                      <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                        <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
-                          {ct.label}
-                        </td>
-                        <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
-                          <select
-                            style={{ ...css.select, marginBottom: 0 }}
-                            value={obj.primary_objective}
-                            onChange={e => setObjectivesByType(prev => ({
-                              ...prev,
-                              [ct.key]: { ...obj, primary_objective: e.target.value },
-                            }))}
-                          >
-                            {OBJECTIVE_OPTIONS.map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
-                          <input
-                            style={{ ...css.input, marginBottom: 0 }}
-                            value={obj.primary_conversion_action}
-                            onChange={e => setObjectivesByType(prev => ({
-                              ...prev,
-                              [ct.key]: { ...obj, primary_conversion_action: e.target.value },
-                            }))}
-                            placeholder="purchase"
-                          />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {[...selectedTypes].length === 0 && (
-                <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
-                  Seleziona almeno un tipo di campagna nella sezione Budget qui sotto.
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div style={css.section}>
-            <div style={css.sectionTitle}>KPI Target (opzionali)</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Target CPA (€)</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.target_cpa_eur}
-                  onChange={e => setField('target_cpa_eur', e.target.value)}
-                  placeholder="es. 25.00"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Target ROAS</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={form.target_roas}
-                  onChange={e => setField('target_roas', e.target.value)}
-                  placeholder="es. 4.0"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Max CPC Brand (€)</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.max_cpc_brand}
-                  onChange={e => setField('max_cpc_brand', e.target.value)}
-                  placeholder="es. 1.50"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Max CPC Acquisition (€)</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.max_cpc_acquisition}
-                  onChange={e => setField('max_cpc_acquisition', e.target.value)}
-                  placeholder="es. 2.00"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={css.section}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...css.sectionTitle }}>
-              <span>Budget campagne (€/giorno per lingua)</span>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                {canRecalculate && (
-                  <button
-                    style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px', background: T.primary }}
-                    onClick={handleRecalculateBudget}
-                    title="Ridistribuisce il budget totale tra le campagne selezionate mantenendo le proporzioni AI"
-                  >
-                    ⟳ Ricalcola budget
-                  </button>
-                )}
-                <button
-                  style={{ ...css.btnAdd, fontSize: 12, padding: '5px 14px' }}
-                  onClick={() => budgetStrategyMutation.mutate()}
-                  disabled={budgetStrategyMutation.isPending}
-                >
-                  {budgetStrategyMutation.isPending
-                    ? <><i className="fa-solid fa-hourglass-half"></i> Analisi in corso...</>
-                    : <><i className="fa-solid fa-wand-magic-sparkles"></i> Suggerisci Strategia AI</>}
-                </button>
-              </div>
-            </div>
-            {/* Optional total budget hint — shown only if already populated */}
-            {form.total_monthly_eur && parseFloat(form.total_monthly_eur) > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: T.textGray }}>
-                <span>Budget mensile:</span>
-                <strong style={{ color: T.text }}>€{parseFloat(form.total_monthly_eur).toLocaleString('it-IT')}/mese</strong>
-                <button style={{ ...css.btnRed, padding: '2px 8px', fontSize: 11 }} onClick={() => { setField('total_monthly_eur', ''); setBudgetByTypeLang({}); setStrategyResult(null); setStrategyPanelOpen(false) }}><i className="fa-solid fa-xmark"></i> Azzera</button>
-              </div>
-            )}
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                      Tipo campagna
-                    </th>
-                    {langs.map(l => (
-                      <th key={l.code} style={{ textAlign: 'center', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                        {l.code || '—'} (€/giorno)
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {CAMPAIGN_TYPES.map(ct => {
-                    const isSel = selectedTypes.has(ct.key)
-                    return (
-                      <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                        <td style={{ padding: '8px 16px 8px 0', verticalAlign: 'middle' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                            <input
-                              type="checkbox"
-                              checked={isSel}
-                              onChange={e => {
-                                const next = new Set(selectedTypes)
-                                if (e.target.checked) next.add(ct.key); else next.delete(ct.key)
-                                setSelectedTypes(next)
-                                // When AI suggestion is active, let the user click "Ricalcola Budget"
-                                // instead of auto-redistributing with fixed weights
-                                if (!strategyResult) redistributeBudget(next)
-                              }}
-                              style={{ width: 15, height: 15, accentColor: T.primary, cursor: 'pointer', flexShrink: 0 }}
-                            />
-                            <span style={{ fontWeight: isSel ? 600 : 400, color: isSel ? T.text : T.textGray, whiteSpace: 'nowrap' }}>
-                              {ct.label}
-                            </span>
-                          </label>
-                        </td>
-                        {langs.map(l => {
-                          const code = l.code.toUpperCase()
-                          const val = budgetByTypeLang[ct.key]?.[code] ?? ''
-                          return (
-                            <td key={code} style={{ padding: '8px', verticalAlign: 'middle', textAlign: 'center' }}>
-                              <input
-                                type="number"
-                                min="0"
-                                step="1"
-                                disabled={!isSel}
-                                value={val}
-                                onChange={e => setBudgetByTypeLang(prev => ({
-                                  ...prev,
-                                  [ct.key]: { ...(prev[ct.key] ?? {}), [code]: e.target.value },
-                                }))}
-                                placeholder="0"
-                                style={{
-                                  ...css.input,
-                                  width: 90,
-                                  textAlign: 'right',
-                                  opacity: isSel ? 1 : 0.35,
-                                  background: isSel ? T.bgCard : T.bgMuted,
-                                  cursor: isSel ? 'text' : 'not-allowed',
-                                }}
-                              />
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-            {/* Totals row */}
-            {selectedTypes.size > 0 && (() => {
-              const langTotals: Record<string, number> = {}
-              let grandDaily = 0
-              for (const ct of CAMPAIGN_TYPES) {
-                if (!selectedTypes.has(ct.key)) continue
-                for (const l of langs) {
-                  const code = l.code.toUpperCase()
-                  const d = parseFloat(budgetByTypeLang[ct.key]?.[code] ?? '0') || 0
-                  langTotals[code] = (langTotals[code] || 0) + d
-                  grandDaily += d
-                }
-              }
-              const grandMonthly = Math.round(grandDaily * 30.44)
-              return (
-                <div style={{ marginTop: 14, paddingTop: 12, borderTop: `2px solid ${T.borderLight}`, display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'center' }}>
-                  {langs.map(l => {
-                    const code = l.code.toUpperCase()
-                    return (
-                      <div key={code} style={{ fontSize: 13, color: T.textGray }}>
-                        {code} tot.: <strong style={{ color: T.text }}>€{(langTotals[code] || 0).toFixed(0)}/g</strong>
-                      </div>
-                    )
-                  })}
-                  <div style={{ marginLeft: 'auto', fontSize: 13, color: T.textGray }}>
-                    Mensile stimato: <strong style={{ color: T.primary, fontSize: 15 }}>€{grandMonthly.toLocaleString('it-IT')}</strong>
-                  </div>
-                </div>
-              )
-            })()}
-
-            {/* ── Budget Strategy Rationale Panel ── */}
-            {strategyPanelOpen && strategyResult && (
-              <div style={{ marginTop: 20, background: T.bgCard, border: `1px solid ${T.primary}33`, borderRadius: T.radiusLg, padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: T.primary, marginBottom: 4 }}>Strategia consigliata dall'AI</div>
-                    <div style={{ fontSize: 13, color: T.textGray }}>
-                      Budget mensile consigliato:{' '}
-                      <strong style={{ color: T.text, fontSize: 15 }}>
-                        €{strategyResult.suggested_total_monthly_eur.toLocaleString('it-IT')}/mese
-                      </strong>
-                      {' '}— {strategyResult.recommended_types.length} campagne attive
-                    </div>
-                  </div>
-                  <button style={css.btnRed} onClick={() => setStrategyPanelOpen(false)}><i className="fa-solid fa-xmark"></i></button>
-                </div>
-                {strategyResult.min_budget_warning && (
-                  <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#92400e' }}>
-                    <i className="fa-solid fa-triangle-exclamation"></i> {strategyResult.min_budget_warning}
-                  </div>
-                )}
-                {strategyResult.overall_strategy && (
-                  <div style={{ fontSize: 13, color: T.textGray, marginBottom: 14, lineHeight: 1.6, borderBottom: `1px solid ${T.borderLight}`, paddingBottom: 12 }}>
-                    {strategyResult.overall_strategy}
-                  </div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-                  {strategyResult.recommended_types.map(backendKey => {
-                    const labelMap: Record<string, string> = {
-                      search_brand: 'Brand Search',
-                      search_acquisition: 'Acquisition Search',
-                      performance_max: 'Performance Max',
-                      retargeting: 'Retargeting',
-                      demand_gen: 'Demand Gen',
-                    }
-                    const pct = strategyResult.budget_split[backendKey]
-                    return (
-                      <div key={backendKey} style={{ background: T.bgPage, border: `1px solid ${T.borderLight}`, borderRadius: 8, padding: 12 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                          <strong style={{ fontSize: 13, color: T.text }}>{labelMap[backendKey] || backendKey}</strong>
-                          {pct != null && <span style={{ fontSize: 12, color: T.primary, fontWeight: 700 }}>{pct}%</span>}
-                        </div>
-                        <div style={{ fontSize: 12, color: T.textGray, lineHeight: 1.5 }}>
-                          {strategyResult.rationale[backendKey] || ''}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-                <div style={{ marginTop: 12, fontSize: 12, color: T.textGray }}>
-                  Le campagne selezionate e i budget sono stati applicati automaticamente alla tabella sopra. Puoi modificarli liberamente.
-                </div>
-              </div>
-            )}
-          </div>
-        </>
+        <Step1Obiettivi
+          form={form} setField={setField} langs={langs}
+          selectedTypes={selectedTypes} setSelectedTypes={setSelectedTypes}
+          objectivesByType={objectivesByType} setObjectivesByType={setObjectivesByType}
+          budgetByTypeLang={budgetByTypeLang} setBudgetByTypeLang={setBudgetByTypeLang}
+          strategyResult={strategyResult} setStrategyResult={setStrategyResult}
+          strategyPanelOpen={strategyPanelOpen} setStrategyPanelOpen={setStrategyPanelOpen}
+          budgetStrategyMutation={budgetStrategyMutation}
+          canRecalculate={canRecalculate} handleRecalculateBudget={handleRecalculateBudget}
+          redistributeBudget={redistributeBudget}
+        />
       )}
-
-      {/* ── STEP 2 — Lingue & Asset ── */}
       {step === 2 && (
-        <div>
-          {langs.map((lang, i) => (
-            <div key={i} style={css.langCard}>
-              <div style={css.langHeader}>
-                <strong style={{ fontSize: 15 }}>
-                  Lingua {i + 1}{lang.code ? ` — ${lang.code}` : ''}
-                  {lang.name ? ` (${lang.name})` : ''}
-                </strong>
-                {langs.length > 1 && (
-                  <button style={css.btnRed} onClick={() => removeLang(i)}><i className="fa-solid fa-xmark"></i> Rimuovi</button>
-                )}
-              </div>
-
-              <div style={css.grid2}>
-                <div style={css.field}>
-                  <label style={css.label}>Codice lingua *</label>
-                  <span style={css.hint}>IT, EN, DE, FR, ES, NL, PT…</span>
-                  <input
-                    style={css.input}
-                    value={lang.code}
-                    onChange={e => handleLangCode(i, e.target.value)}
-                    placeholder="IT"
-                    maxLength={5}
-                  />
-                </div>
-                <div style={css.field}>
-                  <label style={css.label}>Nome lingua *</label>
-                  <input
-                    style={css.input}
-                    value={lang.name}
-                    onChange={e => setLangField(i, 'name', e.target.value)}
-                    placeholder="Italiano"
-                  />
-                </div>
-                <div style={css.field}>
-                  <label style={css.label}>Google Language ID *</label>
-                  <span style={css.hint}>IT=1004, EN=1000, DE=1001, FR=1002, ES=1003</span>
-                  <input
-                    style={css.input}
-                    type="number"
-                    value={lang.google_language_id}
-                    onChange={e => setLangField(i, 'google_language_id', e.target.value)}
-                    placeholder="1004"
-                  />
-                </div>
-                <div style={css.field}>
-                  <label style={css.label}>Landing Page URL *</label>
-                  <input
-                    style={css.input}
-                    value={lang.landing_page}
-                    onChange={e => setLangField(i, 'landing_page', e.target.value)}
-                    placeholder="https://www.hotel.it/"
-                  />
-                </div>
-              </div>
-
-              <div style={css.field}>
-                <label style={css.label}>Brand Terms * (uno per riga)</label>
-                <span style={css.hint}>Varianti del nome brand da targettizzare nelle campagne brand</span>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 80 }}
-                  value={lang.brand_terms}
-                  onChange={e => setLangField(i, 'brand_terms', e.target.value)}
-                  placeholder={'Hotel Bella Vista\nBella Vista Hotel\nHBV'}
-                />
-              </div>
-
-              <div style={css.field}>
-                <label style={css.label}>USP principale (opzionale)</label>
-                <span style={css.hint}>Proposta di valore unica — max 90 caratteri</span>
-                <input
-                  style={{ ...css.input, ...(lang.usp_main.length > 90 ? css.inputErr : {}) }}
-                  value={lang.usp_main}
-                  onChange={e => setLangField(i, 'usp_main', e.target.value)}
-                  placeholder="es. Prenota diretto e risparmia fino al 20%"
-                />
-                <div style={css.charCount}>{lang.usp_main.length} / 90</div>
-              </div>
-
-              <div style={css.field}>
-                <label style={css.label}>Headline RSA * (una per riga — min 3, max 30 caratteri ciascuna)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 130 }}
-                  value={lang.headlines}
-                  onChange={e => setLangField(i, 'headlines', e.target.value)}
-                  placeholder={'Hotel Bella Vista\nPrenota Diretto Online\nMiglior Tariffa Garantita\nVista Mare Panoramica\nPiscina Esterna Riscaldata'}
-                />
-                {toLines(lang.headlines).map((h, j) => h.length > 30 && (
-                  <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
-                    Riga {j + 1} troppo lunga ({h.length}/30): "{h.slice(0, 25)}..."
-                  </div>
-                ))}
-                <div style={css.charCount}>{toLines(lang.headlines).length} headline</div>
-              </div>
-
-              <div style={css.field}>
-                <label style={css.label}>Descrizioni RSA * (una per riga — min 2, max 90 caratteri ciascuna)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 100 }}
-                  value={lang.descriptions}
-                  onChange={e => setLangField(i, 'descriptions', e.target.value)}
-                  placeholder={'Prenota sul sito ufficiale per la migliore tariffa garantita e disdici gratis.\nCamera Superior con vista mare e colazione inclusa, posizione centrale.'}
-                />
-                {toLines(lang.descriptions).map((d, j) => d.length > 90 && (
-                  <div key={j} style={{ fontSize: 11, color: '#dc2626' }}>
-                    Riga {j + 1} troppo lunga ({d.length}/90)
-                  </div>
-                ))}
-                <div style={css.charCount}>{toLines(lang.descriptions).length} descrizioni</div>
-              </div>
-
-              <div style={css.field}>
-                <label style={css.label}>Callout (uno per riga — opzionale)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 80 }}
-                  value={lang.callouts}
-                  onChange={e => setLangField(i, 'callouts', e.target.value)}
-                  placeholder={'Cancellazione gratuita\nWi-Fi incluso\nParcheggio gratuito\nCheck-in anticipato'}
-                />
-              </div>
-
-              {/* ── Sitelinks ── */}
-              <div style={css.field}>
-                <label style={css.label}>Sitelink (consigliati min. 2)</label>
-                <span style={css.hint}>Testo max 25 car. · Descrizioni max 35 car. ciascuna</span>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 10, alignItems: 'center', flexWrap: 'wrap' as const }}>
-                  <button
-                    style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: slSuggestingLang === i ? 0.6 : 1 }}
-                    onClick={() => {
-                      if (!form.brand_name) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }
-                      setSlSuggestingLang(i)
-                      slSuggestMutation.mutate({ langIdx: i, lang })
-                    }}
-                    disabled={slSuggestingLang === i}
-                  >
-                    {slSuggestingLang === i
-                      ? <><i className="fa-solid fa-hourglass-half"></i> Generando sitelink...</>
-                      : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera sitelink con AI</>}
-                  </button>
-                  <span style={{ fontSize: 11, color: T.textGray }}>oppure aggiungili manualmente →</span>
-                </div>
-                {lang.sitelinks.map((sl, j) => (
-                  <div key={j} style={{ border: `1px solid ${T.borderLight}`, borderRadius: 6, padding: 10, marginBottom: 8, background: T.bgPage }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <strong style={{ fontSize: 12, color: T.textGray }}>Sitelink {j + 1}</strong>
-                      <button style={css.btnRed} onClick={() => removeSitelink(i, j)}><i className="fa-solid fa-xmark"></i></button>
-                    </div>
-                    <div style={css.grid2}>
-                      <div>
-                        <label style={{ ...css.label, fontSize: 11 }}>Testo *</label>
-                        <input style={css.input} value={sl.text} onChange={e => setSitelinkField(i, j, 'text', e.target.value)} maxLength={25} placeholder="Prenota Ora" />
-                        <div style={css.charCount}>{sl.text.length}/25</div>
-                      </div>
-                      <div>
-                        <label style={{ ...css.label, fontSize: 11 }}>URL finale *</label>
-                        <input style={css.input} value={sl.final_url} onChange={e => setSitelinkField(i, j, 'final_url', e.target.value)} placeholder="https://..." />
-                      </div>
-                      <div>
-                        <label style={{ ...css.label, fontSize: 11 }}>Descrizione 1</label>
-                        <input style={css.input} value={sl.description_1} onChange={e => setSitelinkField(i, j, 'description_1', e.target.value)} maxLength={35} placeholder="Miglior tariffa garantita" />
-                        <div style={css.charCount}>{sl.description_1.length}/35</div>
-                      </div>
-                      <div>
-                        <label style={{ ...css.label, fontSize: 11 }}>Descrizione 2</label>
-                        <input style={css.input} value={sl.description_2} onChange={e => setSitelinkField(i, j, 'description_2', e.target.value)} maxLength={35} placeholder="Cancellazione gratuita" />
-                        <div style={css.charCount}>{sl.description_2.length}/35</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                <button style={css.btnAdd} onClick={() => addSitelink(i)}>+ Aggiungi sitelink</button>
-              </div>
-
-              {/* ── Acquisition Keywords ── */}
-              <div style={css.field}>
-                <label style={css.label}>Keyword Acquisition — opzionale</label>
-                <span style={css.hint}>Formato: "tema: kw1, kw2, kw3" — una riga per tema. Usate nelle campagne Search Acquisition.</span>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center', flexWrap: 'wrap' as const }}>
-                  <button
-                    style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: kwSuggestingLang === i ? 0.6 : 1 }}
-                    onClick={() => {
-                      if (!form.brand_name) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }
-                      setKwSuggestingLang(i)
-                      kwSuggestMutation.mutate({ langIdx: i, lang })
-                    }}
-                    disabled={kwSuggestingLang === i}
-                  >
-                    {kwSuggestingLang === i
-                      ? <><i className="fa-solid fa-hourglass-half"></i> Generando keyword...</>
-                      : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera keyword con AI</>}
-                  </button>
-                  <span style={{ fontSize: 11, color: T.textGray }}>oppure inseriscile manualmente ↓</span>
-                </div>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 100 }}
-                  value={lang.kw_themes}
-                  onChange={e => setLangField(i, 'kw_themes', e.target.value)}
-                  placeholder={'prenotazione: prenota hotel X, hotel X booking\ncategoria: hotel 4 stelle Roma\nposizione: hotel centro storico Roma'}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Keyword Negative — opzionale</label>
-                <span style={css.hint}>Una per riga</span>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 70 }}
-                  value={lang.kw_negative}
-                  onChange={e => setLangField(i, 'kw_negative', e.target.value)}
-                  placeholder={'gratis\nreview\nopinioni\nfoto'}
-                />
-              </div>
-
-              {/* ── Per-type RSA copy (optional) ── */}
-              <PerTypeCopySection
-                label="Copy Brand Search"
-                description="Copy dedicata alle campagne Brand. Deve contenere il nome dell'hotel. Sostituisce gli headline generici per questo tipo di campagna."
-                headlinesValue={lang.brand_headlines}
-                descriptionsValue={lang.brand_descriptions}
-                headlinesPlaceholder={'Hotel Bella Vista\nSito Ufficiale\nMiglior Tariffa Garantita\nPrenota Direttamente'}
-                descriptionsPlaceholder={'Prenota sul sito ufficiale di Hotel Bella Vista e ottieni la miglior tariffa garantita.'}
-                onHeadlinesChange={v => setLangField(i, 'brand_headlines', v)}
-                onDescriptionsChange={v => setLangField(i, 'brand_descriptions', v)}
-              />
-
-              <PerTypeCopySection
-                label="Copy Acquisition Search"
-                description="Copy per campagne di acquisizione. NON deve contenere il brand — usa termini di categoria, posizione e USP generici."
-                headlinesValue={lang.acquisition_headlines}
-                descriptionsValue={lang.acquisition_descriptions}
-                headlinesPlaceholder={'Hotel 4 Stelle Roma Centro\nColazione Inclusa\nPiscina Panoramica\nCancellazione Gratuita'}
-                descriptionsPlaceholder={'Hotel 4 stelle nel cuore di Roma. Prenota online e risparmia fino al 20% sulla tariffa ufficiale.'}
-                onHeadlinesChange={v => setLangField(i, 'acquisition_headlines', v)}
-                onDescriptionsChange={v => setLangField(i, 'acquisition_descriptions', v)}
-              />
-
-              <PerTypeCopySection
-                label="Copy Retargeting / Display"
-                description="Copy urgency/personalizzata per visitatori che hanno già visto il sito. Usa messaggi di ritorno e offerte riservate."
-                headlinesValue={lang.retargeting_headlines}
-                descriptionsValue={lang.retargeting_descriptions}
-                headlinesPlaceholder={'Completa la Prenotazione\nOfferta Riservata a Te\nUltimi Posti Disponibili\nTorna e Risparmia'}
-                descriptionsPlaceholder={'Hai visitato il nostro sito? Completa la prenotazione oggi e approfitta di una tariffa esclusiva.'}
-                onHeadlinesChange={v => setLangField(i, 'retargeting_headlines', v)}
-                onDescriptionsChange={v => setLangField(i, 'retargeting_descriptions', v)}
-              />
-            </div>
-          ))}
-          <button style={css.btnAdd} onClick={addLang}>+ Aggiungi lingua</button>
-        </div>
+        <Step2Lingue
+          brandName={form.brand_name}
+          langs={langs} setLangField={setLangField} handleLangCode={handleLangCode}
+          addLang={addLang} removeLang={removeLang}
+          addSitelink={addSitelink} removeSitelink={removeSitelink} setSitelinkField={setSitelinkField}
+          slSuggestMutation={slSuggestMutation} kwSuggestMutation={kwSuggestMutation}
+          slSuggestingLang={slSuggestingLang} kwSuggestingLang={kwSuggestingLang}
+          setSlSuggestingLang={setSlSuggestingLang} setKwSuggestingLang={setKwSuggestingLang}
+          setErrors={setErrors}
+        />
       )}
-
-      {/* ── STEP 3 — Hotel & Geo ── */}
       {step === 3 && (
-        <>
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Specifiche Hotel</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Categoria struttura *</label>
-                <select style={css.select} value={form.hotel_category} onChange={e => setField('hotel_category', e.target.value)}>
-                  <option value="city_hotel">City Hotel</option>
-                  <option value="resort">Resort</option>
-                  <option value="boutique">Boutique</option>
-                  <option value="business">Business</option>
-                  <option value="agriturismo">Agriturismo</option>
-                </select>
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Stelle (1–5) *</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="1"
-                  max="5"
-                  value={form.stars}
-                  onChange={e => setField('stars', e.target.value)}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Numero camere</label>
-                <input
-                  style={css.input}
-                  type="number"
-                  min="1"
-                  value={form.rooms}
-                  onChange={e => setField('rooms', e.target.value)}
-                  placeholder="es. 80"
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>URL Booking Engine *</label>
-                <input
-                  style={css.input}
-                  value={form.booking_engine_url}
-                  onChange={e => setField('booking_engine_url', e.target.value)}
-                  placeholder="https://booking.hotel.it/it"
-                />
-              </div>
-            </div>
-            <div style={css.field}>
-              <label style={css.label}>Indirizzo completo *</label>
-              <input
-                style={css.input}
-                value={form.address}
-                onChange={e => setField('address', e.target.value)}
-                placeholder="Via Roma 1, 00100 Roma, Italia"
-              />
-            </div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Servizi offerti (uno per riga)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 110 }}
-                  value={form.services}
-                  onChange={e => setField('services', e.target.value)}
-                  placeholder={'Piscina esterna\nSPA e centro benessere\nRistorante gourmet\nSala conferenze\nBar'}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Punti di forza (uno per riga)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 110 }}
-                  value={form.strengths}
-                  onChange={e => setField('strengths', e.target.value)}
-                  placeholder={'Vista panoramica sul mare\nPosizione centrale\nPersonale multilingue\nFamiglie benvenute'}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Targeting Geografico</div>
-            <div style={css.grid2}>
-              <div style={css.field}>
-                <label style={css.label}>Paesi target (codice ISO 2, uno per riga)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 90 }}
-                  value={form.target_countries}
-                  onChange={e => setField('target_countries', e.target.value)}
-                  placeholder={'IT\nDE\nFR\nGB'}
-                />
-              </div>
-              <div style={css.field}>
-                <label style={css.label}>Città target (una per riga — opzionale)</label>
-                <textarea
-                  style={{ ...css.textarea, minHeight: 90 }}
-                  value={form.target_cities}
-                  onChange={e => setField('target_cities', e.target.value)}
-                  placeholder={'Milano\nRoma\nTorino'}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div style={css.section}>
-            <div style={css.sectionTitle}>Audience & Remarketing</div>
-            <p style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
-              Obbligatorio se hai selezionato campagne <strong>Retargeting</strong> o <strong>Demand Gen</strong>.
-              Inserisci le audience list già create in Google Ads.
-            </p>
-            {remarketingLists.map((rl, idx) => (
-              <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 160px 70px 1fr auto', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
-                <div>
-                  <label style={{ ...css.label, fontSize: 11 }}>Nome lista *</label>
-                  <input style={css.input} value={rl.name} onChange={e => setRemarketingListField(idx, 'name', e.target.value)} placeholder="All Website Visitors" />
-                </div>
-                <div>
-                  <label style={{ ...css.label, fontSize: 11 }}>Tipo</label>
-                  <select style={css.select} value={rl.type} onChange={e => setRemarketingListField(idx, 'type', e.target.value)}>
-                    <option value="website_visitors">Visitatori sito</option>
-                    <option value="customer_list">Customer list</option>
-                    <option value="youtube">YouTube</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ ...css.label, fontSize: 11 }}>Giorni</label>
-                  <input style={css.input} type="number" min="1" max="540" value={rl.lookback_days} onChange={e => setRemarketingListField(idx, 'lookback_days', e.target.value)} placeholder="30" />
-                </div>
-                <div>
-                  <label style={{ ...css.label, fontSize: 11 }}>Sorgente (URL o nome)</label>
-                  <input style={css.input} value={rl.source} onChange={e => setRemarketingListField(idx, 'source', e.target.value)} placeholder="https://www.hotel.it" />
-                </div>
-                <button style={{ ...css.btnRed, alignSelf: 'flex-end', marginBottom: 0 }} onClick={() => removeRemarketingList(idx)}><i className="fa-solid fa-xmark"></i></button>
-              </div>
-            ))}
-            <button style={css.btnAdd} onClick={addRemarketingList}>+ Aggiungi audience list</button>
-          </div>
-        </>
+        <Step3Hotel
+          form={form} setField={setField}
+          remarketingLists={remarketingLists}
+          addRemarketingList={addRemarketingList}
+          removeRemarketingList={removeRemarketingList}
+          setRemarketingListField={setRemarketingListField}
+          selectedTypes={selectedTypes}
+        />
       )}
-
-      {/* ── STEP 4 — Anteprima Google Ads ── */}
       {step === 4 && (
-        <div style={css.section}>
-          <div style={css.sectionTitle}>Anteprima Google Ads</div>
-          <p style={{ fontSize: 13, color: T.textGray, marginBottom: 16 }}>
-            Simulazione di come apparirà il tuo annuncio su Google. Google seleziona automaticamente
-            la combinazione di headline e descrizioni più performante.
-          </p>
-          {/* Language tabs */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' as const }}>
-            {langs.map((lang, i) => (
-              <button
-                key={i}
-                style={{
-                  padding: '6px 16px', border: 'none', borderRadius: 20, cursor: 'pointer',
-                  fontSize: 13, fontWeight: previewLangIdx === i ? 600 : 400,
-                  background: previewLangIdx === i ? T.primary : T.bgPage,
-                  color: previewLangIdx === i ? '#fff' : T.textGray,
-                  transition: 'all .15s',
-                }}
-                onClick={() => setPreviewLangIdx(i)}
-              >
-                {lang.code || `Lingua ${i + 1}`}
-                {lang.name ? ` — ${lang.name}` : ''}
-              </button>
-            ))}
-          </div>
-          {langs[previewLangIdx] && (() => {
-            const l = langs[previewLangIdx]
-            return (
-              <GoogleAdPreview
-                lang={{
-                  headlines: toLines(l.headlines),
-                  descriptions: toLines(l.descriptions),
-                  callouts: toLines(l.callouts),
-                  sitelinks: l.sitelinks,
-                }}
-                domain={form.domain || (l.landing_page ? (() => { try { return new URL(l.landing_page).hostname } catch { return '' } })() : '')}
-              />
-            )
-          })()}
-        </div>
+        <Step4Anteprima
+          form={form} langs={langs}
+          previewLangIdx={previewLangIdx} setPreviewLangIdx={setPreviewLangIdx}
+        />
       )}
-
-      {/* ── STEP 5 — Revisione ── */}
       {step === 5 && (
-        <div style={css.section}>
-          <div style={css.sectionTitle}>Revisione Brief</div>
-          <p style={{ fontSize: 13, color: T.textGray, marginBottom: 12 }}>
-            Controlla il JSON prima di salvare. Puoi tornare indietro per modificare i dati.
-          </p>
-          <div style={css.reviewCode}>
-            {JSON.stringify(buildBrief(form, langs, selectedTypes, budgetByTypeLang, remarketingLists, objectivesByType), null, 2)}
-          </div>
-        </div>
+        <Step5Revisione
+          form={form} langs={langs} selectedTypes={selectedTypes}
+          budgetByTypeLang={budgetByTypeLang} remarketingLists={remarketingLists}
+          objectivesByType={objectivesByType}
+        />
       )}
 
       {/* ── Navigation ── */}
