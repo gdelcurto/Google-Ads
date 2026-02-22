@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { projectsApi, autofillApi, AutofillResult, EnrichedAutofillResult } from '../api/projects'
+import { projectsApi, autofillApi, EnrichedAutofillResult } from '../api/projects'
 import { T } from '../styles/theme'
 import { GoogleAdPreview } from './GoogleAdPreview'
 
@@ -773,7 +773,6 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
   const [kwSuggestingLang, setKwSuggestingLang] = useState<number | null>(null)
   const [slSuggestingLang, setSlSuggestingLang] = useState<number | null>(null)
   const [previewLangIdx, setPreviewLangIdx] = useState(0)
-  const [autoSlPending, setAutoSlPending] = useState(false)
 
   // ── Budget Strategy state ──────────────────────────────────────────────────
   const [strategyResult, setStrategyResult] = useState<{
@@ -2098,11 +2097,6 @@ export default function BriefForm({ projectId, existingBrief, onSaved, pendingAu
             Simulazione di come apparirà il tuo annuncio su Google. Google seleziona automaticamente
             la combinazione di headline e descrizioni più performante.
           </p>
-          {autoSlPending && (
-            <div style={{ fontSize: 12, color: T.blue, marginBottom: 12 }}>
-              ⏳ Generazione automatica sitelink e copy per tipo in corso...
-            </div>
-          )}
           {/* Language tabs */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' as const }}>
             {langs.map((lang, i) => (
