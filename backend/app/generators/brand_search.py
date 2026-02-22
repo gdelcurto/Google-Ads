@@ -39,32 +39,25 @@ class BrandSearchGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        campaign_name = self.build_campaign_name(
-            brief, lang.code, "Search", "Brand"
-        )
-        external_key = self.build_external_key(brief, lang.code, "search", "brand")
-
         # Determine bid strategy
         kpi = brief.objectives.kpi
-        if kpi.target_cpa_eur:
-            bid_strategy = BidStrategy.target_cpa
-        else:
-            bid_strategy = BidStrategy.maximize_conversions
+        bid_strategy = BidStrategy.target_cpa if kpi.target_cpa_eur else BidStrategy.maximize_conversions
 
-        settings = self.build_campaign_settings(
-            brief=brief,
-            lang=lang,
-            camp_type_key=self.CAMPAIGN_TYPE_KEY,
-            network_types=[NetworkType.search],
-            bid_strategy=bid_strategy,
-            target_cpa=kpi.target_cpa_eur,
+        campaign_name, external_key, settings, tracking_template, asset_pack = (
+            self._generate_campaign_skeleton(
+                brief=brief,
+                lang=lang,
+                camp_type="Search",
+                subtype="Brand",
+                camp_type_key=self.CAMPAIGN_TYPE_KEY,
+                network_types=[NetworkType.search],
+                bid_strategy=bid_strategy,
+                target_cpa=kpi.target_cpa_eur,
+            )
         )
         # Brand: Max CPC cap from brief
         if kpi.max_cpc_brand:
             settings.bid_strategy = BidStrategy.manual_cpc
-
-        tracking_template = self.build_tracking_template(brief.utm_config)
-        asset_pack = self.build_asset_pack(lang)
 
         ad_groups = [
             self._build_brand_exact_group(brief, lang, tracking_template, asset_pack),

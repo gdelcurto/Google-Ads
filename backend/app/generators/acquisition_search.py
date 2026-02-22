@@ -40,9 +40,6 @@ class AcquisitionSearchGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        campaign_name = self.build_campaign_name(brief, lang.code, "Search", "Acquisition")
-        external_key = self.build_external_key(brief, lang.code, "search", "acquisition")
-
         kpi = brief.objectives.kpi
         if kpi.target_cpa_eur:
             bid_strategy = BidStrategy.target_cpa
@@ -51,18 +48,19 @@ class AcquisitionSearchGenerator(BaseGenerator):
         else:
             bid_strategy = BidStrategy.maximize_conversions
 
-        settings = self.build_campaign_settings(
-            brief=brief,
-            lang=lang,
-            camp_type_key=self.CAMPAIGN_TYPE_KEY,
-            network_types=[NetworkType.search],
-            bid_strategy=bid_strategy,
-            target_cpa=kpi.target_cpa_eur,
-            target_roas=kpi.target_roas,
+        campaign_name, external_key, settings, tracking_template, asset_pack = (
+            self._generate_campaign_skeleton(
+                brief=brief,
+                lang=lang,
+                camp_type="Search",
+                subtype="Acquisition",
+                camp_type_key=self.CAMPAIGN_TYPE_KEY,
+                network_types=[NetworkType.search],
+                bid_strategy=bid_strategy,
+                target_cpa=kpi.target_cpa_eur,
+                target_roas=kpi.target_roas,
+            )
         )
-
-        tracking_template = self.build_tracking_template(brief.utm_config)
-        asset_pack = self.build_asset_pack(lang)
 
         # Get keyword themes from brief or vertical template fallback
         themes = self._get_keyword_themes(brief, lang)

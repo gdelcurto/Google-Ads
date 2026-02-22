@@ -40,19 +40,20 @@ class RetargetingGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        campaign_name = self.build_campaign_name(brief, lang.code, "Retargeting", "Display")
-        external_key = self.build_external_key(brief, lang.code, "retargeting", "display")
-
         kpi = brief.objectives.kpi
         bid_strategy = BidStrategy.target_cpa if kpi.target_cpa_eur else BidStrategy.maximize_conversions
 
-        settings = self.build_campaign_settings(
-            brief=brief,
-            lang=lang,
-            camp_type_key=self.CAMPAIGN_TYPE_KEY,
-            network_types=[NetworkType.display],
-            bid_strategy=bid_strategy,
-            target_cpa=kpi.target_cpa_eur,
+        campaign_name, external_key, settings, _tracking, _assets = (
+            self._generate_campaign_skeleton(
+                brief=brief,
+                lang=lang,
+                camp_type="Retargeting",
+                subtype="Display",
+                camp_type_key=self.CAMPAIGN_TYPE_KEY,
+                network_types=[NetworkType.display],
+                bid_strategy=bid_strategy,
+                target_cpa=kpi.target_cpa_eur,
+            )
         )
 
         ad_groups = []

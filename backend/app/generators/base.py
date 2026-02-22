@@ -174,6 +174,80 @@ class BaseGenerator:
     def get_labels(self, brief: Brief) -> List[str]:
         return brief.labels.copy()
 
+    def _generate_campaign_skeleton(
+        self,
+        brief: Brief,
+        lang: LanguagePlan,
+        camp_type: str,
+        subtype: str,
+        camp_type_key: str,
+        network_types: list,
+        bid_strategy,
+        target_cpa: Optional[float] = None,
+        target_roas: Optional[float] = None,
+    ) -> tuple:
+        """
+        Return (campaign_name, external_key, settings, tracking_template, asset_pack).
+
+        Consolidates the 5 boilerplate lines that every generator repeats at the start
+        of _generate_for_language():
+            campaign_name = self.build_campaign_name(...)
+            external_key  = self.build_external_key(...)
+            settings      = self.build_campaign_settings(...)
+            tracking_template = self.build_tracking_template(...)
+            asset_pack    = self.build_asset_pack(...)
+        """
+        campaign_name = self.build_campaign_name(brief, lang.code, camp_type, subtype)
+        external_key  = self.build_external_key(
+            brief, lang.code, camp_type.lower(), subtype.lower()
+        )
+        settings = self.build_campaign_settings(
+            brief=brief,
+            lang=lang,
+            camp_type_key=camp_type_key,
+            network_types=network_types,
+            bid_strategy=bid_strategy,
+            target_cpa=target_cpa,
+            target_roas=target_roas,
+        )
+        tracking_template = self.build_tracking_template(brief.utm_config)
+        asset_pack = self.build_asset_pack(lang)
+        return campaign_name, external_key, settings, tracking_template, asset_pack
+
+    def _build_rsa_ad(
+        self,
+        lang: LanguagePlan,
+        asset_key: str,
+        final_url: str,
+        tracking_template: str,
+        pinned_headlines: Optional[List[tuple]] = None,
+        ad_group_index: int = 0,
+    ) -> RSAd:
+        """
+        Build an RSAd from lang.{asset_key}_headlines / lang.{asset_key}_descriptions
+        when per-type copy overrides are stored in the LanguagePlan under a specific key.
+
+        Falls back to lang.headlines / lang.descriptions when the asset_key attributes
+        are absent or empty.
+        """
+        headlines = (
+            getattr(lang, f"{asset_key}_headlines", None)
+            or lang.headlines
+        )
+        descriptions = (
+            getattr(lang, f"{asset_key}_descriptions", None)
+            or lang.descriptions
+        )
+        return self.build_rsa(
+            lang=lang,
+            final_url=final_url,
+            tracking_template=tracking_template,
+            pinned_headlines=pinned_headlines,
+            headlines=headlines or None,
+            descriptions=descriptions or None,
+            ad_group_index=ad_group_index,
+        )
+
 
 def _slugify(text: str, max_len: int = 15) -> str:
     """Convert text to URL-path-safe slug."""
