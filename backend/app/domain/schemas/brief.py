@@ -374,6 +374,56 @@ class Brief(BaseModel):
     utm_config: UtmConfig = Field(default_factory=UtmConfig)
 
     @model_validator(mode="after")
+    def auto_fill_audiences(self) -> "Brief":
+        """Auto-populate standard remarketing lists and in-market segments
+        when the user hasn't configured any.  This unblocks Retargeting,
+        PMax audience signals and removes the NO_REMARKETING_LISTS warning.
+
+        Must run BEFORE auto_distribute_budget so that retargeting/demand_gen
+        types are included in the budget split."""
+        if not self.audiences.remarketing_lists:
+            self.audiences.remarketing_lists = [
+                RemarketingList(
+                    name="All Website Visitors 30d",
+                    type="website_visitors",
+                    lookback_days=30,
+                    source="google_tag",
+                ),
+                RemarketingList(
+                    name="Booking Page Visitors 14d",
+                    type="website_visitors",
+                    lookback_days=14,
+                    source="google_tag",
+                    url_contains="/prenota",
+                ),
+                RemarketingList(
+                    name="Abandoned Booking 7d",
+                    type="website_visitors",
+                    lookback_days=7,
+                    source="google_tag",
+                    url_contains="/checkout",
+                ),
+            ]
+        if not self.audiences.in_market_segments:
+            self.audiences.in_market_segments = [
+                "Travel & Tourism/Hotels & Accommodations",
+                "Travel & Tourism/Luxury Travel",
+                "Travel & Tourism/Business Travel",
+            ]
+        return self
+
+    @model_validator(mode="after")
+    def auto_fill_kpi_defaults(self) -> "Brief":
+        """Set sensible KPI defaults when neither tCPA nor tROAS are provided.
+        Hotels typically target direct bookings with a CPA of ~45 EUR
+        and a ROAS of ~8x."""
+        kpi = self.objectives.kpi
+        if not kpi.target_cpa_eur and not kpi.target_roas:
+            kpi.target_cpa_eur = 45.0
+            kpi.target_roas = 8.0
+        return self
+
+    @model_validator(mode="after")
     def auto_distribute_budget(self) -> "Brief":
         """
         If by_campaign_type is empty, auto-distribute total_monthly_eur across

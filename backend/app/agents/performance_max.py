@@ -118,9 +118,8 @@ class PMaxAgent(CampaignAgent):
     """
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
-        # PMax: prefer brand_assets if configured, else generic
-        if lang.brand_assets and lang.brand_assets.headlines:
-            return lang.brand_assets.headlines
+        # PMax is cross-network, not brand-specific — always use the
+        # generic headline pool which is typically the largest (10-15).
         return lang.headlines
 
     def get_descriptions(self, lang: LanguagePlan) -> List[str]:
