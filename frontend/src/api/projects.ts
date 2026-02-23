@@ -192,6 +192,8 @@ export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'
     acquisition_descriptions: string[]
     retargeting_headlines: string[]
     retargeting_descriptions: string[]
+    kw_themes_text?: string
+    kw_negative_text?: string
   })[]
   _scan_log?: ScanLogEntry[]
   _api_log?: ApiCallLogEntry[]

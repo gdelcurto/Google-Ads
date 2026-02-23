@@ -75,13 +75,15 @@ def _filter_by_limit(items: list, max_chars: int) -> list:
 
 
 def _truncate_assets(data: dict) -> dict:
-    """Post-process: discard over-limit headlines/descriptions, trim sitelinks."""
+    """Post-process: discard over-limit headlines/descriptions, trim sitelinks.
+
+    USP principale is informational (not a Google Ads asset) — never discarded.
+    """
     for lang in data.get('languages', []):
         lang['headlines']    = _filter_by_limit(lang.get('headlines', []), 30)
         lang['descriptions'] = _filter_by_limit(lang.get('descriptions', []), 90)
         lang['callouts']     = _filter_by_limit(lang.get('callouts', []), 25)
-        if lang.get('usp_main') and len(str(lang['usp_main'])) > 90:
-            lang['usp_main'] = ''
+        # usp_main is informational context, not a Google Ads asset — leave as-is
     return data
 
 
@@ -174,8 +176,14 @@ Lingue richieste: {languages}
 
 ═══ ISTRUZIONI PER IL COPY ═══
 
+USP PRINCIPALE (obbligatoria, per ogni lingua):
+- Una frase che sintetizza il vantaggio competitivo principale dell'hotel
+- Basata su dati REALI trovati nel sito (posizione, servizi, categoria)
+- Esempio: "Resort 4 stelle con spa e piscina a 50m dalla spiaggia di Jesolo"
+- NON lasciare vuota: è il campo più importante per la strategia copy
+
 HEADLINES (≤ 30 caratteri ciascuna):
-- Genera almeno 8 headline diverse che coprono questi 4 temi:
+- Genera almeno 10 headline diverse che coprono questi 4 temi:
   1. Brand/identità (es. "[Nome Hotel] Ufficiale", "4 Stelle sul Lago di Como")
   2. Prenotazione diretta (es. "Miglior Tariffa Garantita", "Prenota Senza Commissioni")
   3. Servizi/USP specifici (es. "Spa e Piscina Infinity", "Colazione Buffet Inclusa")
@@ -184,10 +192,14 @@ HEADLINES (≤ 30 caratteri ciascuna):
 - Ogni headline = un argomento di vendita indipendente, non variazioni dello stesso
 - VERIFICA: conta i caratteri di ogni headline prima di includerla
 
-DESCRIZIONI (≤ 90 caratteri ciascuna):
-- Prima descrizione: beneficio principale + CTA
-- Seconda descrizione: USP diversa + urgency/rassicurazione
+DESCRIZIONI (≤ 90 caratteri ciascuna — OBBLIGATORIE, almeno 4):
+- Genera almeno 4 descrizioni per lingua — questo campo NON deve mai essere vuoto
+- Descrizione 1: beneficio principale + CTA (es. "Prenota sul sito ufficiale e risparmia.")
+- Descrizione 2: USP diversa + urgency/rassicurazione
+- Descrizione 3: servizio/esperienza specifica dell'hotel
+- Descrizione 4: vantaggio prenotazione diretta o garanzia
 - Sii specifico: cita servizi reali, non generalità
+- Conta i caratteri: ogni descrizione DEVE stare entro 90 caratteri
 
 CALLOUT (≤ 25 caratteri ciascuno):
 - Fatti concreti, non aggettivi — "Piscina Riscaldata" batte "Servizi Eccellenti"
@@ -220,10 +232,12 @@ LANDING PAGE PER LINGUA (CRITICO):
       "landing_page": "https://www.dominio.it/it/",
       "brand_terms": ["Grand Hotel Bellevue", "Hotel Bellevue Roma"],
       "usp_main": "Hotel 4 stelle a 2 min dal Colosseo, colazione inclusa e miglior tariffa garantita.",
-      "headlines": ["Grand Hotel Bellevue Roma", "Miglior Tariffa Garantita", "2 Min dal Colosseo"],
+      "headlines": ["Grand Hotel Bellevue Roma", "Miglior Tariffa Garantita", "2 Min dal Colosseo", "Prenota Senza Commissioni", "Terrazza Panoramica", "Colazione Buffet Inclusa", "Sito Ufficiale", "Camera Vista Fori", "Check-in Anticipato", "Cancellazione Gratuita"],
       "descriptions": [
-        "Hotel 4 stelle nel cuore di Roma, a 2 minuti dal Colosseo. Prenota diretto e risparmia.",
-        "Colazione inclusa ogni mattina, terrazza panoramica e parcheggio. Cancellazione gratis."
+        "Hotel 4 stelle nel cuore di Roma, a 2 min dal Colosseo. Prenota diretto.",
+        "Colazione inclusa, terrazza panoramica e parcheggio. Cancellazione gratis.",
+        "Sito ufficiale: miglior tariffa garantita e vantaggi esclusivi per te.",
+        "Camere vista Fori Imperiali, WiFi gratis e concierge dedicato 24/7."
       ],
       "callouts": ["Miglior Prezzo Online", "Colazione Inclusa", "Cancellazione Gratis"]
     }}
@@ -856,11 +870,26 @@ async def run_autofill_job(
                     logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
                     return {"headlines": [], "descriptions": []}
 
-            sl, brand, acq, ret = await asyncio.gather(
+            async def _safe_keywords():
+                try:
+                    kw_payload = {
+                        **common,
+                        "domain": data.get("domain", ""),
+                        "language_code": code,
+                    }
+                    result, log = await enricher.suggest_keywords(kw_payload)
+                    api_log.append(log)
+                    return result
+                except Exception as exc:
+                    logger.warning(f"Job {job_id}: keywords failed for {code}: {exc}")
+                    return {"kw_themes_text": "", "kw_negative_text": ""}
+
+            sl, brand, acq, ret, kw = await asyncio.gather(
                 _safe_sitelinks(),
                 _safe_copy("brand"),
                 _safe_copy("acquisition"),
                 _safe_copy("retargeting"),
+                _safe_keywords(),
             )
             return {
                 **lang,
@@ -871,6 +900,8 @@ async def run_autofill_job(
                 "acquisition_descriptions": acq["descriptions"],
                 "retargeting_headlines": ret["headlines"],
                 "retargeting_descriptions": ret["descriptions"],
+                "kw_themes_text": kw.get("kw_themes_text", ""),
+                "kw_negative_text": kw.get("kw_negative_text", ""),
             }
 
         enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
