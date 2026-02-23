@@ -4,6 +4,9 @@ import logging
 import os
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -43,7 +46,7 @@ async def export_csv(
     plan = await _get_or_generate_plan(project_id, db)
 
     csv_content = export_plan_to_csv(plan)
-    filename = f"{plan.client_slug}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_ads_editor.csv"
+    filename = f"{plan.client_slug}_{datetime.now(_TZ_ROME).strftime('%Y%m%d_%H%M%S')}_ads_editor.csv"
 
     # Persist export record
     export_record = ExportRecord(

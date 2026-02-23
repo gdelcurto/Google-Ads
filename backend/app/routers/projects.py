@@ -2,6 +2,9 @@
 import json
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -221,7 +224,7 @@ async def soft_delete_project(
     project = await _get_project_or_404(project_id, db)
     if project.deleted_at is not None:
         raise HTTPException(status_code=400, detail="Progetto già nel cestino")
-    project.deleted_at = datetime.utcnow()
+    project.deleted_at = datetime.now(_TZ_ROME)
 
     log = AuditLog(
         project_id=project.id,

@@ -13,6 +13,9 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from typing import Dict, List, Optional, Tuple
 
 import httpx
@@ -81,7 +84,7 @@ class ScrapedSite:
 
 def scan_entry(level: str, msg: str) -> dict:
     """Create a structured scan-log entry."""
-    return {"ts": datetime.utcnow().isoformat(), "level": level, "msg": msg}
+    return {"ts": datetime.now(_TZ_ROME).isoformat(), "level": level, "msg": msg}
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────

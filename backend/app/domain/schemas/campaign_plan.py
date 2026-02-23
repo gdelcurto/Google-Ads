@@ -5,6 +5,9 @@ These represent the complete structure ready for export or API publish.
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -204,7 +207,7 @@ class AccountPlan(BaseModel):
     project_id: str
     client_name: str
     client_slug: str
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(_TZ_ROME))
     brief_version: str = "1.0"
     campaigns: List[CampaignPlan] = Field(default_factory=list)
     global_negative_keywords: List[Keyword] = Field(default_factory=list)

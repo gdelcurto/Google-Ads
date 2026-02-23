@@ -19,6 +19,9 @@ import logging
 import re
 import unicodedata
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from typing import Callable, Dict, List, Optional
 
 from app.connectors.web_scraper import (
@@ -47,7 +50,7 @@ def _api_log_entry(agent: str, reason: str, endpoint: str, model: str, usage) ->
     in_p, out_p = _MODEL_PRICING.get(model, (1.0, 5.0))
     cost_usd = (usage.input_tokens * in_p + usage.output_tokens * out_p) / 1_000_000
     return {
-        "ts":            datetime.utcnow().isoformat(),
+        "ts":            datetime.now(_TZ_ROME).isoformat(),
         "agent":         agent,
         "reason":        reason,
         "endpoint":      endpoint,
