@@ -13,7 +13,7 @@ from app.database import get_db
 from app.domain.models import AuditLog, CampaignRecord, Project
 from app.domain.schemas.brief import Brief
 from app.domain.schemas.campaign_plan import AccountPlan
-from app.generators.orchestrator import CampaignOrchestrator
+from app.generators.orchestrator import CampaignOrchestrator, _campaign_type_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["campaigns"])
@@ -183,7 +183,7 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
             {
                 "external_key": c.external_key,
                 "campaign_name": c.campaign_name,
-                "campaign_type": c.campaign_type.value,
+                "campaign_type": _campaign_type_key(c),
                 "language_code": c.language_code,
                 "status": c.status.value,
                 "budget_daily_eur": c.settings.budget_daily_eur,
