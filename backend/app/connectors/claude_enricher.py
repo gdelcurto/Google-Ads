@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime
 from typing import Callable, Dict, List, Optional
 
@@ -631,6 +632,24 @@ class ClaudeEnricher:
                 [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
             ),
         }
+
+        # ── Brand headline enforcement ────────────────────────────────
+        # Validator requires at least one headline containing the brand name.
+        # If the LLM didn't include it, inject a branded headline at position 1.
+        if campaign_type == "brand" and result["headlines"]:
+            brand_name = common.get("brand_name", "")
+            if brand_name:
+                _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+                bn = _norm(brand_name)
+                has_brand = any(bn in _norm(h) for h in result["headlines"])
+                if not has_brand:
+                    # Build a branded headline that fits 30 chars
+                    candidate = brand_name if len(brand_name) <= 30 else brand_name[:30].rsplit(" ", 1)[0]
+                    if candidate:
+                        result["headlines"].insert(0, candidate)
+                        # Keep max 15 headlines (Google RSA limit)
+                        result["headlines"] = result["headlines"][:15]
+
         log = _api_log_entry(
             agent=f"TypeCopyAgent ({campaign_type})",
             reason=f"Generazione copy RSA {meta['label']} — {lang_name}",
