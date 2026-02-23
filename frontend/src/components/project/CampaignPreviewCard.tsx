@@ -204,9 +204,19 @@ function SearchBody({
     )
   }
 
+  // Build the campaign-level asset lang (use first group's assets as representative)
+  const campaignLang: AdPreviewLang = resolvedGroups.length > 0 ? {
+    headlines:    resolvedGroups[0].headlines,
+    descriptions: resolvedGroups[0].descriptions,
+    callouts:     briefLang?.callouts as string[] || [],
+    sitelinks:    briefLang?.sitelinks as { text: string; description_1: string; description_2: string; final_url: string }[] || [],
+  } : {
+    headlines: [], descriptions: [], callouts: [], sitelinks: [],
+  }
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: allSameAssets ? '1fr 280px' : '1fr', gap: 24, alignItems: 'start' }}>
-      {/* ── Left: Ad groups with SERP previews ── */}
+    <div style={{ display: 'grid', gridTemplateColumns: '55fr 45fr', gap: 24, alignItems: 'start' }}>
+      {/* ── Left 55%: Ad groups with stacked SERP previews ── */}
       <div>
         {resolvedGroups.map(({ ag, headlines, descriptions }, i) => {
           const hasRsa = headlines.length > 0
@@ -254,18 +264,7 @@ function SearchBody({
               {isOpen && (
                 <div style={{ padding: 14 }}>
                   {hasRsa ? (
-                    allSameAssets ? (
-                      /* Assets are shown once on the right — only SERP here */
-                      <GoogleAdSerpPreview lang={agLang} domain={domain} />
-                    ) : (
-                      /* Different assets per group — show full preview with inline inspector */
-                      <div>
-                        <GoogleAdSerpPreview lang={agLang} domain={domain} />
-                        <div style={{ marginTop: 16, padding: '12px 14px', background: T.bgMuted, borderRadius: T.radiusSm }}>
-                          <AssetInspector lang={agLang} />
-                        </div>
-                      </div>
-                    )
+                    <GoogleAdSerpPreview lang={agLang} domain={domain} />
                   ) : (
                     <div style={{ padding: '10px 14px', background: T.bgMuted, borderRadius: T.radiusSm, color: T.textGray, fontSize: 12 }}>
                       Nessun annuncio RSA per questo ad group.
@@ -278,19 +277,17 @@ function SearchBody({
         })}
       </div>
 
-      {/* ── Right: shared asset inspector (only when deduped) ── */}
-      {allSameAssets && sharedLang && (
-        <div style={{
-          position: 'sticky' as const,
-          top: 20,
-          background: T.bgCard,
-          border: `1px solid ${T.borderLight}`,
-          borderRadius: T.radiusSm,
-          padding: 16,
-        }}>
-          <AssetInspector lang={sharedLang} />
-        </div>
-      )}
+      {/* ── Right 45%: asset inspector (sticky) ── */}
+      <div style={{
+        position: 'sticky' as const,
+        top: 20,
+        background: T.bgCard,
+        border: `1px solid ${T.borderLight}`,
+        borderRadius: T.radiusSm,
+        padding: 16,
+      }}>
+        <AssetInspector lang={allSameAssets && sharedLang ? sharedLang : campaignLang} />
+      </div>
     </div>
   )
 }

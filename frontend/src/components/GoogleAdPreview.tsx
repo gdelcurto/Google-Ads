@@ -19,75 +19,126 @@ const AD_BLUE   = '#1a0dab'
 const AD_GRAY   = '#4d5156'
 const AD_BORDER = '#e0e0e0'
 
+/** Generate distinct 3-headline combos from the pool (deterministic, no randomness). */
+function headlineCombos(headlines: string[], maxCombos = 4): string[][] {
+  if (headlines.length <= 3) return [headlines.slice(0, 3)]
+  const combos: string[][] = []
+  const n = headlines.length
+
+  // Combo 1: first 3
+  combos.push(headlines.slice(0, 3))
+
+  // Combo 2: next 3 (or wrap)
+  if (n >= 6) combos.push(headlines.slice(3, 6))
+  else if (n > 3) combos.push([headlines[0], headlines[Math.floor(n / 2)], headlines[n - 1]])
+
+  // Combo 3: spaced pick (0, ~1/3, ~2/3)
+  if (n >= 5) {
+    const c = [headlines[1], headlines[Math.floor(n / 3)], headlines[Math.floor(2 * n / 3)]]
+    if (!combos.some(ex => ex.join('|') === c.join('|'))) combos.push(c)
+  }
+
+  // Combo 4: last 3
+  if (n >= 7) {
+    const c = headlines.slice(n - 3)
+    if (!combos.some(ex => ex.join('|') === c.join('|'))) combos.push(c)
+  }
+
+  return combos.slice(0, maxCombos)
+}
+
+/** Single SERP card with given 3 headlines + 2 descriptions */
+function SerpCard({ displayH, displayD, callouts, sitelinks, domain }: {
+  displayH: string[]; displayD: string[]; callouts: string[]; sitelinks: AdPreviewLang['sitelinks']; domain: string
+}) {
+  return (
+    <div style={{
+      fontFamily: 'Arial, sans-serif',
+      background: '#fff',
+      border: `1px solid ${AD_BORDER}`,
+      borderRadius: 8,
+      padding: '16px 20px',
+    }}>
+      {/* Ad badge + URL breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <span style={{
+          border: `1px solid ${AD_GREEN}`, color: AD_GREEN,
+          borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700, letterSpacing: 0.3,
+        }}>
+          Annuncio
+        </span>
+        <span style={{ color: '#202124', fontSize: 13 }}>{domain}</span>
+      </div>
+
+      {/* Headlines */}
+      <div style={{ color: AD_BLUE, fontSize: 20, fontWeight: 400, marginBottom: 6, lineHeight: 1.35 }}>
+        {displayH.length > 0
+          ? displayH.join(' | ')
+          : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Headline non ancora inserite</span>
+        }
+      </div>
+
+      {/* Descriptions */}
+      <div style={{ color: AD_GRAY, fontSize: 14, lineHeight: 1.55 }}>
+        {displayD.length > 0
+          ? displayD.join(' ')
+          : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Descrizioni non ancora inserite</span>
+        }
+      </div>
+
+      {/* Sitelinks */}
+      {sitelinks.length > 0 && (
+        <div style={{
+          marginTop: 12, borderTop: `1px solid ${AD_BORDER}`, paddingTop: 12,
+          display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 24px',
+        }}>
+          {sitelinks.slice(0, 4).map((sl, j) => (
+            <div key={j}>
+              <div style={{ color: AD_BLUE, fontSize: 14, fontWeight: 500 }}>{sl.text}</div>
+              <div style={{ color: AD_GRAY, fontSize: 12, marginTop: 2 }}>{sl.description_1}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Callouts */}
+      {callouts.length > 0 && (
+        <div style={{ marginTop: 10, color: AD_GRAY, fontSize: 13 }}>
+          {callouts.slice(0, 6).join(' \u00B7 ')}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /**
- * SERP-only mockup — no asset inspector sidebar.
- * Used when assets are displayed at a higher level (campaign).
+ * Multiple SERP previews stacked — shows different headline combinations.
+ * Used on the left side of the 55/45 layout.
  */
 export function GoogleAdSerpPreview({ lang, domain }: { lang: AdPreviewLang; domain?: string }) {
   const { headlines, descriptions, callouts, sitelinks } = lang
-  const displayH = headlines.slice(0, 3)
   const displayD = descriptions.slice(0, 2)
   const displayDomain = domain || 'www.hotel.com'
+  const combos = headlineCombos(headlines)
 
   return (
-    <div>
-      <div style={{
-        fontFamily: 'Arial, sans-serif',
-        background: '#fff',
-        border: `1px solid ${AD_BORDER}`,
-        borderRadius: 8,
-        padding: '16px 20px',
-        maxWidth: 620,
-      }}>
-        {/* Ad badge + URL breadcrumb */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <span style={{
-            border: `1px solid ${AD_GREEN}`, color: AD_GREEN,
-            borderRadius: 3, fontSize: 11, padding: '1px 5px', fontWeight: 700, letterSpacing: 0.3,
-          }}>
-            Annuncio
-          </span>
-          <span style={{ color: '#202124', fontSize: 13 }}>{displayDomain}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {combos.map((combo, idx) => (
+        <div key={idx}>
+          {combos.length > 1 && (
+            <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 4, fontWeight: 600 }}>
+              Combinazione {idx + 1}
+            </div>
+          )}
+          <SerpCard
+            displayH={combo}
+            displayD={displayD}
+            callouts={callouts}
+            sitelinks={sitelinks}
+            domain={displayDomain}
+          />
         </div>
-
-        {/* Headlines */}
-        <div style={{ color: AD_BLUE, fontSize: 20, fontWeight: 400, marginBottom: 6, lineHeight: 1.35 }}>
-          {displayH.length > 0
-            ? displayH.join(' | ')
-            : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Headline non ancora inserite</span>
-          }
-        </div>
-
-        {/* Descriptions */}
-        <div style={{ color: AD_GRAY, fontSize: 14, lineHeight: 1.55 }}>
-          {displayD.length > 0
-            ? displayD.join(' ')
-            : <span style={{ color: '#d1d5db', fontStyle: 'italic' }}>Descrizioni non ancora inserite</span>
-          }
-        </div>
-
-        {/* Sitelinks */}
-        {sitelinks.length > 0 && (
-          <div style={{
-            marginTop: 12, borderTop: `1px solid ${AD_BORDER}`, paddingTop: 12,
-            display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px 24px',
-          }}>
-            {sitelinks.slice(0, 4).map((sl, j) => (
-              <div key={j}>
-                <div style={{ color: AD_BLUE, fontSize: 14, fontWeight: 500 }}>{sl.text}</div>
-                <div style={{ color: AD_GRAY, fontSize: 12, marginTop: 2 }}>{sl.description_1}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Callouts */}
-        {callouts.length > 0 && (
-          <div style={{ marginTop: 10, color: AD_GRAY, fontSize: 13 }}>
-            {callouts.slice(0, 6).join(' · ')}
-          </div>
-        )}
-      </div>
+      ))}
     </div>
   )
 }
