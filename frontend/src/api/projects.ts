@@ -42,7 +42,14 @@ export interface AdGroupPreview {
 
 export interface PMaxAssetGroupPreview {
   name: string
+  headlines: string[]
+  long_headlines: string[]
+  descriptions: string[]
   headlines_count: number
+  images: string[]
+  logo_url: string | null
+  youtube_video_url: string | null
+  final_url: string
   has_missing_assets: boolean
   missing_asset_notes: string[]
   audience_signals: string[]

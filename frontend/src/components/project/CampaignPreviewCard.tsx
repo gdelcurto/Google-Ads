@@ -80,32 +80,42 @@ export function CampaignPreviewCard({
                         {ag.missing_asset_notes.map((n, j) => <li key={j}>{n}</li>)}
                       </ul>
                     )}
+                    {/* Visual assets */}
+                    {ag.images.length > 0 && !ag.images[0].startsWith('TODO') && (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' as const }}>
+                        {ag.images.map((url, j) => (
+                          <img key={j} src={url} alt={`Asset ${j + 1}`} style={{ height: 64, borderRadius: 4, objectFit: 'cover', border: `1px solid ${T.borderLight}` }} />
+                        ))}
+                        {ag.logo_url && !ag.logo_url.startsWith('TODO') && (
+                          <img src={ag.logo_url} alt="Logo" style={{ height: 64, width: 64, borderRadius: 4, objectFit: 'contain', border: `1px solid ${T.borderLight}`, background: '#f9f9f9' }} />
+                        )}
+                      </div>
+                    )}
+                    {ag.youtube_video_url && (
+                      <div style={{ fontSize: 12, color: T.textGray, marginTop: 4 }}>
+                        🎬 Video: <a href={ag.youtube_video_url} target="_blank" rel="noreferrer" style={{ color: T.primary }}>{ag.youtube_video_url}</a>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 12, color: T.textGray, marginTop: 6 }}>
+                      <strong>Headline ({ag.headlines_count}):</strong> {ag.headlines.slice(0, 3).join(' | ')}{ag.headlines.length > 3 ? ` +${ag.headlines.length - 3}` : ''}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textGray, marginTop: 2 }}>
+                      <strong>Long headline:</strong> {ag.long_headlines.slice(0, 2).join(' | ')}{ag.long_headlines.length > 2 ? ` +${ag.long_headlines.length - 2}` : ''}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.textGray, marginTop: 2 }}>
+                      <strong>Description:</strong> {ag.descriptions.slice(0, 1).join('')}{ag.descriptions.length > 1 ? ` +${ag.descriptions.length - 1}` : ''}
+                    </div>
                     {ag.audience_signals.length > 0 && (
                       <div style={{ fontSize: 12, color: T.textGray, marginTop: 4 }}>
                         Audience signals: {ag.audience_signals.join(', ')}
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: T.textGray, marginTop: 2 }}>
-                      Headline asset: {ag.headlines_count}
+                      Final URL: <a href={ag.final_url} target="_blank" rel="noreferrer" style={{ color: T.primary }}>{ag.final_url}</a>
                     </div>
                   </div>
                 ))
               }
-              {briefLang && (
-                <div style={{ marginTop: 16, padding: '12px 14px', background: T.bgMuted, borderRadius: T.radiusSm, fontSize: 13 }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6 }}>Asset testo da brief ({campaign.language_code})</div>
-                  <div style={{ marginBottom: 4 }}>
-                    <strong>Headline:</strong>{' '}
-                    {(briefLang.headlines as string[] || []).slice(0, 3).join(' | ')}
-                    {(briefLang.headlines as string[] || []).length > 3
-                      ? ` +${(briefLang.headlines as string[] || []).length - 3} altri` : ''}
-                  </div>
-                  <div>
-                    <strong>Description:</strong>{' '}
-                    {(briefLang.descriptions as string[] || []).slice(0, 1).join('')}
-                  </div>
-                </div>
-              )}
             </div>
           ) : (
             <div>

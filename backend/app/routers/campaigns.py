@@ -221,7 +221,14 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
                 "pmax_asset_groups": [
                     {
                         "name": ag.name,
+                        "headlines": ag.headlines,
+                        "long_headlines": ag.long_headlines,
+                        "descriptions": ag.descriptions,
                         "headlines_count": len(ag.headlines),
+                        "images": ag.images,
+                        "logo_url": ag.logo_url,
+                        "youtube_video_url": ag.youtube_video_url,
+                        "final_url": ag.final_url,
                         "has_missing_assets": ag.has_missing_assets,
                         "missing_asset_notes": ag.missing_asset_notes,
                         "audience_signals": ag.audience_signals,
