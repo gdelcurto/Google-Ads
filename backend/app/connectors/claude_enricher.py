@@ -655,15 +655,17 @@ class ClaudeEnricher:
         # ── Acquisition: strip brand name from headlines ─────────────
         # Acquisition targets users who don't know the brand; validator
         # rejects any headline containing brand_terms.
+        # Keep originals if filtering leaves fewer than 3 (RSA minimum).
         if campaign_type == "acquisition" and result["headlines"] and brand_name:
             _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
             bn = _norm(brand_name)
-            # Also check individual brand words (e.g. "Ròseo" from "Ròseo Euroterme")
             brand_words = [w for w in bn.split() if len(w) >= 4]
-            result["headlines"] = [
+            filtered = [
                 h for h in result["headlines"]
                 if not any(bw in _norm(h) for bw in [bn] + brand_words)
             ]
+            if len(filtered) >= 3:
+                result["headlines"] = filtered
 
         log = _api_log_entry(
             agent=f"TypeCopyAgent ({campaign_type})",

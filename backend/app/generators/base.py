@@ -100,6 +100,15 @@ class BaseGenerator:
         """
         h_source = list(headlines if headlines is not None else lang.headlines)
 
+        # If type-specific headlines are too few for a valid RSA (min 3),
+        # supplement from the generic language pool.
+        if headlines is not None and len(h_source) < 3:
+            for h in lang.headlines:
+                if h not in h_source:
+                    h_source.append(h)
+                if len(h_source) >= 3:
+                    break
+
         # Ensure pinned headlines are present in the pool (e.g. brand name).
         # If the headline pool doesn't contain the pinned text, inject it at
         # position 0 so it gets included in the RSA and the pin takes effect.
