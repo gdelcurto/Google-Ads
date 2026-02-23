@@ -426,7 +426,7 @@ class ClaudeEnricher:
 
     def __init__(self, api_key: str) -> None:
         import anthropic
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=4)
         self._system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
