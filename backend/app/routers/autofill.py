@@ -90,6 +90,10 @@ class StartJobRequest(BaseModel):
     content: Optional[str] = None
 
 
+class RegenerateRequest(BaseModel):
+    languages: Optional[List[str]] = None
+
+
 # ── DB helper (background tasks open their own session) ───────────────────────
 
 async def _update_job_status(
@@ -97,6 +101,7 @@ async def _update_job_status(
     status: str,
     result: dict | None = None,
     error: str | None = None,
+    scraped: dict | None = None,
 ) -> None:
     from sqlalchemy import select
     from app.domain.models import AutofillJob
@@ -109,6 +114,8 @@ async def _update_job_status(
         job.status = status
         if result is not None:
             job.result_json = json.dumps(result)
+        if scraped is not None:
+            job.scraped_json = json.dumps(scraped)
         if error is not None:
             job.error_message = str(error)[:2000]
         if status in ("completed", "failed"):
@@ -330,4 +337,88 @@ async def get_autofill_job(
     }
     if job.status == "completed" and job.result_json:
         resp["result"] = json.loads(job.result_json)
+    resp["has_scraped_data"] = bool(job.scraped_json)
     return resp
+
+
+@router.post("/jobs/{job_id}/regenerate")
+async def regenerate_from_cache(
+    job_id: str,
+    payload: RegenerateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Regenerate the brief using cached scraped data — no re-scraping, no AI.
+
+    Uses the website data persisted from the original scan to rebuild the
+    enriched result.  If new languages are provided, the enrichment pipeline
+    runs only for those languages (calling AI only for new per-type copies).
+    If no languages are provided, the original result is returned as-is.
+    """
+    from sqlalchemy import select
+    from app.domain.models import AutofillJob
+
+    settings = get_settings()
+
+    res = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
+    original_job = res.scalar_one_or_none()
+    if not original_job:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    if not original_job.scraped_json:
+        raise HTTPException(
+            status_code=409,
+            detail="Nessun dato scansionato disponibile per questo job. "
+                   "Esegui una nuova scansione completa.",
+        )
+
+    original_langs = json.loads(original_job.languages_json)
+    new_langs = (
+        [l.upper() for l in payload.languages if l.strip()]
+        if payload.languages
+        else original_langs
+    )
+
+    # If the same languages are requested and we already have a result,
+    # return the cached result immediately without any API call.
+    if set(new_langs) == set(original_langs) and original_job.result_json:
+        return {
+            "job_id": original_job.id,
+            "status": "completed",
+            "result": json.loads(original_job.result_json),
+            "from_cache": True,
+        }
+
+    # Different languages requested — need AI enrichment with cached scrape data
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="Chiave API Anthropic non configurata.")
+
+    # Create a new job that reuses the scraped data
+    new_job = AutofillJob(
+        project_id=original_job.project_id,
+        url=original_job.url,
+        languages_json=json.dumps(new_langs),
+        status="pending",
+        scraped_json=original_job.scraped_json,
+    )
+    db.add(new_job)
+    await db.flush()
+    new_job_id = new_job.id
+
+    # Run enrichment using cached scraped content (no HTTP scraping)
+    scraped_data = json.loads(original_job.scraped_json)
+    background_tasks.add_task(
+        run_autofill_job,
+        job_id=new_job_id,
+        url=original_job.url,
+        langs=new_langs,
+        content=scraped_data["content"],
+        api_key=settings.anthropic_api_key,
+        update_status=_update_job_status,
+    )
+
+    logger.info(
+        f"AutofillJob {new_job_id} (regenerate from {job_id}) "
+        f"queued for project {original_job.project_id}"
+    )
+    return {"job_id": new_job_id, "status": "pending", "from_cache": False}

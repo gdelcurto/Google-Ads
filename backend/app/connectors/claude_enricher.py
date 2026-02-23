@@ -851,6 +851,15 @@ async def run_autofill_job(
         else:
             scraped = await scrape_hotel_site(url, langs)
 
+        # Persist the scraped data so the brief can be regenerated later
+        # without re-scraping the website or re-calling the AI.
+        scraped_payload = {
+            "content": scraped.content,
+            "lang_urls": scraped.lang_urls,
+            "lang_landings": scraped.lang_landings,
+        }
+        await update_status(job_id, "running", scraped=scraped_payload)
+
         data, brief_log = await enricher.enrich_brief(scraped, langs, url=url)
         api_log: List[dict] = [brief_log]
 

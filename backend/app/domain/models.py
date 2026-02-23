@@ -136,6 +136,9 @@ class AutofillJob(Base):
     # pending | running | completed | failed
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     result_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Scraped website data (content + lang_urls + lang_landings) persisted so
+    # the brief can be regenerated without re-scraping or re-calling the AI.
+    scraped_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
