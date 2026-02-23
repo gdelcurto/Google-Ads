@@ -99,8 +99,18 @@ class BrandAgent(CampaignAgent):
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
         if lang.brand_assets and lang.brand_assets.headlines:
-            return lang.brand_assets.headlines
-        return lang.headlines
+            pool = list(lang.brand_assets.headlines)
+        else:
+            pool = list(lang.headlines)
+
+        # Guarantee the primary brand term is in the pool so the RSA
+        # always contains the hotel name pinned at position 1.
+        if lang.brand_terms:
+            brand = lang.brand_terms[0]
+            if brand and len(brand) <= 30 and brand not in pool:
+                pool.insert(0, brand)
+
+        return pool
 
     def get_descriptions(self, lang: LanguagePlan) -> List[str]:
         if lang.brand_assets and lang.brand_assets.descriptions:
