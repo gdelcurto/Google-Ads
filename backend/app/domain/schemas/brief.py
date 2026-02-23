@@ -142,7 +142,7 @@ class StructuredSnippet(BaseModel):
 
 
 class UspInfo(BaseModel):
-    main: str = Field(..., max_length=90)
+    main: str = Field(..., max_length=300)
     bullets: List[str] = Field(default_factory=list)
 
 
