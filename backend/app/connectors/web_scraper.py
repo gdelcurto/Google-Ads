@@ -71,7 +71,7 @@ _RELEVANCE_KW: list[tuple[str, int]] = [
 @dataclass
 class ScrapedSite:
     """Result of scraping a hotel website."""
-    content: str                          # combined plain text (≤14 000 chars)
+    content: str                          # combined plain text (≤80 000 chars)
     lang_urls: Dict[str, List[str]]       # lang_code → list of page URLs from sitemap
     lang_landings: Dict[str, str]         # lang_code → best landing-page URL
     scan_log: List[dict] = field(default_factory=list)
@@ -369,7 +369,7 @@ async def scrape_hotel_site(
     Fetch hotel website content using a sitemap-first strategy.
 
     Returns a ScrapedSite with:
-      - content:       Combined plain text from fetched pages (≤ 14 000 chars)
+      - content:       Combined plain text from fetched pages (≤ 80 000 chars)
       - lang_urls:     Dict lang_code → list of URLs found in sitemap
       - lang_landings: Dict lang_code → best landing page URL
       - scan_log:      Human-readable scan process log
@@ -467,7 +467,7 @@ async def scrape_hotel_site(
                 if url not in seen_fetch:
                     seen_fetch.add(url)
                     urls_to_fetch.append(url)
-                if len(urls_to_fetch) >= 6:
+                if len(urls_to_fetch) >= 15:
                     break
             for lang_landing in lang_landings.values():
                 if lang_landing not in seen_fetch:
@@ -475,7 +475,7 @@ async def scrape_hotel_site(
                     urls_to_fetch.append(lang_landing)
 
         if not urls_to_fetch and homepage_html:
-            urls_to_fetch = _extract_relevant_links(homepage_html, base_url, max_links=5)
+            urls_to_fetch = _extract_relevant_links(homepage_html, base_url, max_links=10)
             if urls_to_fetch:
                 slog.append(scan_entry("info", "  · Nessuna sitemap — link estratti dalla homepage"))
 
@@ -484,7 +484,7 @@ async def scrape_hotel_site(
             slog.append(scan_entry("info", ""))
             slog.append(scan_entry("info", f"━━ PAGINE SCARICATE ({len(urls_to_fetch)}) ━━"))
         for url in urls_to_fetch:
-            if len('\n\n'.join(collected)) >= 14000:
+            if len('\n\n'.join(collected)) >= 80000:
                 break
             try:
                 resp = await client.get(url)
@@ -512,7 +512,7 @@ async def scrape_hotel_site(
         slog.append(scan_entry("error", "✗ Scansione fallita — nessun contenuto recuperato"))
         raise HTTPException(status_code=422, detail=detail)
 
-    result = '\n\n'.join(collected)[:14000]
+    result = '\n\n'.join(collected)[:80000]
     total_chars = len(result)
     slog.append(scan_entry("info", ""))
     slog.append(scan_entry("info",
