@@ -5,6 +5,7 @@ SKILL: Difendi la domanda esistente e intercetta utenti che già conoscono il br
 """
 from __future__ import annotations
 
+import unicodedata
 from typing import TYPE_CHECKING, List
 
 from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
@@ -124,10 +125,13 @@ class BrandAgent(CampaignAgent):
             ))
             return issues
 
-        # Brand name must appear in at least one headline
-        brand_lower = [t.lower() for t in lang.brand_terms]
+        # Brand name must appear in at least one headline (accent-insensitive)
+        def _strip_accents(s: str) -> str:
+            return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
+
+        brand_lower = [_strip_accents(t.lower()) for t in lang.brand_terms]
         brand_found = any(
-            any(bt in h.lower() for bt in brand_lower)
+            any(bt in _strip_accents(h.lower()) for bt in brand_lower)
             for h in headlines
         )
         if not brand_found:
