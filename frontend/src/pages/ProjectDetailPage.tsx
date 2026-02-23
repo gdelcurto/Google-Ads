@@ -124,7 +124,7 @@ export default function ProjectDetailPage() {
   const { data: plan } = useQuery({
     queryKey: ['plan', id],
     queryFn: () => projectsApi.getPlan(id!),
-    enabled: activeTab === 'campaigns' || activeTab === 'overview' || activeTab === 'preview' || activeTab === 'action_plan',
+    enabled: (project?.has_plan ?? false) || activeTab === 'campaigns' || activeTab === 'overview' || activeTab === 'preview' || activeTab === 'action_plan',
     retry: false,
   })
 
@@ -224,7 +224,7 @@ export default function ProjectDetailPage() {
 
       <div style={s.actions}>
         <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
-          {generateMutation.isPending ? 'Generando...' : 'Genera Piano (Dry Run)'}
+          {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
         </button>
         <button
           style={s.btnGreen}
@@ -241,7 +241,7 @@ export default function ProjectDetailPage() {
           Esporta CSV
         </button>
         <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
-          {publishMutation.isPending ? 'Simulando...' : 'Pubblica (Dry Run)'}
+          {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
         </button>
       </div>
 
