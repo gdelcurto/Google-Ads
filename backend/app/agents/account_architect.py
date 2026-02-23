@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List
 
 from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
+from app.skills import CORE_PPC_FRAMEWORK
 
 if TYPE_CHECKING:
     from app.domain.schemas.brief import Brief
@@ -22,6 +23,7 @@ class AccountArchitectAgent(CampaignAgent):
         "ARCH_NO_LANGUAGES",
         "ARCH_PMAX_WITHOUT_BRAND",
     ]
+    SKILL_FILES = (CORE_PPC_FRAMEWORK,)
 
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════
