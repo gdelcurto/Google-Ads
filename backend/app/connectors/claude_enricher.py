@@ -82,7 +82,7 @@ def _truncate_assets(data: dict) -> dict:
     """
     for lang in data.get('languages', []):
         lang['headlines']    = _filter_by_limit(lang.get('headlines', []), 30)
-        lang['descriptions'] = _filter_by_limit(lang.get('descriptions', []), 90)
+        lang['descriptions'] = _filter_by_limit(lang.get('descriptions', []), 90)[:4]
         lang['callouts']     = _filter_by_limit(lang.get('callouts', []), 25)
         # usp_main is informational context, not a Google Ads asset — leave as-is
     return data
@@ -193,8 +193,8 @@ HEADLINES (≤ 30 caratteri ciascuna):
 - Ogni headline = un argomento di vendita indipendente, non variazioni dello stesso
 - VERIFICA: conta i caratteri di ogni headline prima di includerla
 
-DESCRIZIONI (≤ 90 caratteri ciascuna — OBBLIGATORIE, almeno 4):
-- Genera almeno 4 descrizioni per lingua — questo campo NON deve mai essere vuoto
+DESCRIZIONI (≤ 90 caratteri ciascuna — OBBLIGATORIE, esattamente 4):
+- Genera esattamente 4 descrizioni per lingua — né più né meno, questo campo NON deve mai essere vuoto
 - Descrizione 1: beneficio principale + CTA (es. "Prenota sul sito ufficiale e risparmia.")
 - Descrizione 2: USP diversa + urgency/rassicurazione
 - Descrizione 3: servizio/esperienza specifica dell'hotel
