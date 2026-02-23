@@ -18,7 +18,10 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      // Avoid reload loop: only redirect if we are NOT already on the login page.
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
     }
     // Extract backend detail so React Query's onError receives a readable message
     const detail = err.response?.data?.detail
