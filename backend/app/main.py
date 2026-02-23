@@ -148,12 +148,59 @@ async def lifespan(app: FastAPI):
         logger.error("Admin seed timed out — app will start anyway")
     except Exception as exc:
         logger.error(f"Admin seed failed — app will start anyway: {exc}", exc_info=True)
+
+    # Mark any jobs left in "pending"/"running" as failed — they were
+    # interrupted by a process restart (Railway deploy, crash, etc.).
+    try:
+        await asyncio.wait_for(_recover_stale_jobs(), timeout=10.0)
+    except asyncio.TimeoutError:
+        logger.error("Stale job recovery timed out — app will start anyway")
+    except Exception as exc:
+        logger.warning(f"Stale job recovery failed: {exc}")
+
     logger.info(
         f"Google Ads Campaigns API started "
         f"[env={settings.app_env}] [debug={settings.app_debug}]"
     )
     yield
     logger.info("Shutting down")
+
+
+async def _recover_stale_jobs():
+    """Mark any pending/running autofill jobs as failed on startup.
+
+    When Railway redeploys or the process crashes, background tasks are killed
+    mid-flight. The job row stays in "pending" or "running" forever because
+    nothing updates it. This recovery marks them as failed so the user sees a
+    clear error and can retry.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from sqlalchemy import select, update
+    from app.database import AsyncSessionLocal
+    from app.domain.models import AutofillJob
+
+    async with AsyncSessionLocal() as db:
+        stale = await db.execute(
+            select(AutofillJob.id).where(AutofillJob.status.in_(["pending", "running"]))
+        )
+        stale_ids = [row[0] for row in stale.fetchall()]
+        if not stale_ids:
+            return
+        await db.execute(
+            update(AutofillJob)
+            .where(AutofillJob.id.in_(stale_ids))
+            .values(
+                status="failed",
+                error_message=(
+                    "Job interrotto da un riavvio del server. "
+                    "Rilancia la scansione per riprovare."
+                ),
+                completed_at=datetime.now(ZoneInfo("Europe/Rome")),
+            )
+        )
+        await db.commit()
+        logger.info(f"Recovered {len(stale_ids)} stale autofill job(s): {stale_ids}")
 
 
 async def _seed_admin():
