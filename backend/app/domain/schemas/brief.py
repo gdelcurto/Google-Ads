@@ -223,6 +223,13 @@ class LanguagePlan(BaseModel):
                 raise ValueError(f"Description too long (max 90 chars): '{d}'")
         return self
 
+    @model_validator(mode="after")
+    def auto_fill_brand_exclusions(self) -> "LanguagePlan":
+        """Auto-populate brand_exclusions from brand_terms when not explicitly set."""
+        if self.brand_terms and not self.brand_exclusions:
+            self.brand_exclusions = list(self.brand_terms)
+        return self
+
 
 class GeoTargeting(BaseModel):
     target_countries: List[str] = Field(default_factory=list)
