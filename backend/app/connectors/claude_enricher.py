@@ -837,6 +837,11 @@ Rispondi ESCLUSIVAMENTE con JSON valido:
 
 # ── Background job runner (called from autofill.py via BackgroundTasks) ───────
 
+# Maximum wall-clock time for the entire autofill pipeline (scrape + AI calls).
+# Prevents background jobs from hanging forever when a site or API is unreachable.
+_JOB_TIMEOUT_SECONDS = 300  # 5 minutes
+
+
 async def run_autofill_job(
     job_id: str,
     url: str,
@@ -851,111 +856,134 @@ async def run_autofill_job(
     2. Call Claude Sonnet for the main brief JSON.
     3. For each language in parallel: sitelinks + RSA copies (brand/acq/ret).
     4. Persist enriched result via update_status callback.
-    """
-    from app.connectors.web_scraper import scrape_hotel_site, ScrapedSite
 
+    Wrapped in asyncio.wait_for with a global timeout to avoid hung jobs.
+    """
     await update_status(job_id, "running")
     try:
-        enricher = ClaudeEnricher(api_key)
-
-        if content and content.strip():
-            scraped = ScrapedSite(
-                content=content.strip()[:14000],
-                lang_urls={},
-                lang_landings={},
-                scan_log=[scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata")],
-            )
-        else:
-            scraped = await scrape_hotel_site(url, langs)
-
-        # Persist the scraped data so the brief can be regenerated later
-        # without re-scraping the website or re-calling the AI.
-        scraped_payload = {
-            "content": scraped.content,
-            "lang_urls": scraped.lang_urls,
-            "lang_landings": scraped.lang_landings,
-        }
-        await update_status(job_id, "running", scraped=scraped_payload)
-
-        data, brief_log = await enricher.enrich_brief(scraped, langs, url=url)
-        api_log: List[dict] = [brief_log]
-
-        common = {
-            "brand_name": data.get("brand_name", ""),
-            "hotel_category": data.get("hotel_category", "city_hotel"),
-            "stars": data.get("stars", 3),
-            "services": data.get("services", []),
-            "strengths": data.get("strengths", []),
-        }
-        booking_url = data.get("booking_engine_url") or f"https://{data.get('domain', '')}"
-
-        async def _enrich_language(lang: dict) -> dict:
-            code    = lang.get("code", "IT")
-            landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
-            usp     = lang.get("usp_main")
-            sitemap_lang_urls = scraped.lang_urls.get(code, [])
-
-            async def _safe_sitelinks():
-                try:
-                    sl, log = await enricher.suggest_sitelinks(
-                        common, code, landing, booking_url, sitemap_lang_urls
-                    )
-                    api_log.append(log)
-                    return sl
-                except Exception as exc:
-                    logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
-                    return []
-
-            async def _safe_copy(ctype):
-                try:
-                    result, log = await enricher.suggest_type_copy(common, code, usp, ctype)
-                    api_log.append(log)
-                    return result
-                except Exception as exc:
-                    logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
-                    return {"headlines": [], "descriptions": []}
-
-            async def _safe_keywords():
-                try:
-                    kw_payload = {
-                        **common,
-                        "domain": data.get("domain", ""),
-                        "language_code": code,
-                    }
-                    result, log = await enricher.suggest_keywords(kw_payload)
-                    api_log.append(log)
-                    return result
-                except Exception as exc:
-                    logger.warning(f"Job {job_id}: keywords failed for {code}: {exc}")
-                    return {"kw_themes_text": "", "kw_negative_text": ""}
-
-            sl, brand, acq, ret, kw = await asyncio.gather(
-                _safe_sitelinks(),
-                _safe_copy("brand"),
-                _safe_copy("acquisition"),
-                _safe_copy("retargeting"),
-                _safe_keywords(),
-            )
-            return {
-                **lang,
-                "sitelinks": sl,
-                "brand_headlines": brand["headlines"],
-                "brand_descriptions": brand["descriptions"],
-                "acquisition_headlines": acq["headlines"],
-                "acquisition_descriptions": acq["descriptions"],
-                "retargeting_headlines": ret["headlines"],
-                "retargeting_descriptions": ret["descriptions"],
-                "kw_themes_text": kw.get("kw_themes_text", ""),
-                "kw_negative_text": kw.get("kw_negative_text", ""),
-            }
-
-        enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
-        data["languages"] = list(enriched)
-        data["_api_log"] = api_log
-
-        await update_status(job_id, "completed", result=data)
-        logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")
-
+        await asyncio.wait_for(
+            _run_autofill_pipeline(job_id, url, langs, content, api_key, update_status),
+            timeout=_JOB_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"AutofillJob {job_id} timed out after {_JOB_TIMEOUT_SECONDS}s")
+        await update_status(
+            job_id, "failed",
+            error=f"Job scaduto dopo {_JOB_TIMEOUT_SECONDS // 60} minuti. "
+                  "Il sito potrebbe essere lento o irraggiungibile. Riprova più tardi.",
+        )
     except Exception as exc:
         logger.error(f"AutofillJob {job_id} failed: {exc}", exc_info=True)
         await update_status(job_id, "failed", error=str(exc))
+
+
+async def _run_autofill_pipeline(
+    job_id: str,
+    url: str,
+    langs: List[str],
+    content: Optional[str],
+    api_key: str,
+    update_status: Callable,
+) -> None:
+    """Inner pipeline extracted so run_autofill_job can wrap it with a timeout."""
+    from app.connectors.web_scraper import scrape_hotel_site, ScrapedSite
+
+    enricher = ClaudeEnricher(api_key)
+
+    if content and content.strip():
+        scraped = ScrapedSite(
+            content=content.strip()[:14000],
+            lang_urls={},
+            lang_landings={},
+            scan_log=[scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata")],
+        )
+    else:
+        scraped = await scrape_hotel_site(url, langs)
+
+    # Persist the scraped data so the brief can be regenerated later
+    # without re-scraping the website or re-calling the AI.
+    scraped_payload = {
+        "content": scraped.content,
+        "lang_urls": scraped.lang_urls,
+        "lang_landings": scraped.lang_landings,
+    }
+    await update_status(job_id, "running", scraped=scraped_payload)
+
+    data, brief_log = await enricher.enrich_brief(scraped, langs, url=url)
+    api_log: List[dict] = [brief_log]
+
+    common = {
+        "brand_name": data.get("brand_name", ""),
+        "hotel_category": data.get("hotel_category", "city_hotel"),
+        "stars": data.get("stars", 3),
+        "services": data.get("services", []),
+        "strengths": data.get("strengths", []),
+    }
+    booking_url = data.get("booking_engine_url") or f"https://{data.get('domain', '')}"
+
+    async def _enrich_language(lang: dict) -> dict:
+        code    = lang.get("code", "IT")
+        landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
+        usp     = lang.get("usp_main")
+        sitemap_lang_urls = scraped.lang_urls.get(code, [])
+
+        async def _safe_sitelinks():
+            try:
+                sl, log = await enricher.suggest_sitelinks(
+                    common, code, landing, booking_url, sitemap_lang_urls
+                )
+                api_log.append(log)
+                return sl
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
+                return []
+
+        async def _safe_copy(ctype):
+            try:
+                result, log = await enricher.suggest_type_copy(common, code, usp, ctype)
+                api_log.append(log)
+                return result
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
+                return {"headlines": [], "descriptions": []}
+
+        async def _safe_keywords():
+            try:
+                kw_payload = {
+                    **common,
+                    "domain": data.get("domain", ""),
+                    "language_code": code,
+                }
+                result, log = await enricher.suggest_keywords(kw_payload)
+                api_log.append(log)
+                return result
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: keywords failed for {code}: {exc}")
+                return {"kw_themes_text": "", "kw_negative_text": ""}
+
+        sl, brand, acq, ret, kw = await asyncio.gather(
+            _safe_sitelinks(),
+            _safe_copy("brand"),
+            _safe_copy("acquisition"),
+            _safe_copy("retargeting"),
+            _safe_keywords(),
+        )
+        return {
+            **lang,
+            "sitelinks": sl,
+            "brand_headlines": brand["headlines"],
+            "brand_descriptions": brand["descriptions"],
+            "acquisition_headlines": acq["headlines"],
+            "acquisition_descriptions": acq["descriptions"],
+            "retargeting_headlines": ret["headlines"],
+            "retargeting_descriptions": ret["descriptions"],
+            "kw_themes_text": kw.get("kw_themes_text", ""),
+            "kw_negative_text": kw.get("kw_negative_text", ""),
+        }
+
+    enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
+    data["languages"] = list(enriched)
+    data["_api_log"] = api_log
+
+    await update_status(job_id, "completed", result=data)
+    logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")
