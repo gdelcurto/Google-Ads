@@ -114,24 +114,30 @@ class AcquisitionAgent(CampaignAgent):
 
     def validate_copy(self, lang: LanguagePlan) -> List[ValidationIssue]:
         issues: List[ValidationIssue] = []
+
+        has_dedicated = bool(lang.acquisition_assets and lang.acquisition_assets.headlines)
         headlines = self.get_headlines(lang)
 
-        # Brand name must NOT appear in acquisition headlines — hard blocker
-        brand_lower = [t.lower() for t in lang.brand_terms]
-        for h in headlines:
-            if any(bt in h.lower() for bt in brand_lower):
-                issues.append(ValidationIssue(
-                    code="ACQ_BRAND_IN_HEADLINES",
-                    message=(
-                        f"[Acquisition/{lang.code}] L'headline '{h}' contiene il brand name. "
-                        "Acquisition usa copy generica (categoria/destinazione/USP). "
-                        "Sposta questo headline in 'brand_assets.headlines' o rimuovi il brand name."
-                    ),
-                    level="error",
-                    blocks_publish=True,
-                    agent="AcquisitionAgent",
-                    language=lang.code,
-                ))
+        # Brand name must NOT appear in acquisition headlines — hard blocker.
+        # Only enforce when dedicated acquisition_assets exist.  When falling
+        # back to the generic headline pool, brand names are expected (they're
+        # shared with Brand campaigns); the generator will use them as-is.
+        if has_dedicated:
+            brand_lower = [t.lower() for t in lang.brand_terms]
+            for h in headlines:
+                if any(bt in h.lower() for bt in brand_lower):
+                    issues.append(ValidationIssue(
+                        code="ACQ_BRAND_IN_HEADLINES",
+                        message=(
+                            f"[Acquisition/{lang.code}] L'headline '{h}' contiene il brand name. "
+                            "Acquisition usa copy generica (categoria/destinazione/USP). "
+                            "Sposta questo headline in 'brand_assets.headlines' o rimuovi il brand name."
+                        ),
+                        level="error",
+                        blocks_publish=True,
+                        agent="AcquisitionAgent",
+                        language=lang.code,
+                    ))
 
         # Warn if no type-specific assets configured
         if not (lang.acquisition_assets and lang.acquisition_assets.headlines):

@@ -84,7 +84,7 @@ export const css: Record<string, React.CSSProperties> = {
     overflowX: 'auto', whiteSpace: 'pre-wrap', maxHeight: 500, overflowY: 'auto',
   },
   autofillPanel: {
-    background: '#e10098',
+    background: T.blue,
     border: 'none', borderRadius: T.radiusLg,
     padding: 20, marginBottom: 24,
   },
@@ -92,16 +92,16 @@ export const css: Record<string, React.CSSProperties> = {
     fontWeight: 700, fontSize: 15, color: '#fff',
     marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8,
   },
-  autofillSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginBottom: 14 },
+  autofillSubtitle: { fontSize: 12, color: 'rgba(255,255,255,0.88)', marginBottom: 14 },
   autofillRow: { display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' as const },
   autofillUrlInput: {
     flex: 1, minWidth: 220, padding: '9px 12px',
-    border: `1px solid ${T.border}`, borderRadius: T.radiusSm, fontSize: 14,
-    boxSizing: 'border-box' as const, background: T.bgPage,
+    border: '1px solid #c5cedf', borderRadius: T.radiusSm, fontSize: 14,
+    boxSizing: 'border-box' as const, background: '#fff',
   },
   autofillLangPills: { display: 'flex', gap: 6, flexWrap: 'wrap' as const, marginTop: 10 },
   btnAutofill: {
-    background: '#fff', color: '#e10098', border: 'none',
+    background: '#fff', color: '#3e4f6e', border: 'none',
     padding: '9px 20px', borderRadius: T.radiusSm, cursor: 'pointer',
     fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap' as const,
   },
@@ -113,6 +113,6 @@ export const css: Record<string, React.CSSProperties> = {
 
 export const langPillStyle = (active: boolean): React.CSSProperties => ({
   padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-  cursor: 'pointer', border: active ? `2px solid ${T.primary}` : `1px solid ${T.border}`,
-  background: active ? T.primary : T.bgCard, color: active ? '#fff' : T.textGray,
+  cursor: 'pointer', border: active ? '2px solid #fff' : '1px solid rgba(255,255,255,0.4)',
+  background: active ? '#fff' : 'rgba(255,255,255,0.12)', color: active ? '#3e4f6e' : 'rgba(255,255,255,0.85)',
 })
