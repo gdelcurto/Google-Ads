@@ -92,21 +92,33 @@ class PerformanceMaxGenerator(BaseGenerator):
         if brief.audiences.customer_match.enabled and brief.audiences.customer_match.list_name:
             audience_signals.append(brief.audiences.customer_match.list_name)
 
-        # Images: placeholder — hotel must provide actual assets
-        images = [
-            "TODO: landscape image 1200x628 (hotel facade)",
-            "TODO: square image 1200x1200 (hotel room)",
-            "TODO: portrait image 960x1200 (hotel pool/spa)",
-        ]
-        logo_url = "TODO: logo PNG transparent 1200x1200"
-        youtube_url = None  # Optional
+        # Images: use provided URLs or mark as missing
+        ca = brief.creative_assets
+        images = []
+        missing_notes = []
 
-        has_missing = True  # Always require image upload
-        missing_notes = [
-            "Carica almeno 1 immagine landscape (1200x628)",
-            "Carica almeno 1 immagine quadrata (1200x1200)",
-            "Carica il logo (1200x1200 PNG trasparente)",
-        ]
+        if ca.image_landscape:
+            images.append(ca.image_landscape)
+        else:
+            images.append("TODO: landscape image 1200x628 (hotel facade)")
+            missing_notes.append("Carica almeno 1 immagine landscape (1200x628)")
+
+        if ca.image_square:
+            images.append(ca.image_square)
+        else:
+            images.append("TODO: square image 1200x1200 (hotel room)")
+            missing_notes.append("Carica almeno 1 immagine quadrata (1200x1200)")
+
+        if ca.image_portrait:
+            images.append(ca.image_portrait)
+
+        logo_url = ca.logo_url or "TODO: logo PNG transparent 1200x1200"
+        if not ca.logo_url:
+            missing_notes.append("Carica il logo (1200x1200 PNG trasparente)")
+
+        youtube_url = ca.youtube_video_url or None
+
+        has_missing = len(missing_notes) > 0
 
         return PMaxAssetGroup(
             name=group_name,

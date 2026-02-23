@@ -103,13 +103,25 @@ class RetargetingGenerator(BaseGenerator):
             d_offset = ag_index % len(d_all)
             d_all = d_all[d_offset:] + d_all[:d_offset]
 
-        # Display ads are placeholders — require actual image assets
+        # Display ads: use provided URLs or mark as missing
+        ca = brief.creative_assets
+        image_urls = []
+        if ca.image_landscape:
+            image_urls.append(ca.image_landscape)
+        if ca.image_square:
+            image_urls.append(ca.image_square)
+        if not image_urls:
+            image_urls = ["TODO: upload display ad images (300x250, 728x90, 160x600)"]
+        logo_url = ca.logo_url or None
+        has_missing_display = not ca.image_landscape or not ca.image_square
+
         display_ad = DisplayAd(
             headlines=h_all[:5],
             descriptions=d_all[:5],
-            image_urls=["TODO: upload display ad images (300x250, 728x90, 160x600)"],
+            image_urls=image_urls,
+            logo_url=logo_url,
             final_url=lang.landing_page,
-            has_missing_assets=True,
+            has_missing_assets=has_missing_display,
         )
 
         return AdGroupPlan(

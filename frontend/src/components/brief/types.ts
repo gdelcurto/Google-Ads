@@ -28,6 +28,12 @@ export interface FormState {
   booking_engine_url: string
   target_countries: string
   target_cities: string
+  // Visual creative assets (PMax / Retargeting Display / Demand Gen)
+  logo_url: string
+  image_landscape: string
+  image_square: string
+  image_portrait: string
+  youtube_video_url: string
 }
 
 export interface SitelinkState {
@@ -114,6 +120,11 @@ export const DEFAULT_FORM: FormState = {
   booking_engine_url: '',
   target_countries: 'IT',
   target_cities: '',
+  logo_url: '',
+  image_landscape: '',
+  image_square: '',
+  image_portrait: '',
+  youtube_video_url: '',
 }
 
 export const DEFAULT_LANG: LangState = {

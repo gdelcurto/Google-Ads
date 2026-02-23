@@ -267,6 +267,28 @@ class AudienceConfig(BaseModel):
     custom_intent: List[str] = Field(default_factory=list)
 
 
+class CreativeAssets(BaseModel):
+    """
+    Visual assets for PMax, Retargeting Display, and Demand Gen campaigns.
+    URLs can point to any publicly accessible image/video hosting.
+    """
+    logo_url: Optional[str] = Field(
+        None, description="Logo PNG trasparente 1200x1200 — richiesto per PMax, Retargeting Display, Demand Gen"
+    )
+    image_landscape: Optional[str] = Field(
+        None, description="Immagine orizzontale 1200x628 — richiesta per PMax e Demand Gen"
+    )
+    image_square: Optional[str] = Field(
+        None, description="Immagine quadrata 1200x1200 — richiesta per PMax e Demand Gen"
+    )
+    image_portrait: Optional[str] = Field(
+        None, description="Immagine verticale 960x1200 — opzionale (PMax)"
+    )
+    youtube_video_url: Optional[str] = Field(
+        None, description="URL video YouTube 16:9 — opzionale (PMax, Demand Gen)"
+    )
+
+
 class HotelLocation(BaseModel):
     address: str
     coordinates: Optional[Dict[str, float]] = None
@@ -334,6 +356,10 @@ class Brief(BaseModel):
     seasonality: Optional[SeasonalityInfo] = None
     audiences: AudienceConfig = Field(default_factory=AudienceConfig)
     hotel_specifics: HotelSpecifics
+    creative_assets: CreativeAssets = Field(
+        default_factory=CreativeAssets,
+        description="Visual assets (images, logo, video) for PMax/Retargeting/DemandGen",
+    )
     policy_constraints: List[str] = Field(default_factory=list)
     acquisition_keywords: Optional[Dict[str, KeywordThemes]] = None
     naming_convention: NamingConvention = Field(default_factory=NamingConvention)

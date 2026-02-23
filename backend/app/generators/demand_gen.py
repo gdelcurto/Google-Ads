@@ -136,22 +136,36 @@ class DemandGenGenerator(BaseGenerator):
             d_offset = ag_index % len(d_all)
             d_all = d_all[d_offset:] + d_all[:d_offset]
 
+        ca = brief.creative_assets
+        dg_images = []
+        dg_missing: list[str] = []
+
+        if ca.image_landscape:
+            dg_images.append(ca.image_landscape)
+        else:
+            dg_images.append("TODO: immagine landscape 1200x628 (hotel esterno)")
+            dg_missing.append("Immagine landscape 1200x628 (richiesta)")
+
+        if ca.image_square:
+            dg_images.append(ca.image_square)
+        else:
+            dg_images.append("TODO: immagine quadrata 1200x1200 (camera/piscina)")
+            dg_missing.append("Immagine quadrata 1200x1200 (richiesta)")
+
+        dg_logo = ca.logo_url or "TODO: logo 1200x1200 PNG trasparente"
+        if not ca.logo_url:
+            dg_missing.append("Logo 1200x1200 PNG trasparente (richiesto)")
+        if not ca.youtube_video_url:
+            dg_missing.append("Opzionale: video YouTube 16:9 o 1:1")
+
         demand_gen_ad = DemandGenAd(
             headlines=h_all[:5],
             descriptions=d_all[:4],
-            images=[
-                "TODO: immagine landscape 1200x628 (hotel esterno)",
-                "TODO: immagine quadrata 1200x1200 (camera/piscina)",
-            ],
-            logo_url="TODO: logo 1200x1200 PNG trasparente",
+            images=dg_images,
+            logo_url=dg_logo,
             final_url=lang.landing_page,
-            has_missing_assets=True,
-            missing_asset_notes=[
-                "Immagine landscape 1200x628 (richiesta)",
-                "Immagine quadrata 1200x1200 (richiesta)",
-                "Logo 1200x1200 PNG trasparente (richiesto)",
-                "Opzionale: video YouTube 16:9 o 1:1",
-            ],
+            has_missing_assets=len(dg_missing) > 0,
+            missing_asset_notes=dg_missing,
         )
 
         return AdGroupPlan(
