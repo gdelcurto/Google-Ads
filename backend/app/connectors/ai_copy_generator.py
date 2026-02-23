@@ -40,14 +40,12 @@ def _json_object(raw: str) -> str:
     return raw[s : e + 1] if s != -1 and e != -1 else raw
 
 
-def _trim(text: str, max_chars: int) -> str:
-    """Trim to max_chars without breaking words."""
+def _trim(text: str, max_chars: int) -> Optional[str]:
+    """Return text if within limit, None if it exceeds — discard, never truncate."""
     text = text.rstrip()
     if len(text) <= max_chars:
         return text
-    cut = text[:max_chars]
-    space = cut.rfind(" ")
-    return cut[:space] if space > 0 else cut
+    return None
 
 
 def _type_key(c: CampaignPlan) -> str:
@@ -138,19 +136,29 @@ class AICopyGenerator:
             if pinned_text else ""
         )
 
+        # Request extra to compensate for discards of over-limit items
+        request_n = n_headlines + 5
+
         prompt = (
             f"Genera RSA copy Google Ads ottimizzato per questo hotel.\n\n"
             f"═══ HOTEL ═══\n{ctx}\n"
             f"Lingua: {lang.name} ({lang.code}){theme_line}{pin_line}\n\n"
-            f"═══ REGOLE ═══\n"
-            f"- {n_headlines} headline SPECIFICHE e DIVERSE (≤30 caratteri — conta ogni carattere)\n"
-            f"- 2-4 descrizioni (≤90 caratteri ciascuna)\n"
+            f"═══ REGOLE TASSATIVE ═══\n"
+            f"- {request_n} headline (MASSIMO 30 caratteri ciascuna)\n"
+            f"- 4 descrizioni (MASSIMO 90 caratteri ciascuna)\n"
+            f"- OGNI headline e descrizione DEVE essere una FRASE COMPLETA e SENSATA.\n"
+            f"  ✗ 'Resort 4 stelle Bagno di' — VIETATO: frase troncata senza senso\n"
+            f"  ✓ 'Resort 4 Stelle a Bagno' — OK: frase compiuta e comprensibile\n"
+            f"  ✗ 'Immergiti nel benessere nel cuore del Parco. Camere' — VIETATO: testo troncato\n"
+            f"  ✓ 'Benessere nel cuore del Parco Nazionale.' — OK: senso compiuto\n"
+            f"- Se una frase non sta nel limite, RISCRIVILA più corta. NON troncarla MAI.\n"
+            f"- Conta OGNI carattere (lettere, spazi, punteggiatura) PRIMA di includerla.\n"
             f"- Ogni headline = UN argomento di vendita INDIPENDENTE\n"
             f"- Dati REALI dell'hotel, non inventare servizi o caratteristiche\n"
             f"- Scrivi in {lang.name}\n"
             f"- Rispetta le guidelines del tipo campagna\n\n"
             f"Rispondi SOLO con JSON valido:\n"
-            f'{{\"headlines\": [\"h1\", ..., \"h{n_headlines}\"], \"descriptions\": [\"d1\", \"d2\"]}}'
+            f'{{\"headlines\": [\"h1\", ..., \"h{request_n}\"], \"descriptions\": [\"d1\", ..., \"d4\"]}}'
         )
 
         try:
@@ -162,14 +170,16 @@ class AICopyGenerator:
             )
             parsed = json.loads(_json_object(msg.content[0].text.strip()))
             headlines = [
-                _trim(str(h), 30)
-                for h in parsed.get("headlines", [])
+                t for h in parsed.get("headlines", [])
                 if isinstance(h, str) and h.strip()
+                for t in [_trim(str(h), 30)]
+                if t is not None
             ]
             descriptions = [
-                _trim(str(d), 90)
-                for d in parsed.get("descriptions", [])
+                t for d in parsed.get("descriptions", [])
                 if isinstance(d, str) and d.strip()
+                for t in [_trim(str(d), 90)]
+                if t is not None
             ]
             return headlines, descriptions
         except Exception as exc:

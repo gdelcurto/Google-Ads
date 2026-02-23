@@ -315,16 +315,16 @@ export function buildBrief(
       callouts: toLines(l.callouts),
       structured_snippets: [],
       brand_assets: toLines(l.brand_headlines).length > 0 ? {
-        headlines: toLines(l.brand_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.brand_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.brand_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.brand_descriptions).filter(d => d.length <= 90),
       } : null,
       acquisition_assets: toLines(l.acquisition_headlines).length > 0 ? {
-        headlines: toLines(l.acquisition_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.acquisition_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.acquisition_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.acquisition_descriptions).filter(d => d.length <= 90),
       } : null,
       retargeting_assets: toLines(l.retargeting_headlines).length > 0 ? {
-        headlines: toLines(l.retargeting_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.retargeting_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.retargeting_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.retargeting_descriptions).filter(d => d.length <= 90),
       } : null,
     })),
     geo_targeting: {

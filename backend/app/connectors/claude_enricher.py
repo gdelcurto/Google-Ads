@@ -60,35 +60,28 @@ def _api_log_entry(agent: str, reason: str, endpoint: str, model: str, usage) ->
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
 def _trim_to_word(text: str, max_chars: int) -> str:
-    """Ensure text fits within max_chars without cutting words mid-way."""
+    """Trim sitelink text to max_chars at word boundary (sitelinks only)."""
     text = text.rstrip()
+    if len(text) <= max_chars:
+        return text
     cut = text[:max_chars]
+    space = cut.rfind(' ')
+    return cut[:space] if space > 0 else cut
 
-    if len(text) > max_chars:
-        if text[max_chars] != ' ':
-            space = cut.rfind(' ')
-            if space > 0:
-                return cut[:space]
-            return cut
-        return cut
 
-    if len(text) == max_chars and max_chars >= 40 and cut and cut[-1].isalpha():
-        space = cut.rfind(' ')
-        if space > 0:
-            return cut[:space]
-        return cut
-
-    return cut
+def _filter_by_limit(items: list, max_chars: int) -> list:
+    """Discard items exceeding char limit instead of truncating them."""
+    return [s for s in items if isinstance(s, str) and len(s.rstrip()) <= max_chars]
 
 
 def _truncate_assets(data: dict) -> dict:
-    """Post-process: trim headlines/descriptions/callouts to Google Ads limits."""
+    """Post-process: discard over-limit headlines/descriptions, trim sitelinks."""
     for lang in data.get('languages', []):
-        lang['headlines']    = [_trim_to_word(h, 30) for h in lang.get('headlines', [])]
-        lang['descriptions'] = [_trim_to_word(d, 90) for d in lang.get('descriptions', [])]
-        lang['callouts']     = [_trim_to_word(c, 25) for c in lang.get('callouts', [])]
-        if lang.get('usp_main'):
-            lang['usp_main'] = _trim_to_word(lang['usp_main'], 90)
+        lang['headlines']    = _filter_by_limit(lang.get('headlines', []), 30)
+        lang['descriptions'] = _filter_by_limit(lang.get('descriptions', []), 90)
+        lang['callouts']     = _filter_by_limit(lang.get('callouts', []), 25)
+        if lang.get('usp_main') and len(str(lang['usp_main'])) > 90:
+            lang['usp_main'] = ''
     return data
 
 
@@ -144,13 +137,20 @@ OFFERTA DIRETTA vs OTA
 ═══ REGOLE ASSOLUTE SUI CARATTERI ═══
 
 Conta OGNI carattere (lettere, spazi, apostrofi, trattini) prima di rispondere.
-NON troncare le parole: se una parola non entra per intero entro il limite, NON includerla.
 
   HEADLINE   → massimo 30 caratteri
   DESCRIZIONI → massimo 90 caratteri
   CALLOUT     → massimo 25 caratteri
   SITELINK testo       → massimo 25 caratteri
   SITELINK descrizione → massimo 35 caratteri ciascuna
+
+REGOLA FONDAMENTALE: ogni headline, descrizione, callout e sitelink DEVE essere
+una FRASE COMPLETA con senso compiuto. Se il testo non sta nel limite di caratteri,
+RISCRIVILO più corto. NON troncare MAI una frase a metà.
+  ✗ "Resort 4 stelle Bagno di" — VIETATO: troncato, senza senso
+  ✓ "Resort 4 Stelle a Bagno" — OK: frase compiuta e comprensibile
+  ✗ "Immergiti nel benessere nel cuore del Parco. Camere" — VIETATO
+  ✓ "Benessere nel cuore del Parco." — OK: senso compiuto
 
 ═══ CONTENUTO AUTENTICO ═══
 
@@ -593,8 +593,12 @@ class ClaudeEnricher:
             f"Lingua output: {lang_name} ({lang_code})\n\n"
             f"═══ REGOLE HEADLINE (≤ 30 caratteri) ═══\n{meta['headline_rules']}\n\n"
             f"═══ REGOLE DESCRIZIONI (≤ 90 caratteri) ═══\n{meta['description_rules']}\n\n"
+            f"REGOLA TASSATIVA: ogni headline e descrizione DEVE essere una FRASE COMPLETA.\n"
+            f"  ✗ 'Resort 4 stelle Bagno di' — VIETATO: testo troncato\n"
+            f"  ✓ 'Resort 4 Stelle a Bagno' — OK: senso compiuto\n"
+            f"Se non sta nel limite, RISCRIVILA più corta. NON troncare MAI.\n\n"
             'Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:\n'
-            '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8"],"descriptions":["d1","d2"]}'
+            '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8","h9","h10"],"descriptions":["d1","d2","d3"]}'
         )
 
         message = await self._client.messages.create(
@@ -606,10 +610,12 @@ class ClaudeEnricher:
         raw = message.content[0].text.strip()
         parsed = json.loads(_extract_json_object(raw))
         result = {
-            "headlines": [_trim_to_word(h, 30) for h in parsed.get("headlines", [])
-                          if isinstance(h, str) and h.strip()],
-            "descriptions": [_trim_to_word(d, 90) for d in parsed.get("descriptions", [])
-                              if isinstance(d, str) and d.strip()],
+            "headlines": _filter_by_limit(
+                [h for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()], 30
+            ),
+            "descriptions": _filter_by_limit(
+                [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
+            ),
         }
         log = _api_log_entry(
             agent=f"TypeCopyAgent ({campaign_type})",
