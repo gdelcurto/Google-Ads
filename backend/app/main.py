@@ -89,6 +89,30 @@ def _run_alembic_upgrade() -> None:
         logger.warning(f"Alembic upgrade failed: {exc} — falling back to create_all")
 
 
+def _ensure_missing_columns(conn) -> None:
+    """Add any columns that exist in ORM models but not in the DB.
+
+    This handles the edge case where Alembic migrations fail (e.g. duplicate
+    column from a prior create_all) and create_all can't ALTER existing tables.
+    Uses raw DDL so it works on both SQLite and PostgreSQL.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(conn)
+    _COLUMN_FIXES = [
+        ("projects", "deleted_at", "DATETIME"),
+        ("autofill_jobs", "scraped_json", "TEXT"),
+    ]
+    for table, column, col_type in _COLUMN_FIXES:
+        if table in insp.get_table_names():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            if column not in existing:
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                ))
+                logger.info(f"Added missing column {table}.{column}")
+
+
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,6 +133,15 @@ async def lifespan(app: FastAPI):
         logger.error("Database connection timed out after 10s — app will start anyway")
     except Exception as exc:
         logger.error(f"Database init failed — app will start anyway: {exc}", exc_info=True)
+
+    # Safety net: add columns that migrations couldn't add (e.g. if Alembic
+    # failed because create_all had already created the table with old columns).
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(_ensure_missing_columns)
+    except Exception as exc:
+        logger.warning(f"Schema column safety-net failed: {exc}")
+
     try:
         await asyncio.wait_for(_seed_admin(), timeout=10.0)
     except asyncio.TimeoutError:

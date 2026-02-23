@@ -16,7 +16,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("projects", sa.Column("deleted_at", sa.DateTime(), nullable=True))
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    columns = {c["name"] for c in insp.get_columns("projects")}
+    if "deleted_at" not in columns:
+        op.add_column("projects", sa.Column("deleted_at", sa.DateTime(), nullable=True))
 
 
 def downgrade() -> None:

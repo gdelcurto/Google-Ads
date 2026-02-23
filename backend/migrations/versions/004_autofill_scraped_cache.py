@@ -20,10 +20,15 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "autofill_jobs",
-        sa.Column("scraped_json", sa.Text(), nullable=True),
-    )
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    if "autofill_jobs" in insp.get_table_names():
+        columns = {c["name"] for c in insp.get_columns("autofill_jobs")}
+        if "scraped_json" not in columns:
+            op.add_column(
+                "autofill_jobs",
+                sa.Column("scraped_json", sa.Text(), nullable=True),
+            )
 
 
 def downgrade() -> None:
