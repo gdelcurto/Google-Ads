@@ -164,7 +164,14 @@ async def get_plan(
     project = await _get_project_or_404(project_id, db)
     if not project.plan_json:
         raise HTTPException(status_code=404, detail="Piano non ancora generato. Esegui /generate prima.")
-    plan = AccountPlan(**json.loads(project.plan_json))
+    try:
+        plan = AccountPlan(**json.loads(project.plan_json))
+    except Exception as exc:
+        logger.error(f"Plan deserialization failed for project {project_id}: {exc}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Piano salvato non valido. Rigenera il piano. Dettaglio: {exc}",
+        )
     return _plan_to_preview(plan)
 
 

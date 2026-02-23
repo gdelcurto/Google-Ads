@@ -219,8 +219,11 @@ class AICopyGenerator:
                 for h in headlines
                 if not pinned or h.lower() != pinned.lower()
             ]
-            rsa.headlines = (pinned_items + extra)[:15]
-            if descriptions:
+            new_headlines = (pinned_items + extra)[:15]
+            # RSAd requires min 3 headlines and 2 descriptions — keep existing if AI produced too few
+            if len(new_headlines) >= 3:
+                rsa.headlines = new_headlines
+            if descriptions and len(descriptions) >= 2:
                 rsa.descriptions = descriptions[:4]
 
     async def _enhance_display(
@@ -272,8 +275,10 @@ class AICopyGenerator:
         )
         if not headlines:
             return
-        ag.headlines = headlines[:15]
-        if descriptions:
+        # PMaxAssetGroup requires min 3 headlines and 2 descriptions
+        if len(headlines) >= 3:
+            ag.headlines = headlines[:15]
+        if descriptions and len(descriptions) >= 2:
             ag.descriptions = descriptions[:5]
 
     # ── Top-level enhancer ─────────────────────────────────────────────────────
