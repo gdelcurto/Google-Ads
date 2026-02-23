@@ -636,19 +636,31 @@ class ClaudeEnricher:
         # ── Brand headline enforcement ────────────────────────────────
         # Validator requires at least one headline containing the brand name.
         # If the LLM didn't include it, inject a branded headline at position 1.
-        if campaign_type == "brand" and result["headlines"]:
-            brand_name = common.get("brand_name", "")
-            if brand_name:
-                _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
-                bn = _norm(brand_name)
-                has_brand = any(bn in _norm(h) for h in result["headlines"])
-                if not has_brand:
-                    # Build a branded headline that fits 30 chars
-                    candidate = brand_name if len(brand_name) <= 30 else brand_name[:30].rsplit(" ", 1)[0]
-                    if candidate:
-                        result["headlines"].insert(0, candidate)
-                        # Keep max 15 headlines (Google RSA limit)
-                        result["headlines"] = result["headlines"][:15]
+        brand_name = common.get("brand_name", "")
+        if campaign_type == "brand" and result["headlines"] and brand_name:
+            _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+            bn = _norm(brand_name)
+            has_brand = any(bn in _norm(h) for h in result["headlines"])
+            if not has_brand:
+                # Build a branded headline that fits 30 chars
+                candidate = brand_name if len(brand_name) <= 30 else brand_name[:30].rsplit(" ", 1)[0]
+                if candidate:
+                    result["headlines"].insert(0, candidate)
+                    # Keep max 15 headlines (Google RSA limit)
+                    result["headlines"] = result["headlines"][:15]
+
+        # ── Acquisition: strip brand name from headlines ─────────────
+        # Acquisition targets users who don't know the brand; validator
+        # rejects any headline containing brand_terms.
+        if campaign_type == "acquisition" and result["headlines"] and brand_name:
+            _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+            bn = _norm(brand_name)
+            # Also check individual brand words (e.g. "Ròseo" from "Ròseo Euroterme")
+            brand_words = [w for w in bn.split() if len(w) >= 4]
+            result["headlines"] = [
+                h for h in result["headlines"]
+                if not any(bw in _norm(h) for bw in [bn] + brand_words)
+            ]
 
         log = _api_log_entry(
             agent=f"TypeCopyAgent ({campaign_type})",

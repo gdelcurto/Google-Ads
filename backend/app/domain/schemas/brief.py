@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 # Default budget split across campaign types (weights, not percentages).
 # Applied when by_campaign_type is not manually specified.
@@ -186,10 +186,23 @@ class LanguagePlan(BaseModel):
     brand_exclusions: List[str] = Field(default_factory=list)
     usp: UspInfo
     headlines: List[str] = Field(..., min_length=3, max_length=15, description="RSA headlines")
-    descriptions: List[str] = Field(..., min_length=2, max_length=4, description="RSA descriptions")
+    descriptions: List[str] = Field(..., min_length=2, description="RSA descriptions (max 4)")
     sitelinks: List[Sitelink] = Field(default_factory=list)
     callouts: List[str] = Field(default_factory=list)
     structured_snippets: List[StructuredSnippet] = Field(default_factory=list)
+
+    @field_validator("descriptions", mode="before")
+    @classmethod
+    def cap_descriptions(cls, v: list) -> list:
+        """Silently truncate to 4 descriptions instead of rejecting.
+
+        Google Ads RSA allows max 4 descriptions; the AI prompt asks for
+        exactly 4 but occasionally returns 5.  Truncating is safe because
+        the first 4 are always the highest-priority ones.
+        """
+        if isinstance(v, list) and len(v) > 4:
+            return v[:4]
+        return v
     # ── Per-type copy overrides ────────────────────────────────────────────
     brand_assets: Optional[PerTypeAssets] = Field(
         None,
@@ -373,44 +386,9 @@ class Brief(BaseModel):
     labels: List[str] = Field(default_factory=list)
     utm_config: UtmConfig = Field(default_factory=UtmConfig)
 
-    @model_validator(mode="after")
-    def auto_fill_audiences(self) -> "Brief":
-        """Auto-populate standard remarketing lists and in-market segments
-        when the user hasn't configured any.  This unblocks Retargeting,
-        PMax audience signals and removes the NO_REMARKETING_LISTS warning.
-
-        Must run BEFORE auto_distribute_budget so that retargeting/demand_gen
-        types are included in the budget split."""
-        if not self.audiences.remarketing_lists:
-            self.audiences.remarketing_lists = [
-                RemarketingList(
-                    name="All Website Visitors 30d",
-                    type="website_visitors",
-                    lookback_days=30,
-                    source="google_tag",
-                ),
-                RemarketingList(
-                    name="Booking Page Visitors 14d",
-                    type="website_visitors",
-                    lookback_days=14,
-                    source="google_tag",
-                    url_contains="/prenota",
-                ),
-                RemarketingList(
-                    name="Abandoned Booking 7d",
-                    type="website_visitors",
-                    lookback_days=7,
-                    source="google_tag",
-                    url_contains="/checkout",
-                ),
-            ]
-        if not self.audiences.in_market_segments:
-            self.audiences.in_market_segments = [
-                "Travel & Tourism/Hotels & Accommodations",
-                "Travel & Tourism/Luxury Travel",
-                "Travel & Tourism/Business Travel",
-            ]
-        return self
+    # NOTE: audiences (remarketing lists, in-market segments) are configured
+    # manually by the strategist — no auto-fill.  Retargeting/PMax/Demand Gen
+    # campaigns will only be generated when audiences are explicitly set.
 
     @model_validator(mode="after")
     def auto_fill_kpi_defaults(self) -> "Brief":

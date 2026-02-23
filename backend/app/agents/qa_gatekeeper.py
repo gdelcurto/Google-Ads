@@ -106,8 +106,9 @@ class QAGatekeeperAgent(CampaignAgent):
                 continue
 
             for ad_group in campaign.ad_groups:
-                # Each ad group must have at least one ad
-                if not ad_group.ads:
+                # Each ad group must have at least one ad (RSA, Display, or Demand Gen)
+                has_any_ad = ad_group.ads or ad_group.display_ads or ad_group.demand_gen_ads
+                if not has_any_ad:
                     issues.append(ValidationIssue(
                         code="QA_AD_GROUP_NO_ADS",
                         message=(
