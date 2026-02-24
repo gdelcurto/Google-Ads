@@ -134,7 +134,7 @@ function p(
     children: [new TextRun({
       text,
       bold:    opts.bold,
-      size:    opts.size ?? 22,
+      size:    opts.size ?? 20,
       color:   opts.color,
       italics: opts.italic,
       allCaps: opts.allCaps,
@@ -308,7 +308,7 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
         }),
         // TOTALE row — colSpan 3 for first 3 cols, then 3 individual cells
         new TableRow({ children: [
-          td('TOTALE', 0, { bold: true, color: C.totText, size: 22, span: 3 }),
+          td('TOTALE', 0, { bold: true, color: C.totText, span: 3 }),
           td(`€ ${Math.round(totalMonthly).toLocaleString('it-IT')}`, MIX.budget,
              { bold: true, center: true, color: C.accent, size: 24 }),
           td('100 %', MIX.pct,  { bold: true, center: true, color: C.totText }),
@@ -335,13 +335,13 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
         children: [
           new TextRun({ text: `${idx + 1}. ${info?.label ?? type}`, bold: true, size: 26, color: C.dark }),
           new TextRun({ text: `   ${info?.funnel ?? ''}`, size: 20, color: C.muted }),
-          new TextRun({ text: `   € ${Math.round(monthly).toLocaleString('it-IT')} / mese`, bold: true, size: 22, color: C.accent }),
+          new TextRun({ text: `   € ${Math.round(monthly).toLocaleString('it-IT')} / mese`, bold: true, size: 20, color: C.accent }),
         ],
       }),
     )
 
     if (info?.description) {
-      children.push(p(info.description, { size: 21, color: C.body, after: 120 }))
+      children.push(p(info.description, { color: C.body, after: 120 }))
     }
 
     children.push(
@@ -360,7 +360,7 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
               verticalAlign: VerticalAlign.CENTER,
               margins:       { top: 80, bottom: 80, left: 140, right: 140 },
               children: [new Paragraph({
-                children: [new TextRun({ text: label, bold: true, size: 18, color: C.muted, allCaps: true })],
+                children: [new TextRun({ text: label, bold: true, size: 20, color: C.muted, allCaps: true })],
               })],
             }),
             new TableCell({
@@ -380,8 +380,8 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
       children.push(new Paragraph({
         spacing: { before: 100, after: 0 },
         children: [
-          new TextRun({ text: 'Messaggi chiave:  ', bold: true, size: 19, color: C.muted, allCaps: true }),
-          new TextRun({ text: copy.map(h => `"${h}"`).join('  ·  '), size: 19, italics: true, color: C.dark }),
+          new TextRun({ text: 'Messaggi chiave:  ', bold: true, size: 20, color: C.muted, allCaps: true }),
+          new TextRun({ text: copy.map(h => `"${h}"`).join('  ·  '), size: 20, italics: true, color: C.dark }),
         ],
       }))
     }
@@ -418,9 +418,9 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
             const bt = (l.brand_terms as string[] | undefined) ?? []
             return new TableRow({ children: [
               td(`${l.code} — ${l.name}`, LANG.lang, { bold: true }),
-              td((l.landing_page as string | undefined) || '—', LANG.url, { size: 18 }),
-              td(hl.slice(0, 2).join(' · ') || '—', LANG.hl, { size: 18 }),
-              td(bt.slice(0, 3).join(', ')  || '—', LANG.bt, { size: 18 }),
+              td((l.landing_page as string | undefined) || '—', LANG.url, {}),
+              td(hl.slice(0, 2).join(' · ') || '—', LANG.hl, {}),
+              td(bt.slice(0, 3).join(', ')  || '—', LANG.bt, {}),
             ]})
           }),
         ],
@@ -433,7 +433,7 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
     styles: {
       default: {
         document: {
-          run: { font: 'Space Grotesk', size: 22, color: C.dark },
+          run: { font: 'Space Grotesk', size: 20, color: C.dark },
         },
       },
     },
