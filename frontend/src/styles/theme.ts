@@ -42,6 +42,7 @@ export const T = {
   radiusSm:    6,
   radiusLg:    12,
 
-  // Logo
-  logo: 'https://www.blastness.com/loghi/2342/logowhite.png?fv=1750857063',
+  // Logos (served from /public)
+  logoBlastness: '/logofooter.png',
+  logoApp:       '/AdAtelier.svg',
 } as const

@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
+import { getMyPermissions, type MyPermissions, DEFAULT_ALL_TABS } from '../api/users'
 import BriefForm from '../components/BriefForm'
 import { T } from '../styles/theme'
 import { useAutofillJobs } from '../contexts/AutofillJobContext'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 import { CampaignCard } from '../components/project/CampaignCard'
 import { PlanSummary } from '../components/project/PlanSummary'
 import { ActionPlanTab } from '../components/project/ActionPlanTab'
 import { CampaignPreviewCard } from '../components/project/CampaignPreviewCard'
 import { ScanLogTab } from '../components/project/ScanLogTab'
 import { ApiLogTab } from '../components/project/ApiLogTab'
+import { BudgetLogTab } from '../components/project/BudgetLogTab'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 28 },
@@ -87,7 +90,8 @@ const s: Record<string, React.CSSProperties> = {
   },
 }
 
-type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log'
+
+type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log' | 'budget_log'
 
 
 export default function ProjectDetailPage() {
@@ -120,6 +124,17 @@ export default function ProjectDetailPage() {
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
   })
+
+  const { data: myPerms } = useQuery<MyPermissions>({
+    queryKey: ['my-permissions', id],
+    queryFn: () => getMyPermissions(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  })
+
+  // Resolved tabs — default to all visible until permissions load
+  const tabs = myPerms?.tabs ?? DEFAULT_ALL_TABS
+  const canWrite = myPerms?.can_write ?? true
 
   const { data: plan } = useQuery({
     queryKey: ['plan', id],
@@ -157,20 +172,83 @@ export default function ProjectDetailPage() {
 
   const generateMutation = useMutation({
     mutationFn: () => projectsApi.generate(id!, true),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['plan', id] })
       qc.invalidateQueries({ queryKey: ['project', id] })
       setMessage({ type: 'success', text: 'Piano generato con successo (dry run).' })
       setActiveTab('campaigns')
+      // Persist BudgetStrategistAgent validation issues to budget log
+      if (id && Array.isArray(data?.validation_warnings_structured)) {
+        const budgetIssues = data.validation_warnings_structured
+          .filter((i: any) => i.agent === 'BudgetStrategistAgent')
+        if (budgetIssues.length > 0) {
+          const key = `budget_validation_log_${id}`
+          const ts = new Date().toISOString()
+          const existing = (() => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } })()
+          const stamped = budgetIssues.map((i: any) => ({ ...i, ts }))
+          localStorage.setItem(key, JSON.stringify([...stamped, ...existing].slice(0, 50)))
+        }
+      }
     },
     onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
+
+  /**
+   * Apply a suggested_fix from an AI advisor warning to the brief,
+   * then automatically re-generate the plan so the user sees the effect.
+   */
+  const handleApplyFix = async (fix: NonNullable<import('../api/projects').ValidationWarning['suggested_fix']>) => {
+    if (!id) return
+    try {
+      await projectsApi.applyBriefFix(id, fix.brief_path, fix.value, fix.action)
+      qc.invalidateQueries({ queryKey: ['brief', id] })
+      setMessage({ type: 'success', text: `Fix applicato: ${fix.label}. Rigenerazione piano in corso…` })
+      generateMutation.mutate()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Errore applicazione fix'
+      setMessage({ type: 'error', text: `Impossibile applicare il fix: ${msg}` })
+    }
+  }
+
+  /**
+   * Apply all suggested_fix items at once, then regenerate the plan once.
+   */
+  const handleApplyAllFixes = async (fixes: NonNullable<import('../api/projects').ValidationWarning['suggested_fix']>[]) => {
+    if (!id) return
+    try {
+      const result = await projectsApi.applyAllBriefFixes(id, fixes)
+      qc.invalidateQueries({ queryKey: ['brief', id] })
+      setMessage({
+        type: 'success',
+        text: `${result.count} suggeriment${result.count === 1 ? 'o applicato' : 'i applicati'}. Rigenerazione piano in corso…`,
+      })
+      generateMutation.mutate()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Errore applicazione fix'
+      setMessage({ type: 'error', text: `Impossibile applicare i fix: ${msg}` })
+    }
+  }
 
   const publishMutation = useMutation({
     mutationFn: () => projectsApi.publish(id!, true),
     onSuccess: () => setMessage({ type: 'success', text: 'Dry run completato. Controlla i risultati.' }),
     onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
+
+  useHeaderActions(
+    <Link
+      to="/projects"
+      style={{
+        background: T.primary, color: '#fff', textDecoration: 'none',
+        padding: '10px 20px', borderRadius: T.radiusSm,
+        fontWeight: 600, fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}
+    >
+      <i className="fa-solid fa-arrow-left" style={{ fontSize: 12 }} />
+      Elenco Progetti
+    </Link>,
+    [],
+  )
 
   if (!project) return <p>Caricamento...</p>
 
@@ -223,9 +301,11 @@ export default function ProjectDetailPage() {
       )}
 
       <div style={s.actions}>
-        <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
-          {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
-        </button>
+        {canWrite && (
+          <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
+            {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
+          </button>
+        )}
         <button
           style={s.btnGreen}
           onClick={async () => {
@@ -240,34 +320,39 @@ export default function ProjectDetailPage() {
         >
           Esporta CSV
         </button>
-        <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
-          {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
-        </button>
+        {canWrite && (
+          <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
+            {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
+          </button>
+        )}
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'preview', 'brief', 'action_plan', 'plan_json', 'audit', 'scan_log', 'api_log'] as Tab[]).map(t => (
+        {(([
+          ['overview',    'Overview'],
+          ['campaigns',   'Campagne'],
+          ['preview',     'Anteprima'],
+          ['brief',       'Brief'],
+          ['action_plan', "Piano d'azione"],
+          ['plan_json',   'Modifica Piano'],
+          ['audit',       'Audit Log'],
+          ['scan_log',    'Scan Log'],
+          ['api_log',     'API Log'],
+          ['budget_log',  'Budget Log'],
+        ] as [Tab, string][]).filter(([t]) => tabs[t as keyof typeof tabs])).map(([t, label]) => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview'     ? 'Overview'
-              : t === 'campaigns'  ? 'Campagne'
-              : t === 'preview'    ? 'Anteprima'
-              : t === 'brief'      ? 'Brief'
-              : t === 'action_plan'? 'Piano d\'azione'
-              : t === 'plan_json'  ? 'Modifica Piano'
-              : t === 'audit'      ? 'Audit Log'
-              : t === 'scan_log'   ? 'Scan Log'
-              : 'API Log'}
+            {label}
           </button>
         ))}
       </div>
 
       {activeTab === 'overview' && (
         <div>
-          {plan ? <PlanSummary plan={plan} /> : (
+          {plan ? <PlanSummary plan={plan} onApplyFix={handleApplyFix} onApplyAllFixes={handleApplyAllFixes} /> : (
             <div style={s.card}>
               <p style={{ color: T.textGray }}>
                 {project.has_brief
@@ -283,7 +368,7 @@ export default function ProjectDetailPage() {
         <div>
           {plan ? (
             <>
-              <PlanSummary plan={plan} />
+              <PlanSummary plan={plan} onApplyFix={handleApplyFix} onApplyAllFixes={handleApplyAllFixes} />
               {plan.campaigns.map(c => <CampaignCard key={c.external_key} campaign={c} />)}
             </>
           ) : <p style={{ color: T.textGray }}>Genera prima il piano.</p>}
@@ -448,6 +533,10 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'api_log' && (
         <ApiLogTab projectId={id!} />
+      )}
+
+      {activeTab === 'budget_log' && (
+        <BudgetLogTab projectId={id!} />
       )}
     </div>
   )

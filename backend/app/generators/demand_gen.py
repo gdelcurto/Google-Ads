@@ -10,7 +10,7 @@ from typing import List
 
 from app.domain.schemas.brief import Brief, LanguagePlan
 from app.domain.schemas.campaign_plan import (
-    AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
+    AdGroupPlan, CampaignPlan, CampaignStatus, CampaignType,
     DemandGenAd, NetworkType,
 )
 from app.generators.base import BaseGenerator
@@ -35,7 +35,8 @@ class DemandGenGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        kpi = brief.objectives.kpi
+        bid_strategy = self.resolve_bid_strategy(brief, self.CAMPAIGN_TYPE_KEY)
+
         campaign_name, external_key, settings, _tracking, _assets = (
             self._generate_campaign_skeleton(
                 brief=brief,
@@ -44,8 +45,7 @@ class DemandGenGenerator(BaseGenerator):
                 subtype="Remarketing",
                 camp_type_key=self.CAMPAIGN_TYPE_KEY,
                 network_types=[NetworkType.display],
-                bid_strategy=BidStrategy.maximize_conversions,
-                target_cpa=kpi.target_cpa_eur,
+                bid_strategy=bid_strategy,
             )
         )
 

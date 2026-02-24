@@ -30,6 +30,9 @@ class User(Base):
 
     projects: Mapped[list["Project"]] = relationship("Project", back_populates="owner")
     audit_logs: Mapped[list["AuditLog"]] = relationship("AuditLog", back_populates="user")
+    permissions: Mapped[list["ProjectPermission"]] = relationship(
+        "ProjectPermission", foreign_keys="ProjectPermission.user_id", back_populates="user"
+    )
 
 
 class Project(Base):
@@ -60,6 +63,9 @@ class Project(Base):
     )
     exports: Mapped[list["ExportRecord"]] = relationship(
         "ExportRecord", back_populates="project", cascade="all, delete-orphan"
+    )
+    permissions: Mapped[list["ProjectPermission"]] = relationship(
+        "ProjectPermission", back_populates="project", cascade="all, delete-orphan"
     )
 
 
@@ -116,6 +122,39 @@ class AuditLog(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="audit_logs")
     project: Mapped[Optional["Project"]] = relationship("Project", back_populates="audit_logs")
+
+
+class ProjectPermission(Base):
+    """Per-user permissions on a project (or all projects).
+
+    If all_projects=True, the record applies to every project (project_id is ignored).
+    A project-specific record (project_id set) takes precedence over an all_projects record.
+    Admin users always bypass these checks.
+    """
+    __tablename__ = "project_permissions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    project_id: Mapped[Optional[str]] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    all_projects: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_read: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_write: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Tab visibility
+    tab_overview: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_campaigns: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_preview: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_brief: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_action_plan: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_plan_json: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_audit: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_scan_log: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_api_log: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_budget_log: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id], back_populates="permissions")
+    project: Mapped[Optional["Project"]] = relationship("Project", back_populates="permissions")
 
 
 class AutofillJob(Base):

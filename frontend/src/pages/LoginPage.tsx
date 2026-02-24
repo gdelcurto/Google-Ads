@@ -19,11 +19,12 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: T.shadowMd,
   },
   cardTop: {
-    background: T.navBg,
+    background: 'rgb(247 247 247)',
     padding: '28px 40px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    borderBottom: '1px solid #e4e4e4',
   },
   logo: { height: 28 },
   cardBody: { padding: '36px 40px' },
@@ -103,11 +104,11 @@ export default function LoginPage() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.cardTop}>
-          <img src={T.logo} alt="Blastness" style={s.logo} />
+          <img src={T.logoApp} alt="AdAtelier" style={s.logo} />
         </div>
         <div style={s.cardBody}>
-          <div style={s.title}>Google Ads Campaigns</div>
-          <div style={s.subtitle}>Piattaforma interna — Blastness / Mentefredda</div>
+          <div style={s.title}>Ad Atelier</div>
+          <div style={s.subtitle}>Boutique Campaigns. Industrial Intelligence.</div>
           {error && <div style={s.error}>{error}</div>}
           <form onSubmit={handleLogin}>
             <label style={s.label}>Email</label>

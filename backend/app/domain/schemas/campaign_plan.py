@@ -40,6 +40,8 @@ class BidStrategy(str, Enum):
     target_roas = "Target ROAS"
     maximize_conversions = "Maximize conversions"
     maximize_conversion_value = "Maximize conversion value"
+    maximize_clicks = "Maximize clicks"
+    target_impression_share = "Target impression share"
     manual_cpc = "Manual CPC"
     enhanced_cpc = "Enhanced CPC"
 
@@ -213,6 +215,9 @@ class AccountPlan(BaseModel):
     global_negative_keywords: List[Keyword] = Field(default_factory=list)
     validation_warnings: List[str] = Field(default_factory=list)
     validation_errors: List[str] = Field(default_factory=list)
+    # Structured warnings from AI advisor — each item carries an optional
+    # suggested_fix dict {brief_path, value, action, label} for frontend CTAs.
+    validation_warnings_structured: List[Dict[str, Any]] = Field(default_factory=list)
     is_valid: bool = True
     publish_ready: bool = False
 

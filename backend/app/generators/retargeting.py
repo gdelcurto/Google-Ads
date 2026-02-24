@@ -9,7 +9,7 @@ from typing import List
 
 from app.domain.schemas.brief import Brief, LanguagePlan, RemarketingList
 from app.domain.schemas.campaign_plan import (
-    AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
+    AdGroupPlan, CampaignPlan, CampaignStatus, CampaignType,
     DisplayAd, NetworkType,
 )
 from app.generators.base import BaseGenerator
@@ -40,8 +40,7 @@ class RetargetingGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        kpi = brief.objectives.kpi
-        bid_strategy = BidStrategy.target_cpa if kpi.target_cpa_eur else BidStrategy.maximize_conversions
+        bid_strategy = self.resolve_bid_strategy(brief, self.CAMPAIGN_TYPE_KEY)
 
         campaign_name, external_key, settings, _tracking, _assets = (
             self._generate_campaign_skeleton(
@@ -52,7 +51,6 @@ class RetargetingGenerator(BaseGenerator):
                 camp_type_key=self.CAMPAIGN_TYPE_KEY,
                 network_types=[NetworkType.display],
                 bid_strategy=bid_strategy,
-                target_cpa=kpi.target_cpa_eur,
             )
         )
 

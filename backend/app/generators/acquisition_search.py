@@ -13,7 +13,7 @@ from typing import Dict, List
 from app.agents.acquisition import AcquisitionAgent
 from app.domain.schemas.brief import Brief, LanguagePlan
 from app.domain.schemas.campaign_plan import (
-    AdGroupPlan, BidStrategy, CampaignPlan, CampaignStatus, CampaignType,
+    AdGroupPlan, CampaignPlan, CampaignStatus, CampaignType,
     Keyword, MatchType, NetworkType,
 )
 from app.generators.base import BaseGenerator
@@ -40,13 +40,7 @@ class AcquisitionSearchGenerator(BaseGenerator):
         return campaigns
 
     def _generate_for_language(self, brief: Brief, lang: LanguagePlan) -> CampaignPlan:
-        kpi = brief.objectives.kpi
-        if kpi.target_cpa_eur:
-            bid_strategy = BidStrategy.target_cpa
-        elif kpi.target_roas:
-            bid_strategy = BidStrategy.target_roas
-        else:
-            bid_strategy = BidStrategy.maximize_conversions
+        bid_strategy = self.resolve_bid_strategy(brief, self.CAMPAIGN_TYPE_KEY)
 
         campaign_name, external_key, settings, tracking_template, asset_pack = (
             self._generate_campaign_skeleton(
@@ -57,8 +51,6 @@ class AcquisitionSearchGenerator(BaseGenerator):
                 camp_type_key=self.CAMPAIGN_TYPE_KEY,
                 network_types=[NetworkType.search],
                 bid_strategy=bid_strategy,
-                target_cpa=kpi.target_cpa_eur,
-                target_roas=kpi.target_roas,
             )
         )
 

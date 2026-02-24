@@ -55,6 +55,20 @@ export interface PMaxAssetGroupPreview {
   audience_signals: string[]
 }
 
+export interface ValidationWarning {
+  message: string
+  code: string
+  level: 'warning' | 'info'
+  agent: string
+  /** Present on AI advisor warnings — drives the 'Applica' CTA in the UI. */
+  suggested_fix?: {
+    brief_path: string
+    value: unknown
+    action: 'set' | 'append_list'
+    label: string
+  }
+}
+
 export interface AccountPlanPreview {
   project_id: string
   client_name: string
@@ -64,6 +78,8 @@ export interface AccountPlanPreview {
   total_campaigns: number
   validation_errors: string[]
   validation_warnings: string[]
+  /** Structured AI advisor warnings — use these when present to render CTAs. */
+  validation_warnings_structured: ValidationWarning[]
   campaigns: CampaignPreview[]
 }
 
@@ -125,6 +141,44 @@ export const projectsApi = {
 
   savePlan: (id: string, planData: Record<string, unknown>) =>
     api.put<{ status: string; campaigns: number }>(`/projects/${id}/plan`, planData).then((r) => r.data),
+
+  /**
+   * Apply a structured suggested_fix to the project brief.
+   * After calling this the caller should re-generate the plan.
+   */
+  applyBriefFix: (
+    id: string,
+    briefPath: string,
+    value: unknown,
+    action: 'set' | 'append_list' = 'set',
+  ) =>
+    api
+      .post<{ status: string; brief_path: string; value: unknown }>(
+        `/projects/${id}/apply-brief-fix`,
+        { brief_path: briefPath, value, action },
+      )
+      .then((r) => r.data),
+
+  /**
+   * Apply all structured suggested_fix items atomically to the project brief.
+   * After calling this the caller should re-generate the plan once.
+   */
+  applyAllBriefFixes: (
+    id: string,
+    fixes: NonNullable<ValidationWarning['suggested_fix']>[],
+  ) =>
+    api
+      .post<{ status: string; applied: { brief_path: string; action: string }[]; count: number }>(
+        `/projects/${id}/apply-all-brief-fixes`,
+        {
+          fixes: fixes.map(f => ({
+            brief_path: f.brief_path,
+            value: f.value,
+            action: f.action,
+          })),
+        },
+      )
+      .then((r) => r.data),
 
   softDelete: (id: string) =>
     api.delete<{ detail: string }>(`/projects/${id}`).then((r) => r.data),
@@ -278,6 +332,9 @@ export const autofillApi = {
       suggested_total_monthly_eur: number
       min_budget_warning: string | null
       api_call_log?: ApiCallLogEntry
+      ai_raw_response?: string | null
+      ai_prompt_used?: string | null
+      reasoning_steps?: Array<{ step: number; label: string; detail: string; value: string }>
     }>('/autofill/budget-strategy', data).then((r) => r.data),
 }
 

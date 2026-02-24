@@ -14,103 +14,38 @@ from app.connectors.claude_enricher import (
     _api_log_entry,
     _build_lang_url_section,
     _compute_daily,
-    _compute_split,
-    _select_campaign_types,
-    _suggest_budget,
     _trim_to_word,
+    _VALID_CAMPAIGN_TYPES,
+    _FALLBACK_TYPES,
 )
 from app.connectors.web_scraper import scan_entry, ScrapedSite, LANG_IDS
 
 
-# ── _suggest_budget ───────────────────────────────────────────────────────────
+# ── _VALID_CAMPAIGN_TYPES / _FALLBACK_TYPES ───────────────────────────────────
 
-def test_suggest_budget_scales_with_stars():
-    """Higher star rating → higher suggested budget."""
-    b3 = _suggest_budget(3, "city_hotel")
-    b5 = _suggest_budget(5, "city_hotel")
-    assert b5 > b3
-
-
-def test_suggest_budget_resort_multiplier():
-    """Resort category multiplies budget by 1.4."""
-    base = _suggest_budget(4, "city_hotel")
-    resort = _suggest_budget(4, "resort")
-    assert resort > base
+def test_valid_campaign_types_contains_required():
+    """All expected campaign type keys must be present."""
+    required = {"search_brand", "search_acquisition", "performance_max", "retargeting", "demand_gen"}
+    assert required == set(_VALID_CAMPAIGN_TYPES)
 
 
-def test_suggest_budget_rounded_to_100():
-    """Budget must be a multiple of 100."""
-    for stars in range(1, 6):
-        b = _suggest_budget(stars, "city_hotel")
-        assert b % 100 == 0
-
-
-# ── _select_campaign_types ────────────────────────────────────────────────────
-
-def test_select_campaign_types_low_budget():
-    """Below €300 → only brand + acquisition, with a warning."""
-    types, warning = _select_campaign_types(200)
-    assert set(types) == {"search_brand", "search_acquisition"}
-    assert warning is not None
-    assert "300" in warning
-
-
-def test_select_campaign_types_medium_budget():
-    """€600–€1499 → adds retargeting, no warning."""
-    types, warning = _select_campaign_types(800)
-    assert "retargeting" in types
-    assert "performance_max" not in types
-    assert warning is None
-
-
-def test_select_campaign_types_high_budget():
-    """≥€3000 → all 5 campaign types active."""
-    types, warning = _select_campaign_types(3500)
-    assert len(types) == 5
-    assert warning is None
-
-
-def test_select_campaign_types_boundary_3000():
-    """At exactly €3000 — performance_max included but demand_gen threshold not yet met."""
-    types, _ = _select_campaign_types(3000)
-    # €3000 triggers the ≥3000 branch → all 5
-    assert "demand_gen" in types
-
-
-# ── _compute_split ────────────────────────────────────────────────────────────
-
-def test_compute_split_sums_to_one():
-    """Budget split percentages must sum to 1.0 across all active types."""
-    for budget in [400, 800, 1500, 3000, 5000]:
-        types, _ = _select_campaign_types(budget)
-        split = _compute_split(types)
-        total = sum(split.values())
-        assert abs(total - 1.0) < 0.0001, f"Split does not sum to 1.0 for budget {budget}: {split}"
-
-
-def test_compute_split_all_positive():
-    """Each campaign type must have a positive weight."""
-    types, _ = _select_campaign_types(3000)
-    split = _compute_split(types)
-    assert all(v > 0 for v in split.values())
+def test_fallback_types_are_subset_of_valid():
+    """Fallback types must all be valid campaign type keys."""
+    assert all(t in _VALID_CAMPAIGN_TYPES for t in _FALLBACK_TYPES)
 
 
 # ── _compute_daily ────────────────────────────────────────────────────────────
 
 def test_compute_daily_returns_frontend_keys():
     """Daily budget dict uses frontend keys (brand, acquisition, pmax…)."""
-    types, _ = _select_campaign_types(1500)
-    split = _compute_split(types)
+    split = {"search_brand": 0.30, "search_acquisition": 0.40, "performance_max": 0.30}
     daily = _compute_daily(split, 1500, ["IT", "EN"])
-    # All keys should be frontend-style
-    assert all(k in {"brand", "acquisition", "pmax", "retargeting", "demand_gen"}
-               for k in daily)
+    assert all(k in {"brand", "acquisition", "pmax", "retargeting", "demand_gen"} for k in daily)
 
 
 def test_compute_daily_splits_by_language():
     """Each campaign type must have an entry per language."""
-    types, _ = _select_campaign_types(800)
-    split = _compute_split(types)
+    split = {"search_brand": 0.50, "search_acquisition": 0.50}
     daily = _compute_daily(split, 800, ["IT", "DE", "FR"])
     for type_key, by_lang in daily.items():
         assert set(by_lang.keys()) == {"IT", "DE", "FR"}, \
@@ -121,8 +56,7 @@ def test_compute_daily_totals_approximate_monthly():
     """Sum of daily*30.44 across all types and languages ≈ total monthly budget."""
     budget = 1200.0
     langs = ["IT"]
-    types, _ = _select_campaign_types(budget)
-    split = _compute_split(types)
+    split = {"search_brand": 0.25, "search_acquisition": 0.40, "retargeting": 0.35}
     daily = _compute_daily(split, budget, langs)
     reconstructed = sum(v * 30.44 for by_lang in daily.values() for v in by_lang.values())
     assert abs(reconstructed - budget) < 2.0, \

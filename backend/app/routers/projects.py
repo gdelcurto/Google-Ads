@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import TokenData, get_current_user, require_strategist_or_admin
 from app.database import get_db
-from app.domain.models import AuditLog, Project
+from app.domain.models import AuditLog, Project, ProjectPermission
 from app.domain.schemas.brief import Brief
 from app.validators.brief_validator import BriefValidator
 
@@ -65,13 +65,40 @@ async def list_projects(
     current_user: TokenData = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Project)
-        .where(Project.deleted_at.is_(None))
-        .order_by(Project.created_at.desc())
+    base_q = select(Project).where(Project.deleted_at.is_(None)).order_by(Project.created_at.desc())
+
+    if current_user.role == "admin":
+        result = await db.execute(base_q)
+        return [_to_response(p) for p in result.scalars().all()]
+
+    # Check if user has an all_projects wildcard
+    all_perm = await db.execute(
+        select(ProjectPermission).where(
+            ProjectPermission.user_id == current_user.user_id,
+            ProjectPermission.all_projects.is_(True),
+            ProjectPermission.can_read.is_(True),
+        )
     )
-    projects = result.scalars().all()
-    return [_to_response(p) for p in projects]
+    if all_perm.scalar_one_or_none():
+        result = await db.execute(base_q)
+        return [_to_response(p) for p in result.scalars().all()]
+
+    # Otherwise, return only explicitly permitted projects
+    perms = await db.execute(
+        select(ProjectPermission.project_id).where(
+            ProjectPermission.user_id == current_user.user_id,
+            ProjectPermission.project_id.is_not(None),
+            ProjectPermission.can_read.is_(True),
+        )
+    )
+    allowed_ids = [row[0] for row in perms.fetchall()]
+    if not allowed_ids:
+        return []
+
+    result = await db.execute(
+        base_q.where(Project.id.in_(allowed_ids))
+    )
+    return [_to_response(p) for p in result.scalars().all()]
 
 
 @router.post("", response_model=ProjectResponse)
@@ -302,3 +329,80 @@ async def _get_project_or_404(project_id: str, db: AsyncSession) -> Project:
     if not project:
         raise HTTPException(status_code=404, detail="Progetto non trovato")
     return project
+
+
+# ── Permission helpers ────────────────────────────────────────────────────────
+
+def _full_tabs() -> dict:
+    return {
+        "overview": True, "campaigns": True, "preview": True,
+        "brief": True, "action_plan": True, "plan_json": True,
+        "audit": True, "scan_log": True, "api_log": True, "budget_log": True,
+    }
+
+
+def _no_tabs() -> dict:
+    return {k: False for k in _full_tabs()}
+
+
+def _perm_to_dict(p: ProjectPermission) -> dict:
+    return {
+        "can_read": p.can_read,
+        "can_write": p.can_write,
+        "tabs": {
+            "overview": p.tab_overview,
+            "campaigns": p.tab_campaigns,
+            "preview": p.tab_preview,
+            "brief": p.tab_brief,
+            "action_plan": p.tab_action_plan,
+            "plan_json": p.tab_plan_json,
+            "audit": p.tab_audit,
+            "scan_log": p.tab_scan_log,
+            "api_log": p.tab_api_log,
+            "budget_log": p.tab_budget_log,
+        },
+    }
+
+
+async def _resolve_permissions(user_id: str, user_role: str, project_id: str, db: AsyncSession) -> dict:
+    """Return effective permissions for a user on a project.
+
+    Admin always gets full access. For others, check specific project
+    permission first, then fall back to the all_projects wildcard.
+    """
+    if user_role == "admin":
+        return {"can_read": True, "can_write": True, "tabs": _full_tabs()}
+
+    # Specific project permission
+    res = await db.execute(
+        select(ProjectPermission).where(
+            ProjectPermission.user_id == user_id,
+            ProjectPermission.project_id == project_id,
+        )
+    )
+    perm = res.scalar_one_or_none()
+    if perm:
+        return _perm_to_dict(perm)
+
+    # All-projects wildcard
+    res = await db.execute(
+        select(ProjectPermission).where(
+            ProjectPermission.user_id == user_id,
+            ProjectPermission.all_projects.is_(True),
+        )
+    )
+    perm = res.scalar_one_or_none()
+    if perm:
+        return _perm_to_dict(perm)
+
+    return {"can_read": False, "can_write": False, "tabs": _no_tabs()}
+
+
+@router.get("/{project_id}/my-permissions")
+async def get_my_permissions(
+    project_id: str,
+    current_user: TokenData = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's effective permissions for a project."""
+    return await _resolve_permissions(current_user.user_id, current_user.role, project_id, db)
