@@ -1,19 +1,18 @@
 /**
  * Word (DOCX) export for the Action Plan / Preventivo.
  *
- * Produces a clean A4 document with:
- *   1. Cover — hotel name, category, date
- *   2. Scenario d'investimento — KPI table + intro paragraph
- *   3. Mix di campagne — full budget allocation table
- *   4. Dettaglio campagne — one section per campaign type
- *   5. Mercati e lingue — languages table
- *   6. Prossimi passi — numbered action items
+ * Design goals:
+ *  - A4, 2.5 cm margins, Calibri 11 pt body
+ *  - Table headers: dark background (#1F2937) + white text  — high contrast
+ *  - Alternating data rows: white / very light gray (#F9FAFB)
+ *  - Totale/highlight row: light pink (#FDF4F9), dark text
+ *  - Explicit column widths in DXA (twips) — avoids "incomplete table" in Word
+ *  - All borders defined explicitly — no missing cell borders
  */
 
 import {
   AlignmentType,
   Document,
-  HeadingLevel,
   Packer,
   Paragraph,
   Table,
@@ -25,90 +24,145 @@ import {
 } from 'docx'
 import { CAMPAIGN_STRATEGY } from './constants'
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// ─── palette ──────────────────────────────────────────────────────────────────
+const C = {
+  dark:       '1F2937',   // section headings, body text
+  white:      'FFFFFF',
+  accent:     'E10098',   // pink — key numbers, step bullets
+  body:       '374151',   // paragraph text
+  muted:      '6B7280',   // captions
+  thBg:       '1F2937',   // table header background
+  thText:     'FFFFFF',   // table header text
+  rowAlt:     'F9FAFB',   // alternating row tint
+  totBg:      'FDF4F9',   // totale row — light pink
+  totText:    '111827',
+  border:     'D1D5DB',   // table border
+  labelBg:    'F3F4F6',   // label cell in detail table
+  accentLight:'F9E8F4',   // section heading bar
+} as const
 
-const PINK   = 'E10098'
-const DARK   = '111111'
-const GRAY   = '666666'
-const LGRAY  = 'AAAAAA'
-const TBGRAY = 'F2F2F2'
+// A4 content width at 2.5 cm margins:
+// (11906 twips page − 2 × 1440 twips) = 9026 twips usable
+const PAGE_W = 9026
 
-function para(
+// ─── border helpers ───────────────────────────────────────────────────────────
+const BORDER = { style: 'single' as const, size: 4, color: C.border }
+
+const tableBorders = {
+  top:            BORDER,
+  bottom:         BORDER,
+  left:           BORDER,
+  right:          BORDER,
+  insideHorizontal: BORDER,
+  insideVertical:   BORDER,
+}
+
+// ─── cell factories ───────────────────────────────────────────────────────────
+
+/** Table header cell: dark bg, white bold text, centred. */
+function th(
+  text: string,
+  widthDxa: number,
+  opts: { left?: boolean } = {},
+): TableCell {
+  return new TableCell({
+    width:         { size: widthDxa, type: WidthType.DXA },
+    shading:       { fill: C.thBg, type: 'solid' },
+    verticalAlign: VerticalAlign.CENTER,
+    margins:       { top: 80, bottom: 80, left: 140, right: 140 },
+    children: [new Paragraph({
+      alignment: opts.left ? AlignmentType.LEFT : AlignmentType.CENTER,
+      children: [new TextRun({
+        text, bold: true, size: 18, color: C.thText, allCaps: true,
+      })],
+    })],
+  })
+}
+
+/** Standard data cell. */
+function td(
+  text: string,
+  widthDxa: number,
+  opts: {
+    bold?:   boolean
+    center?: boolean
+    color?:  string
+    bg?:     string
+    size?:   number
+    italic?: boolean
+    span?:   number
+  } = {},
+): TableCell {
+  const cell = new TableCell({
+    width:         opts.span ? undefined : { size: widthDxa, type: WidthType.DXA },
+    columnSpan:    opts.span,
+    shading:       opts.bg ? { fill: opts.bg, type: 'solid' } : undefined,
+    verticalAlign: VerticalAlign.CENTER,
+    margins:       { top: 80, bottom: 80, left: 140, right: 140 },
+    children: [new Paragraph({
+      alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+      children: [new TextRun({
+        text,
+        bold:    opts.bold,
+        size:    opts.size ?? 20,
+        color:   opts.color,
+        italics: opts.italic,
+      })],
+    })],
+  })
+  return cell
+}
+
+// ─── paragraph helpers ────────────────────────────────────────────────────────
+
+function p(
   text: string,
   opts: {
-    bold?: boolean
-    size?: number      // half-points (22 = 11pt, 28 = 14pt)
-    color?: string
-    italic?: boolean
-    align?: (typeof AlignmentType)[keyof typeof AlignmentType]
-    spaceBefore?: number
-    spaceAfter?: number
-    allCaps?: boolean
-    heading?: (typeof HeadingLevel)[keyof typeof HeadingLevel]
+    bold?:        boolean
+    size?:        number
+    color?:       string
+    italic?:      boolean
+    align?:       (typeof AlignmentType)[keyof typeof AlignmentType]
+    before?:      number
+    after?:       number
+    allCaps?:     boolean
   } = {},
 ): Paragraph {
   return new Paragraph({
-    heading: opts.heading,
     alignment: opts.align,
-    spacing: { before: opts.spaceBefore ?? 0, after: opts.spaceAfter ?? 80 },
-    children: [
-      new TextRun({
-        text,
-        bold: opts.bold,
-        size: opts.size ?? 22,
-        color: opts.color,
-        italics: opts.italic,
-        allCaps: opts.allCaps,
-      }),
-    ],
-  })
-}
-
-function hCell(text: string, pct?: number): TableCell {
-  return new TableCell({
-    children: [new Paragraph({
-      alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text, bold: true, size: 18, color: GRAY, allCaps: true })],
+    spacing:   { before: opts.before ?? 0, after: opts.after ?? 80 },
+    children: [new TextRun({
+      text,
+      bold:    opts.bold,
+      size:    opts.size ?? 22,
+      color:   opts.color,
+      italics: opts.italic,
+      allCaps: opts.allCaps,
     })],
-    width: pct != null ? { size: pct, type: WidthType.PERCENTAGE } : undefined,
-    shading: { fill: TBGRAY, type: 'solid' },
-    verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 80, bottom: 80, left: 120, right: 120 },
   })
 }
 
-function dCell(
-  text: string,
-  opts: { bold?: boolean; center?: boolean; color?: string; colSpan?: number; bg?: string } = {},
-): TableCell {
-  return new TableCell({
-    children: [new Paragraph({
-      alignment: opts.center ? AlignmentType.CENTER : AlignmentType.LEFT,
-      children: [new TextRun({ text, bold: opts.bold, size: 20, color: opts.color })],
-    })],
-    columnSpan: opts.colSpan,
-    shading: opts.bg ? { fill: opts.bg, type: 'solid' } : undefined,
-    verticalAlign: VerticalAlign.CENTER,
-    margins: { top: 80, bottom: 80, left: 120, right: 120 },
-  })
+function gap(pts = 160): Paragraph {
+  return new Paragraph({ spacing: { before: 0, after: pts }, children: [] })
 }
 
-function sectionHeading(title: string): Paragraph {
+/** Section heading with left pink bar (via paragraph border trick). */
+function h1(title: string): Paragraph {
   return new Paragraph({
-    heading: HeadingLevel.HEADING_1,
-    spacing: { before: 400, after: 180 },
-    children: [new TextRun({ text: title, bold: true, size: 30, color: DARK })],
+    spacing: { before: 360, after: 180 },
+    border: {
+      left: { style: 'single', size: 16, color: C.accent, space: 8 },
+    },
+    children: [new TextRun({
+      text: title, bold: true, size: 28, color: C.dark,
+    })],
   })
-}
-
-function divider(): Paragraph {
-  return new Paragraph({ spacing: { before: 0, after: 200 }, children: [] })
 }
 
 // ─── main export ──────────────────────────────────────────────────────────────
 
 export async function exportToDocx(brief: Record<string, unknown>): Promise<void> {
-  // ── data extraction (mirrors ActionPlanTab.tsx) ────────────────────────────
+  // ── data extraction ────────────────────────────────────────────────────────
   const client  = (brief.client           || {}) as Record<string, unknown>
   const hotel   = (brief.hotel_specifics  || {}) as Record<string, unknown>
   const loc     = (hotel.location         || {}) as Record<string, unknown>
@@ -146,109 +200,130 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
       retargeting:        'retargeting_assets',
     }
     const assetKey = assetMap[t]
-    const typeAssets = assetKey ? (firstLang[assetKey] as Record<string, unknown> | undefined) : undefined
-    const typeHl = typeAssets?.headlines as string[] | undefined
-    if (typeHl?.length) return typeHl.slice(0, 4)
+    const ta = assetKey ? (firstLang[assetKey] as Record<string, unknown> | undefined) : undefined
+    const hl = ta?.headlines as string[] | undefined
+    if (hl?.length) return hl.slice(0, 4)
     return (firstLang.headlines as string[] | undefined)?.slice(0, 4) ?? []
   }
 
-  // ── document children ─────────────────────────────────────────────────────
   const children: (Paragraph | Table)[] = []
 
-  // ─── 1. COVER ───────────────────────────────────────────────────────────────
+  // ─── COVER ────────────────────────────────────────────────────────────────
   children.push(
-    para('Piano Strategico Google Ads', {
-      size: 22, color: PINK, allCaps: true, align: AlignmentType.CENTER, spaceAfter: 160,
+    gap(400),
+    p('Piano Strategico Google Ads', {
+      size: 20, color: C.accent, allCaps: true,
+      align: AlignmentType.CENTER, after: 200,
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { before: 0, after: 100 },
-      children: [new TextRun({ text: brandName, bold: true, size: 72, color: DARK })],
+      spacing:   { before: 0, after: 120 },
+      children:  [new TextRun({ text: brandName, bold: true, size: 80, color: C.dark })],
     }),
   )
 
   const subtitle = [category, stars > 0 ? '★'.repeat(stars) : '', address].filter(Boolean).join(' · ')
   if (subtitle) {
-    children.push(para(subtitle, { size: 26, color: GRAY, align: AlignmentType.CENTER, spaceAfter: 80 }))
+    children.push(p(subtitle, { size: 26, color: C.muted, align: AlignmentType.CENTER, after: 100 }))
   }
   children.push(
-    para(
+    p(
       `Preparato il ${today}` +
       (languages.length > 0 ? ` · Mercati: ${languages.map(l => l.code as string).join(', ')}` : ''),
-      { size: 20, color: GRAY, align: AlignmentType.CENTER, spaceAfter: 60 },
+      { size: 20, color: C.muted, align: AlignmentType.CENTER, after: 80 },
     ),
-    para('DOCUMENTO RISERVATO — USO INTERNO E CLIENTE', {
-      size: 18, color: LGRAY, allCaps: true, align: AlignmentType.CENTER, spaceAfter: 400,
+    p('DOCUMENTO RISERVATO — USO INTERNO E CLIENTE', {
+      size: 18, color: 'AAAAAA', allCaps: true,
+      align: AlignmentType.CENTER, after: 600,
     }),
   )
 
-  // ─── 2. SCENARIO D'INVESTIMENTO ─────────────────────────────────────────────
-  children.push(sectionHeading('1. Scenario d\'investimento'))
+  // ─── 1. SCENARIO D'INVESTIMENTO ───────────────────────────────────────────
+  children.push(h1('1. Scenario d\'investimento'))
 
-  // KPI table: 2 rows × (4 or 6) columns
-  const kpiLabels = ['Budget mensile', 'Budget giornaliero', 'Campagne attive', 'Lingue / Mercati']
-  const kpiValues = [
-    `€${Math.round(totalMonthly).toLocaleString('it-IT')}`,
-    `€${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}/g`,
-    String(orderedTypes.length),
-    `${languages.length} (${languages.map(l => l.code as string).join(', ')})`,
+  // KPI table: 2 rows × N columns (4 base + optional ROAS/CPA)
+  const kpiCols: { label: string; value: string }[] = [
+    { label: 'Budget mensile',    value: `€ ${Math.round(totalMonthly).toLocaleString('it-IT')}` },
+    { label: 'Budget giornaliero', value: `€ ${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')} / g` },
+    { label: 'Campagne attive',   value: String(orderedTypes.length) },
+    { label: `Lingue / Mercati`,  value: `${languages.length} (${languages.map(l => l.code as string).join(', ')})` },
   ]
-  if (targetRoas) { kpiLabels.push('ROAS target'); kpiValues.push(`${targetRoas}:1`) }
-  if (targetCpa)  { kpiLabels.push('CPA target');  kpiValues.push(`€${targetCpa}`) }
-  const colW = Math.floor(100 / kpiLabels.length)
+  if (targetRoas) kpiCols.push({ label: 'ROAS target', value: `${targetRoas}:1` })
+  if (targetCpa)  kpiCols.push({ label: 'CPA target',  value: `€ ${targetCpa}` })
 
+  const kpiW = Math.floor(PAGE_W / kpiCols.length)
   children.push(
     new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width:   { size: PAGE_W, type: WidthType.DXA },
+      borders: tableBorders,
       rows: [
-        new TableRow({ children: kpiLabels.map(l => hCell(l, colW)) }),
-        new TableRow({ children: kpiValues.map(v => dCell(v, { bold: true, center: true })) }),
+        new TableRow({ children: kpiCols.map(c => th(c.label, kpiW)) }),
+        new TableRow({ children: kpiCols.map(c =>
+          td(c.value, kpiW, { bold: true, center: true, size: 24, color: C.accent })
+        )}),
       ],
     }),
-    divider(),
-    para(
+    gap(160),
+    p(
       `Il piano prevede un approccio full-funnel con ${orderedTypes.length} tipologie di campagna Google Ads, ` +
       `attivate in ordine di priorità d'intento: dalla protezione del brand fino alla generazione di domanda. ` +
       `L'obiettivo primario è incrementare le prenotazioni dirette riducendo la dipendenza dalle OTA ` +
       `(Booking.com, Expedia) e migliorare il ritorno sull'investimento pubblicitario.`,
-      { size: 22, spaceAfter: 0 },
+      { color: C.body, after: 0 },
     ),
   )
 
-  // ─── 3. MIX DI CAMPAGNE ─────────────────────────────────────────────────────
-  children.push(sectionHeading('2. Mix di campagne consigliato'))
+  // ─── 2. MIX DI CAMPAGNE ───────────────────────────────────────────────────
+  children.push(h1('2. Mix di campagne consigliato'))
+
+  // Column widths for 6-col table: #(600) | Campagna(2400) | Funnel(1200) | Budget/mese(1500) | %(1000) | Budget/g(1500) = 8200 — slightly under 9026, padded by table margins
+  const MIX = { n: 600, name: 2626, funnel: 1400, budget: 1500, pct: 900, daily: 1500 }
+
   children.push(
     new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
+      width:   { size: PAGE_W, type: WidthType.DXA },
+      borders: tableBorders,
       rows: [
         new TableRow({
           tableHeader: true,
-          children: ['#', 'Campagna', 'Funnel', 'Budget/mese', '% tot.', 'Budget/giorno']
-            .map(h => hCell(h)),
+          children: [
+            th('#',             MIX.n),
+            th('Campagna',      MIX.name, { left: true }),
+            th('Funnel',        MIX.funnel),
+            th('Budget / mese', MIX.budget),
+            th('% tot.',        MIX.pct),
+            th('Budget / g',    MIX.daily),
+          ],
         }),
-        ...typeRows.map(({ type, monthlyAmt, pct }) => {
+        ...typeRows.map(({ type, monthlyAmt, pct }, i) => {
           const info = CAMPAIGN_STRATEGY[type]
+          const bg   = i % 2 === 0 ? C.white : C.rowAlt
           return new TableRow({ children: [
-            dCell(String(info?.priority ?? '—'), { center: true }),
-            dCell(info?.label ?? type, { bold: true }),
-            dCell(info?.funnel ?? '—', { center: true }),
-            dCell(`€${Math.round(monthlyAmt).toLocaleString('it-IT')}`, { bold: true, center: true }),
-            dCell(`${pct.toFixed(0)}%`, { center: true }),
-            dCell(`€${Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}/g`, { center: true }),
+            td(String(info?.priority ?? '—'), MIX.n,      { center: true, bg }),
+            td(info?.label ?? type,           MIX.name,   { bold: true,   bg }),
+            td(info?.funnel ?? '—',           MIX.funnel, { center: true, bg }),
+            td(`€ ${Math.round(monthlyAmt).toLocaleString('it-IT')}`, MIX.budget, { bold: true, center: true, bg }),
+            td(`${pct.toFixed(0)} %`,         MIX.pct,    { center: true, bg }),
+            td(`€ ${Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}`, MIX.daily, { center: true, bg }),
           ]})
         }),
+        // TOTALE row — colSpan 3 for first 3 cols, then 3 individual cells
         new TableRow({ children: [
-          dCell('TOTALE', { bold: true, colSpan: 3, bg: TBGRAY }),
-          dCell(`€${Math.round(totalMonthly).toLocaleString('it-IT')}`, { bold: true, center: true, color: PINK, bg: TBGRAY }),
-          dCell('100%', { bold: true, center: true, bg: TBGRAY }),
-          dCell(`€${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}/g`, { center: true, bg: TBGRAY }),
+          td('TOTALE', 0, { bold: true, bg: C.totBg, color: C.totText, size: 22, span: 3 }),
+          td(`€ ${Math.round(totalMonthly).toLocaleString('it-IT')}`, MIX.budget,
+             { bold: true, center: true, bg: C.totBg, color: C.accent, size: 24 }),
+          td('100 %', MIX.pct,  { bold: true, center: true, bg: C.totBg, color: C.totText }),
+          td(`€ ${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}`, MIX.daily,
+             { center: true, bg: C.totBg, color: C.totText }),
         ]}),
       ],
     }),
   )
 
-  // ─── 4. DETTAGLIO CAMPAGNE ───────────────────────────────────────────────────
-  children.push(sectionHeading('3. Dettaglio delle campagne'))
+  // ─── 3. DETTAGLIO CAMPAGNE ────────────────────────────────────────────────
+  children.push(h1('3. Dettaglio delle campagne'))
+
+  const DET = { label: Math.floor(PAGE_W * 0.24), value: Math.floor(PAGE_W * 0.76) }
 
   orderedTypes.forEach((type, idx) => {
     const info    = CAMPAIGN_STRATEGY[type]
@@ -259,39 +334,44 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
       new Paragraph({
         spacing: { before: idx === 0 ? 0 : 280, after: 100 },
         children: [
-          new TextRun({ text: `${idx + 1}. ${info?.label ?? type}`, bold: true, size: 26, color: DARK }),
-          new TextRun({ text: `   ${info?.funnel ?? ''}`, size: 20, color: GRAY }),
-          new TextRun({ text: `   €${Math.round(monthly).toLocaleString('it-IT')}/mese`, bold: true, size: 22, color: PINK }),
+          new TextRun({ text: `${idx + 1}. ${info?.label ?? type}`, bold: true, size: 26, color: C.dark }),
+          new TextRun({ text: `   ${info?.funnel ?? ''}`, size: 20, color: C.muted }),
+          new TextRun({ text: `   € ${Math.round(monthly).toLocaleString('it-IT')} / mese`, bold: true, size: 22, color: C.accent }),
         ],
       }),
     )
 
     if (info?.description) {
-      children.push(para(info.description, { size: 21, spaceAfter: 120 }))
+      children.push(p(info.description, { size: 21, color: C.body, after: 120 }))
     }
 
-    const detailRows: [string, string][] = [
-      ['Target audience', info?.audience ?? ''],
-      ['KPI & obiettivi',  info?.kpi ?? ''],
-      ['Formato annunci',  info?.formats ?? ''],
-      ['Investimento',     `€${Math.round(monthly).toLocaleString('it-IT')}/mese · €${Math.round(monthly / 30.44).toLocaleString('it-IT')}/giorno`],
-    ]
     children.push(
       new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: detailRows.map(([label, value]) =>
+        width:   { size: PAGE_W, type: WidthType.DXA },
+        borders: tableBorders,
+        rows: [
+          ['Target audience', info?.audience ?? ''],
+          ['KPI & obiettivi',  info?.kpi ?? ''],
+          ['Formato annunci',  info?.formats ?? ''],
+          ['Investimento',     `€ ${Math.round(monthly).toLocaleString('it-IT')} / mese  ·  € ${Math.round(monthly / 30.44).toLocaleString('it-IT')} / giorno`],
+        ].map(([label, value]) =>
           new TableRow({ children: [
             new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, size: 18, color: GRAY, allCaps: true })] })],
-              width: { size: 22, type: WidthType.PERCENTAGE },
-              shading: { fill: 'F8F8F8', type: 'solid' },
+              width:         { size: DET.label, type: WidthType.DXA },
+              shading:       { fill: C.labelBg, type: 'solid' },
               verticalAlign: VerticalAlign.CENTER,
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
+              margins:       { top: 80, bottom: 80, left: 140, right: 140 },
+              children: [new Paragraph({
+                children: [new TextRun({ text: label, bold: true, size: 18, color: C.muted, allCaps: true })],
+              })],
             }),
             new TableCell({
-              children: [new Paragraph({ children: [new TextRun({ text: value, size: 20 })] })],
-              width: { size: 78, type: WidthType.PERCENTAGE },
-              margins: { top: 80, bottom: 80, left: 120, right: 120 },
+              width:         { size: DET.value, type: WidthType.DXA },
+              verticalAlign: VerticalAlign.CENTER,
+              margins:       { top: 80, bottom: 80, left: 140, right: 140 },
+              children: [new Paragraph({
+                children: [new TextRun({ text: value, size: 20, color: C.body })],
+              })],
             }),
           ]})
         ),
@@ -300,35 +380,50 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
 
     if (copy.length > 0) {
       children.push(new Paragraph({
-        spacing: { before: 120, after: 0 },
+        spacing: { before: 100, after: 0 },
         children: [
-          new TextRun({ text: 'Messaggi chiave: ', bold: true, size: 19, color: GRAY, allCaps: true }),
-          new TextRun({ text: copy.map(h => `"${h}"`).join(' · '), size: 19, italics: true }),
+          new TextRun({ text: 'Messaggi chiave:  ', bold: true, size: 19, color: C.muted, allCaps: true }),
+          new TextRun({ text: copy.map(h => `"${h}"`).join('  ·  '), size: 19, italics: true, color: C.dark }),
         ],
       }))
     }
   })
 
-  // ─── 5. MERCATI E LINGUE ────────────────────────────────────────────────────
+  // ─── 4. MERCATI E LINGUE ──────────────────────────────────────────────────
   if (languages.length > 0) {
-    children.push(sectionHeading('4. Mercati e lingue'))
+    children.push(h1('4. Mercati e lingue'))
+
+    const LANG = {
+      lang:  Math.floor(PAGE_W * 0.16),
+      url:   Math.floor(PAGE_W * 0.24),
+      hl:    Math.floor(PAGE_W * 0.34),
+      bt:    Math.floor(PAGE_W * 0.26),
+    }
+
     children.push(
       new Table({
-        width: { size: 100, type: WidthType.PERCENTAGE },
+        width:   { size: PAGE_W, type: WidthType.DXA },
+        borders: tableBorders,
         rows: [
           new TableRow({
             tableHeader: true,
-            children: ['Lingua', 'Landing page', 'Headline campionatura', 'Brand terms'].map(h => hCell(h)),
+            children: [
+              th('Lingua',               LANG.lang, { left: true }),
+              th('Landing page',         LANG.url,  { left: true }),
+              th('Headline campionatura', LANG.hl,  { left: true }),
+              th('Brand terms',          LANG.bt,   { left: true }),
+            ],
           }),
-          ...languages.map(lang => {
+          ...languages.map((lang, i) => {
             const l  = lang as Record<string, unknown>
             const hl = (l.headlines   as string[] | undefined) ?? []
             const bt = (l.brand_terms as string[] | undefined) ?? []
+            const bg = i % 2 === 0 ? C.white : C.rowAlt
             return new TableRow({ children: [
-              dCell(`${l.code} — ${l.name}`, { bold: true }),
-              dCell((l.landing_page as string | undefined) || '—'),
-              dCell(hl.slice(0, 2).join(' · ') || '—'),
-              dCell(bt.slice(0, 3).join(', ')  || '—'),
+              td(`${l.code} — ${l.name}`, LANG.lang, { bold: true, bg }),
+              td((l.landing_page as string | undefined) || '—', LANG.url, { bg, size: 18 }),
+              td(hl.slice(0, 2).join(' · ') || '—', LANG.hl, { bg, size: 18 }),
+              td(bt.slice(0, 3).join(', ')  || '—', LANG.bt, { bg, size: 18 }),
             ]})
           }),
         ],
@@ -336,32 +431,38 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
     )
   }
 
-  // ─── 6. PROSSIMI PASSI ──────────────────────────────────────────────────────
-  children.push(sectionHeading('5. Prossimi passi'))
+  // ─── 5. PROSSIMI PASSI ────────────────────────────────────────────────────
+  children.push(h1('5. Prossimi passi'))
+
   ;[
-    { n: '01', title: 'Approvazione piano',         desc: 'Revisione e firma del preventivo da parte del cliente' },
-    { n: '02', title: 'Setup account Google Ads',   desc: 'Configurazione customer ID, conversioni, tag, FLOODLIGHT' },
-    { n: '03', title: 'Caricamento asset visivi',   desc: 'Immagini per Performance Max e Retargeting (se attivi)' },
+    { n: '01', title: 'Approvazione piano',          desc: 'Revisione e firma del preventivo da parte del cliente' },
+    { n: '02', title: 'Setup account Google Ads',    desc: 'Configurazione customer ID, conversioni, tag, FLOODLIGHT' },
+    { n: '03', title: 'Caricamento asset visivi',    desc: 'Immagini per Performance Max e Retargeting (se attivi)' },
     { n: '04', title: 'Attivazione Brand + Acquisition', desc: 'Prima le campagne ad alto intento, poi le altre' },
-    { n: '05', title: 'Periodo di apprendimento',   desc: '4–6 settimane per ottimizzazione automatica Google' },
-    { n: '06', title: 'Primo report risultati',     desc: 'Analisi KPI, ROAS e aggiustamenti strategici' },
+    { n: '05', title: 'Periodo di apprendimento',    desc: '4–6 settimane per ottimizzazione automatica Google' },
+    { n: '06', title: 'Primo report risultati',      desc: 'Analisi KPI, ROAS e aggiustamenti strategici' },
   ].forEach(item => {
     children.push(new Paragraph({
       spacing: { before: 80, after: 80 },
       children: [
-        new TextRun({ text: `${item.n}. `, bold: true, color: PINK, size: 24 }),
-        new TextRun({ text: `${item.title} — `, bold: true, size: 22 }),
-        new TextRun({ text: item.desc, size: 22, color: GRAY }),
+        new TextRun({ text: `${item.n}.  `, bold: true, color: C.accent, size: 24 }),
+        new TextRun({ text: `${item.title} — `, bold: true, size: 22, color: C.dark }),
+        new TextRun({ text: item.desc, size: 22, color: C.muted }),
       ],
     }))
   })
 
   children.push(
-    divider(),
-    para(
-      `Documento generato da Google Ads Planner · ${brandName} · ${today}`,
-      { size: 18, color: LGRAY, align: AlignmentType.CENTER, spaceBefore: 400, spaceAfter: 0 },
-    ),
+    gap(400),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing:   { before: 0, after: 0 },
+      border:    { top: { style: 'single', size: 4, color: C.border, space: 8 } },
+      children: [new TextRun({
+        text: `Documento generato da Google Ads Planner  ·  ${brandName}  ·  ${today}`,
+        size: 18, color: 'BBBBBB',
+      })],
+    }),
   )
 
   // ─── build & download ─────────────────────────────────────────────────────
@@ -369,14 +470,14 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
     styles: {
       default: {
         document: {
-          run: { font: 'Calibri', size: 22, color: '1A1A1A' },
+          run: { font: 'Calibri', size: 22, color: C.dark },
         },
       },
     },
     sections: [{
       properties: {
         page: {
-          size: { width: 11906, height: 16838 }, // A4 in twips
+          size:   { width: 11906, height: 16838 }, // A4 twips
           margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
         },
       },

@@ -15,6 +15,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
     setExportingDocx(true)
     try { await exportToDocx(brief) } finally { setExportingDocx(false) }
   }
+
   const client  = (brief.client           || {}) as Record<string, unknown>
   const hotel   = (brief.hotel_specifics  || {}) as Record<string, unknown>
   const loc     = (hotel.location         || {}) as Record<string, unknown>
@@ -61,9 +62,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
 
   const SG = "'Space Grotesk', sans-serif"
   const docStyle: React.CSSProperties = { maxWidth: 860, margin: '0 auto', fontFamily: SG, color: '#1a1a1a' }
-  // breakInside: 'avoid' only on small sections; large sections rely on per-card avoidance
   const sectionStyle: React.CSSProperties = { marginBottom: 36, paddingBottom: 32, borderBottom: `1px solid #e0e0e0` }
-  const avoidBreak: React.CSSProperties = { breakInside: 'avoid', pageBreakInside: 'avoid' }
   const h2Style: React.CSSProperties = {
     fontSize: 13, fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' as const,
     color: T.primary, marginBottom: 16, fontFamily: SG,
@@ -71,19 +70,16 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
   const bodyText: React.CSSProperties = { fontSize: 14, lineHeight: 1.75, color: '#333', fontFamily: SG }
 
   return (
-    <div id="action-plan-print" style={docStyle}>
+    <div style={docStyle}>
 
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
         <button style={{ ...btnOutline, fontSize: 13 }} onClick={handleExportDocx} disabled={exportingDocx}>
           {exportingDocx ? '⏳ Generazione…' : '📄 Esporta Word'}
-        </button>
-        <button style={{ ...btnOutline, fontSize: 13 }} onClick={() => window.print()}>
-          🖨 Stampa / Salva PDF
         </button>
       </div>
 
       {/* ═══ 1. INTESTAZIONE ═══ */}
-      <div style={{ ...sectionStyle, ...avoidBreak, textAlign: 'center', paddingBottom: 28 }}>
+      <div style={{ ...sectionStyle, textAlign: 'center', paddingBottom: 28 }}>
         <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase' as const, color: T.textGray, marginBottom: 8, fontFamily: SG }}>
           Piano Strategico Google Ads
         </div>
@@ -114,7 +110,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
             ...(targetRoas ? [{ label: 'ROAS target', value: `${targetRoas}:1`, sub: 'ritorno sull\'investimento' }] : []),
             ...(targetCpa  ? [{ label: 'CPA target', value: `€${targetCpa}`, sub: 'costo per prenotazione' }] : []),
           ].map((card, i) => (
-            <div key={i} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '16px 18px', fontFamily: SG, ...avoidBreak }}>
+            <div key={i} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '16px 18px', fontFamily: SG }}>
               <div style={{ fontSize: 11, color: T.textGray, letterSpacing: 0.5, textTransform: 'uppercase' as const, marginBottom: 4 }}>{card.label}</div>
               <div style={{ fontSize: 24, fontWeight: 800, color: T.primary }}>{card.value}</div>
               <div style={{ fontSize: 11, color: T.textGray, marginTop: 2 }}>{card.sub}</div>
@@ -130,7 +126,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
       </div>
 
       {/* ═══ 3. MIX DI CAMPAGNE ═══ */}
-      <div style={{ ...sectionStyle, ...avoidBreak }}>
+      <div style={sectionStyle}>
         <div style={h2Style}>Mix di campagne consigliato</div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: SG }}>
@@ -194,7 +190,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
           const monthly = typeRows.find(r => r.type === type)?.monthlyAmt ?? 0
           const sampleCopy = getTypeCopy(type)
           return (
-            <div key={type} style={{ marginBottom: 28, paddingBottom: 28, borderBottom: idx < orderedTypes.length - 1 ? '1px dashed #e0e0e0' : 'none', ...avoidBreak }}>
+            <div key={type} style={{ marginBottom: 28, paddingBottom: 28, borderBottom: idx < orderedTypes.length - 1 ? '1px dashed #e0e0e0' : 'none' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
                 <div style={{ width: 40, height: 40, borderRadius: 8, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 12, flexShrink: 0, fontFamily: SG }}>
                   {info?.priority ?? idx + 1}
@@ -240,7 +236,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
 
       {/* ═══ 5. MERCATI E LINGUE ═══ */}
       {languages.length > 0 && (
-        <div style={{ ...sectionStyle, ...avoidBreak }}>
+        <div style={sectionStyle}>
           <div style={h2Style}>Mercati e lingue</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, fontFamily: SG }}>
             <thead>
@@ -281,7 +277,7 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
             { step: '05', title: 'Periodo di apprendimento', desc: '4–6 settimane per ottimizzazione automatica Google' },
             { step: '06', title: 'Primo report risultati', desc: 'Analisi KPI, ROAS e aggiustamenti strategici' },
           ].map(item => (
-            <div key={item.step} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 16px', display: 'flex', gap: 12, ...avoidBreak }}>
+            <div key={item.step} style={{ background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 16px', display: 'flex', gap: 12 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: T.primary, flexShrink: 0 }}>{item.step}</div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{item.title}</div>
