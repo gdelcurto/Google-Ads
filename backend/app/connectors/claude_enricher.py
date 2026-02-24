@@ -984,6 +984,7 @@ async def _run_autofill_pipeline(
     enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
     data["languages"] = list(enriched)
     data["_api_log"] = api_log
+    data["_scan_log"] = scraped.scan_log
 
     await update_status(job_id, "completed", result=data)
     logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")
