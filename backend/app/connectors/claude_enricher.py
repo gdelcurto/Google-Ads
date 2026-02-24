@@ -638,13 +638,16 @@ class ClaudeEnricher:
             f"Hotel: {common['brand_name']}\nCategoria: {common['hotel_category']} — {common['stars']} stelle\n"
             f"USP principale: {usp_txt}\nServizi: {services_txt}\nPunti di forza: {strengths_txt}\n"
             f"Lingua output: {lang_name} ({lang_code})\n\n"
-            f"═══ REGOLE HEADLINE (≤ 30 caratteri) ═══\n{meta['headline_rules']}\n\n"
-            f"═══ REGOLE DESCRIZIONI (≤ 90 caratteri) ═══\n{meta['description_rules']}\n\n"
-            f"REGOLA TASSATIVA: ogni headline e descrizione DEVE essere una FRASE COMPLETA.\n"
-            f"  ✗ 'Resort 4 stelle Bagno di' — VIETATO: testo troncato\n"
-            f"  ✓ 'Resort 4 Stelle a Bagno' — OK: senso compiuto\n"
-            f"Se non sta nel limite, RISCRIVILA più corta. NON troncare MAI.\n\n"
-            'Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:\n'
+            f"═══ REGOLE HEADLINE (MAX 25 caratteri inclusi spazi) ═══\n{meta['headline_rules']}\n\n"
+            f"═══ REGOLE DESCRIZIONI (MAX 75 caratteri inclusi spazi) ═══\n{meta['description_rules']}\n\n"
+            f"REGOLE TASSATIVE SUI CARATTERI:\n"
+            f"1. Ogni HEADLINE: MASSIMO 25 caratteri spazi inclusi. Conta i caratteri prima di scrivere.\n"
+            f"2. Ogni DESCRIZIONE: MASSIMO 75 caratteri spazi inclusi. Conta i caratteri prima di scrivere.\n"
+            f"3. Ogni descrizione DEVE essere una frase COMPLETA — mai troncare a metà.\n"
+            f"   ✗ 'Piscina riscaldata, centro benessere e rist' — VIETATO: troncato\n"
+            f"   ✓ 'Piscina e centro benessere. Prenota online.' — OK: frase completa ≤75 car\n"
+            f"Se una frase non entra nel limite, RISCRIVILA più concisa finché non entra.\n\n"
+            'Genera ESATTAMENTE questo JSON con 10 headline e 3 descrizioni, zero testo aggiuntivo:\n'
             '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8","h9","h10"],"descriptions":["d1","d2","d3"]}'
         )
 
@@ -657,10 +660,10 @@ class ClaudeEnricher:
         raw = message.content[0].text.strip()
         parsed = json.loads(_extract_json_object(raw))
         result = {
-            "headlines": _truncate_to_limit(
+            "headlines": _filter_by_limit(
                 [h for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()], 30
             ),
-            "descriptions": _truncate_to_limit(
+            "descriptions": _filter_by_limit(
                 [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
             ),
         }
