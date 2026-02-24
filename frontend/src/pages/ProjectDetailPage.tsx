@@ -229,11 +229,6 @@ export default function ProjectDetailPage() {
     }
   }
 
-  const publishMutation = useMutation({
-    mutationFn: () => projectsApi.publish(id!, true),
-    onSuccess: () => setMessage({ type: 'success', text: 'Dry run completato. Controlla i risultati.' }),
-    onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
-  })
 
   useHeaderActions(
     <Link
@@ -320,11 +315,6 @@ export default function ProjectDetailPage() {
         >
           Esporta CSV
         </button>
-        {canWrite && (
-          <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
-            {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
-          </button>
-        )}
       </div>
 
       <div style={s.tabs}>

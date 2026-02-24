@@ -95,6 +95,10 @@ def _ensure_missing_columns(conn) -> None:
     This handles the edge case where Alembic migrations fail (e.g. duplicate
     column from a prior create_all) and create_all can't ALTER existing tables.
     Uses raw DDL so it works on both SQLite and PostgreSQL.
+
+    NOTE: use TRUE/FALSE (not 1/0) for boolean defaults — PostgreSQL does not
+    accept integer literals as boolean defaults, while SQLite 3.23+ accepts both.
+    Each column is patched independently so a single failure doesn't block the rest.
     """
     from sqlalchemy import inspect, text
 
@@ -102,25 +106,29 @@ def _ensure_missing_columns(conn) -> None:
     _COLUMN_FIXES = [
         ("projects", "deleted_at", "DATETIME"),
         ("autofill_jobs", "scraped_json", "TEXT"),
-        ("project_permissions", "tab_overview", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_campaigns", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_preview", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_brief", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_action_plan", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_plan_json", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_audit", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_scan_log", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_api_log", "BOOLEAN NOT NULL DEFAULT 1"),
-        ("project_permissions", "tab_budget_log", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_overview", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_campaigns", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_preview", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_brief", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_action_plan", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_plan_json", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_audit", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_scan_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_api_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("project_permissions", "tab_budget_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
     ]
     for table, column, col_type in _COLUMN_FIXES:
-        if table in insp.get_table_names():
-            existing = {c["name"] for c in insp.get_columns(table)}
-            if column not in existing:
+        if table not in insp.get_table_names():
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        if column not in existing:
+            try:
                 conn.execute(text(
                     f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
                 ))
                 logger.info(f"Added missing column {table}.{column}")
+            except Exception as exc:
+                logger.error(f"Failed to add column {table}.{column}: {exc}")
 
 
 # ─── Lifespan ─────────────────────────────────────────────────────────────────

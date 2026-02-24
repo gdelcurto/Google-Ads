@@ -1,238 +1,245 @@
 """
 Google Ads Editor CSV Exporter.
-Generates a multi-section CSV file compatible with Google Ads Editor bulk upload.
 
-Google Ads Editor CSV format:
-- One file with sections delimited by "Type" column
-- Each row has a "Type" that determines the entity: Campaign, Ad Group, Keyword, etc.
-- Required columns vary by entity type
+Generates a CSV file compatible with Google Ads Editor bulk upload.
+
+Row layout (based on the official Google Ads Editor example format):
+
+  Campaign row  → Campaign + Campaign Type + Campaign Daily Budget +
+                  Campaign Status + Networks + Bid Strategy Type +
+                  Languages + Start Date + End Date + Ad Schedule + Location
+
+  Keyword row   → Campaign + Campaign Type + Ad Group + Ad Group Status +
+                  Max CPC + Keyword + Type   (Exact/Broad/Phrase/Negative)
+
+  RSA row       → Campaign + Campaign Type + Ad Group +
+                  Headline 1..15 + Description 1..4 +
+                  Final URL + Path 1 + Path 2 + Status
+
+  Sitelink row  → Campaign + Link Text + Description Line 1/2 + Final URL
+
+  Callout row   → Campaign + Callout text
+
+  Snippet row   → Campaign + Header + Snippet Values
+
+  PMax AG row   → Campaign + Asset Group Name + headlines/descriptions/...
 """
 from __future__ import annotations
 
 import csv
 import io
 import logging
-from typing import List
+from typing import List, Optional
 
 from app.domain.schemas.campaign_plan import (
-    AccountPlan, AdGroupPlan, CampaignPlan, CampaignType, DemandGenAd,
-    DisplayAd, Keyword, PMaxAssetGroup, RSAd,
+    AccountPlan, AdGroupPlan, CampaignPlan, CampaignType,
+    Keyword, PMaxAssetGroup, RSAd,
 )
 
 logger = logging.getLogger(__name__)
 
+# ── Network label mapping ────────────────────────────────────────────────────
+# Maps our NetworkType .value strings → Google Ads Editor display labels
+_NETWORK_LABELS = {
+    "Search":           "Google Search",
+    "Search partners":  "Search Partners",
+    "Display Network":  "Display Network",
+    "YouTube":          "YouTube",
+}
+
+# ── Bid Strategy label mapping ───────────────────────────────────────────────
+# Ads Editor expects Title Case; our enum uses sentence case
+_BID_STRATEGY_LABELS = {
+    "Maximize conversions":       "Maximize Conversions",
+    "Maximize conversion value":  "Maximize Conversion Value",
+    "Maximize clicks":            "Maximize Clicks",
+    "Target impression share":    "Target Impression Share",
+    "Target CPA":                 "Target CPA",
+    "Target ROAS":                "Target ROAS",
+    "Manual CPC":                 "Manual CPC",
+    "Enhanced CPC":               "Enhanced CPC",
+}
+
+# ── Column order (matches Google Ads Editor import format) ───────────────────
+_ORDERED_HEADERS = [
+    # Campaign-level
+    "Campaign",
+    "Campaign Type",
+    "Campaign Daily Budget",
+    "Campaign Status",
+    "Networks",
+    "Bid Strategy Type",
+    "Target CPA",
+    "Target ROAS",
+    "EU political ads",
+    "Languages",
+    "Start Date",
+    "End Date",
+    "Tracking template",
+    "Final URL suffix",
+    "Labels",
+    # Ad Group-level
+    "Ad Group",
+    "Ad Group Status",
+    "Max CPC",
+    # Keyword / match type
+    "Keyword",
+    "Type",
+    # RSA headlines (1-15)
+    "Headline 1",  "Headline 2",  "Headline 3",  "Headline 4",  "Headline 5",
+    "Headline 6",  "Headline 7",  "Headline 8",  "Headline 9",  "Headline 10",
+    "Headline 11", "Headline 12", "Headline 13", "Headline 14", "Headline 15",
+    # RSA descriptions (1-4)
+    "Description 1", "Description 2", "Description 3", "Description 4",
+    # Ad destination
+    "Final URL",
+    "Path 1",
+    "Path 2",
+    # Row status
+    "Status",
+    # Campaign targeting (at end, as in Google example)
+    "Ad Schedule",
+    "Location",
+    # Assets — sitelinks
+    "Link Text",
+    "Description Line 1",
+    "Description Line 2",
+    # Assets — structured snippets
+    "Header",
+    "Snippet Values",
+    # Assets — callouts
+    "Callout text",
+    # PMax Asset Groups (best-effort)
+    "Asset Group Name",
+    "Long Headline 1", "Long Headline 2", "Long Headline 3",
+    "Long Headline 4", "Long Headline 5",
+    "Final URL Expansion",
+    "Audience Signal",
+]
+
 
 class AdsEditorCsvExporter:
-    """
-    Exports an AccountPlan to Google Ads Editor compatible CSV.
-
-    Row types supported:
-    - Campaign
-    - Ad Group
-    - Expanded Text Ad (legacy, for reference)
-    - Responsive Search Ad
-    - Keyword
-    - Negative Keyword (Campaign Level)
-    - Sitelink Asset
-    - Callout Asset
-    - Structured Snippet Asset
-    - Performance Max Campaign (special section)
-    - Image Asset (placeholders)
-    """
+    """Exports an AccountPlan to Google Ads Editor compatible CSV."""
 
     def export(self, plan: AccountPlan) -> str:
-        """Returns the full CSV as a string."""
-        output = io.StringIO()
-        writer = csv.writer(output, quoting=csv.QUOTE_ALL)
-
-        rows = []
+        """Returns the full CSV as a UTF-8 string."""
+        rows: List[dict] = []
 
         for campaign in plan.campaigns:
-            rows.extend(self._export_campaign(campaign))
-            rows.extend(self._export_ad_groups(campaign))
-            rows.extend(self._export_keywords(campaign))
-            rows.extend(self._export_ads(campaign))
-            rows.extend(self._export_assets(campaign))
-            rows.extend(self._export_pmax_asset_groups(campaign))
-            rows.extend(self._export_negative_keywords(campaign))
+            rows.extend(self._campaign_row(campaign))
+            rows.extend(self._keyword_rows(campaign))
+            rows.extend(self._rsa_rows(campaign))
+            rows.extend(self._asset_rows(campaign))
+            rows.extend(self._pmax_rows(campaign))
 
-        # Global negatives (shared list)
-        rows.extend(self._export_global_negatives(plan))
+        # Global (account-level) negative keywords cannot be represented in
+        # this per-campaign CSV format — they would appear as rows with no
+        # Campaign field, which Ads Editor reads as an extra blank campaign.
+        # Skipped intentionally; manage them via Shared Negative Keyword Lists.
 
-        # Write column header + all rows
+        # UTF-8 BOM so that tools like Excel / Ads Editor auto-detect encoding
+        output = io.StringIO()
+        output.write("\ufeff")
         if rows:
-            headers = self._get_all_headers(rows)
+            headers = self._headers(rows)
+            # QUOTE_MINIMAL: only quote cells that contain the delimiter, a
+            # quote character, or a newline.  Empty cells stay truly empty
+            # (not ""), which matches the official Google Ads Editor format.
+            writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
             writer.writerow(headers)
-            for row_dict in rows:
-                writer.writerow([row_dict.get(h, "") for h in headers])
+            for row in rows:
+                writer.writerow([row.get(h, "") for h in headers])
 
         return output.getvalue()
 
-    def _plan_metadata_comment(self, plan: AccountPlan) -> str:
-        """Returns plan metadata as a plain string (for logging, not for CSV output)."""
-        return (
-            f"Client: {plan.client_name} | "
-            f"Generated: {plan.generated_at.isoformat()} | "
-            f"Campaigns: {plan.total_campaigns} | "
-            f"Status: {'VALID' if plan.is_valid else 'HAS ERRORS'}"
-        )
+    # ── helpers ──────────────────────────────────────────────────────────────
 
-    def _get_all_headers(self, rows: List[dict]) -> List[str]:
-        """Collect all unique column headers from all rows, in standard order."""
-        # Standard Google Ads Editor column ordering
-        ordered_headers = [
-            "Type",
-            "Status",
-            "Campaign",
-            "Ad Group",
-            "Campaign Type",
-            "Campaign Subtype",
-            "Budget",
-            "Budget Type",
-            "Bid Strategy Type",
-            "Target CPA",
-            "Target ROAS",
-            "Networks",
-            "Languages",
-            "Location",
-            "Ad Rotation",
-            "Tracking Template",
-            "Final URL Suffix",
-            "Label",
-            "Start Date",
-            "End Date",
-            "Default Max CPC",
-            "Keyword",
-            "Match Type",
-            "Max CPC",
-            "Headline 1",
-            "Headline 2",
-            "Headline 3",
-            "Headline 4",
-            "Headline 5",
-            "Headline 6",
-            "Headline 7",
-            "Headline 8",
-            "Headline 9",
-            "Headline 10",
-            "Headline 11",
-            "Headline 12",
-            "Headline 13",
-            "Headline 14",
-            "Headline 15",
-            "Headline 1 Position",
-            "Headline 2 Position",
-            "Headline 3 Position",
-            "Description 1",
-            "Description 2",
-            "Description 3",
-            "Description 4",
-            "Description 1 Position",
-            "Description 2 Position",
-            "Final URL",
-            "Path 1",
-            "Path 2",
-            "Sitelink Text",
-            "Sitelink Description Line 1",
-            "Sitelink Description Line 2",
-            "Sitelink Final URL",
-            "Callout Text",
-            "Snippet Header",
-            "Snippet Values",
-            "Asset Group Name",
-            "Long Headline 1",
-            "Long Headline 2",
-            "Long Headline 3",
-            "Long Headline 4",
-            "Long Headline 5",
-            "Final URL Expansion",
-            "Audience Signal",
+    def _headers(self, rows: List[dict]) -> List[str]:
+        """Ordered headers: predefined order + any extra keys found in rows."""
+        seen = set(_ORDERED_HEADERS)
+        extra = sorted(k for row in rows for k in row if k not in seen)
+        return _ORDERED_HEADERS + extra
+
+    @staticmethod
+    def _networks(campaign: CampaignPlan) -> str:
+        parts = [
+            _NETWORK_LABELS.get(n.value, n.value)
+            for n in campaign.settings.networks
         ]
-        # Add any extra headers not in the standard order
-        all_keys = set()
-        for row in rows:
-            all_keys.update(row.keys())
+        return ";".join(parts)
 
-        extra = [k for k in all_keys if k not in ordered_headers]
-        return ordered_headers + sorted(extra)
+    @staticmethod
+    def _languages(campaign: CampaignPlan) -> str:
+        # Use lowercase language codes (it, en, de …)
+        codes = [c.lower() for c in campaign.settings.language_codes if c]
+        return ";".join(codes)
 
-    # ── Campaign rows ──────────────────────────────────────────────────────────
+    @staticmethod
+    def _bid_strategy(campaign: CampaignPlan) -> str:
+        raw = campaign.settings.bid_strategy.value
+        return _BID_STRATEGY_LABELS.get(raw, raw)
 
-    def _export_campaign(self, campaign: CampaignPlan) -> List[dict]:
-        settings = campaign.settings
+    @staticmethod
+    def _location(campaign: CampaignPlan) -> str:
+        return ";".join(campaign.settings.geo_targets)
 
-        # Networks string
-        networks = "; ".join(n.value for n in settings.networks)
+    # ── Campaign row ─────────────────────────────────────────────────────────
 
-        # Languages string (Google Language IDs)
-        lang_ids = "; ".join(str(lid) for lid in settings.language_ids)
-
-        # Geo targets
-        locations = "; ".join(settings.geo_targets)
-
-        # Bid strategy
-        bid_row: dict = {
-            "Type": "Campaign",
-            "Status": campaign.status.value,
-            "Campaign": campaign.campaign_name,
-            "Campaign Type": campaign.campaign_type.value,
-            "Campaign Subtype": campaign.campaign_subtype,
-            "Budget": settings.budget_daily_eur,
-            "Budget Type": "Daily",
-            "Bid Strategy Type": settings.bid_strategy.value,
-            "Networks": networks,
-            "Languages": lang_ids,
-            "Location": locations,
-            "Ad Rotation": settings.rotation,
-            "Tracking Template": settings.tracking_template,
-            "Label": "; ".join(settings.labels),
+    def _campaign_row(self, campaign: CampaignPlan) -> List[dict]:
+        s = campaign.settings
+        row: dict = {
+            "Campaign":              campaign.campaign_name,
+            "Campaign Type":         campaign.campaign_type.value,
+            "Campaign Daily Budget": s.budget_daily_eur,
+            "Campaign Status":       campaign.status.value,
+            "Networks":              self._networks(campaign),
+            "Bid Strategy Type":     self._bid_strategy(campaign),
+            "EU political ads":      "No",
+            "Languages":             self._languages(campaign),
+            "Location":              self._location(campaign),
+            "Tracking template":     s.tracking_template,
+            "Labels":                ";".join(s.labels),
         }
+        if s.target_cpa:
+            row["Target CPA"] = s.target_cpa
+        if s.target_roas:
+            row["Target ROAS"] = s.target_roas
+        if s.final_url_suffix:
+            row["Final URL suffix"] = s.final_url_suffix
+        if s.start_date:
+            row["Start Date"] = s.start_date
+        if s.end_date:
+            row["End Date"] = s.end_date
+        return [row]
 
-        if settings.target_cpa:
-            bid_row["Target CPA"] = settings.target_cpa
-        if settings.target_roas:
-            bid_row["Target ROAS"] = settings.target_roas
-        if settings.start_date:
-            bid_row["Start Date"] = settings.start_date
-        if settings.end_date:
-            bid_row["End Date"] = settings.end_date
+    # ── Keyword rows ─────────────────────────────────────────────────────────
 
-        return [bid_row]
-
-    # ── Ad Group rows ──────────────────────────────────────────────────────────
-
-    def _export_ad_groups(self, campaign: CampaignPlan) -> List[dict]:
+    def _keyword_rows(self, campaign: CampaignPlan) -> List[dict]:
         rows = []
         for ag in campaign.ad_groups:
-            row = {
-                "Type": "Ad Group",
-                "Status": ag.status.value,
-                "Campaign": campaign.campaign_name,
-                "Ad Group": ag.name,
-                "Default Max CPC": ag.default_max_cpc or "",
-            }
-            rows.append(row)
-        return rows
+            kws = ag.keywords
+            if not kws:
+                # Ad group with no keywords (display / retargeting) — emit an
+                # explicit ad group definition row so Ads Editor registers it.
+                rows.append({
+                    "Campaign":        campaign.campaign_name,
+                    "Campaign Type":   campaign.campaign_type.value,
+                    "Ad Group":        ag.name,
+                    "Ad Group Status": ag.status.value,
+                    "Max CPC":         ag.default_max_cpc or "",
+                })
+                continue
 
-    # ── Keyword rows ──────────────────────────────────────────────────────────
-
-    def _export_keywords(self, campaign: CampaignPlan) -> List[dict]:
-        rows = []
-        for ag in campaign.ad_groups:
-            for kw in ag.keywords:
-                if kw.is_negative:
-                    row_type = "Negative Keyword"
-                    ad_group_val = ""
-                else:
-                    row_type = "Keyword"
-                    ad_group_val = ag.name
-                row = {
-                    "Type": row_type,
-                    "Status": "Enabled",
-                    "Campaign": campaign.campaign_name,
-                    "Ad Group": ad_group_val,
-                    "Keyword": kw.text,
-                    "Match Type": kw.match_type.value,
+            for kw in kws:
+                kw_type = "Negative" if kw.is_negative else kw.match_type.value
+                row: dict = {
+                    "Campaign":        campaign.campaign_name,
+                    "Campaign Type":   campaign.campaign_type.value,
+                    "Ad Group":        ag.name,
+                    "Ad Group Status": ag.status.value,
+                    "Max CPC":         ag.default_max_cpc or "",
+                    "Keyword":         kw.text,
+                    "Type":            kw_type,
                 }
                 if kw.max_cpc:
                     row["Max CPC"] = kw.max_cpc
@@ -241,151 +248,115 @@ class AdsEditorCsvExporter:
                 rows.append(row)
         return rows
 
-    # ── RSA rows ──────────────────────────────────────────────────────────────
+    # ── RSA rows ─────────────────────────────────────────────────────────────
 
-    def _export_ads(self, campaign: CampaignPlan) -> List[dict]:
+    def _rsa_rows(self, campaign: CampaignPlan) -> List[dict]:
         rows = []
         for ag in campaign.ad_groups:
             for ad in ag.ads:
-                row = self._rsa_to_row(campaign.campaign_name, ag.name, ad)
-                rows.append(row)
+                rows.append(self._rsa_to_row(campaign, ag.name, ad))
         return rows
 
-    def _rsa_to_row(self, campaign_name: str, ag_name: str, ad: RSAd) -> dict:
-        row = {
-            "Type": "Responsive Search Ad",
-            "Status": ad.status.value,
-            "Campaign": campaign_name,
-            "Ad Group": ag_name,
-            "Final URL": ad.final_url,
-            "Tracking Template": ad.tracking_template or "",
-            "Path 1": ad.path_1 or "",
-            "Path 2": ad.path_2 or "",
+    @staticmethod
+    def _rsa_to_row(campaign: CampaignPlan, ag_name: str, ad: RSAd) -> dict:
+        row: dict = {
+            "Campaign":        campaign.campaign_name,
+            "Campaign Type":   campaign.campaign_type.value,
+            "Ad Group":        ag_name,
+            "Final URL":       ad.final_url,
+            "Path 1":          ad.path_1 or "",
+            "Path 2":          ad.path_2 or "",
+            "Status":          ad.status.value,
         }
-
-        # Headlines (up to 15)
+        if ad.tracking_template:
+            row["Tracking template"] = ad.tracking_template
         for i, h in enumerate(ad.headlines[:15], 1):
             row[f"Headline {i}"] = h.text
-            if h.pin_position:
-                row[f"Headline {i} Position"] = h.pin_position
-
-        # Descriptions (up to 4)
         for i, d in enumerate(ad.descriptions[:4], 1):
             row[f"Description {i}"] = d
-
         return row
 
-    # ── Asset rows (Sitelinks, Callouts, Snippets) ───────────────────────────
+    # ── Asset rows (sitelinks, callouts, snippets) ────────────────────────────
 
-    def _export_assets(self, campaign: CampaignPlan) -> List[dict]:
+    def _asset_rows(self, campaign: CampaignPlan) -> List[dict]:
         rows = []
-        seen_sitelinks = set()
-        seen_callouts = set()
-        seen_snippets = set()
+        seen_sl:  set = set()
+        seen_co:  set = set()
+        seen_sn:  set = set()
 
         for ag in campaign.ad_groups:
-            assets = ag.assets
+            pack = ag.assets
 
-            for sl in assets.sitelinks:
-                key = sl.text
-                if key not in seen_sitelinks:
+            for sl in pack.sitelinks:
+                if sl.text not in seen_sl:
                     rows.append({
-                        "Type": "Sitelink",
-                        "Campaign": campaign.campaign_name,
-                        "Sitelink Text": sl.text,
-                        "Sitelink Description Line 1": sl.description_1,
-                        "Sitelink Description Line 2": sl.description_2,
-                        "Sitelink Final URL": sl.final_url,
+                        "Campaign":          campaign.campaign_name,
+                        "Link Text":         sl.text,
+                        "Description Line 1": sl.description_1,
+                        "Description Line 2": sl.description_2,
+                        "Final URL":         sl.final_url,
                     })
-                    seen_sitelinks.add(key)
+                    seen_sl.add(sl.text)
 
-            for co in assets.callouts:
-                key = co.text
-                if key not in seen_callouts:
+            for co in pack.callouts:
+                if co.text not in seen_co:
                     rows.append({
-                        "Type": "Callout",
-                        "Campaign": campaign.campaign_name,
-                        "Callout Text": co.text,
+                        "Campaign":    campaign.campaign_name,
+                        "Callout text": co.text,
                     })
-                    seen_callouts.add(key)
+                    seen_co.add(co.text)
 
-            for sn in assets.structured_snippets:
-                key = sn.header
-                if key not in seen_snippets:
+            for sn in pack.structured_snippets:
+                if sn.header not in seen_sn:
                     rows.append({
-                        "Type": "Structured Snippet",
-                        "Campaign": campaign.campaign_name,
-                        "Snippet Header": sn.header,
-                        "Snippet Values": "; ".join(sn.values),
+                        "Campaign":      campaign.campaign_name,
+                        "Header":        sn.header,
+                        "Snippet Values": ";".join(sn.values),
                     })
-                    seen_snippets.add(key)
+                    seen_sn.add(sn.header)
 
         return rows
 
     # ── PMax Asset Group rows ─────────────────────────────────────────────────
 
-    def _export_pmax_asset_groups(self, campaign: CampaignPlan) -> List[dict]:
-        rows = []
-        for ag in campaign.pmax_asset_groups:
-            row = self._pmax_ag_to_row(campaign.campaign_name, ag)
-            rows.append(row)
-        return rows
+    def _pmax_rows(self, campaign: CampaignPlan) -> List[dict]:
+        return [
+            self._pmax_ag_to_row(campaign.campaign_name, ag)
+            for ag in campaign.pmax_asset_groups
+        ]
 
-    def _pmax_ag_to_row(self, campaign_name: str, ag: PMaxAssetGroup) -> dict:
-        row = {
-            "Type": "Asset Group",
-            "Campaign": campaign_name,
-            "Asset Group Name": ag.name,
-            "Final URL": ag.final_url,
+    @staticmethod
+    def _pmax_ag_to_row(campaign_name: str, ag: PMaxAssetGroup) -> dict:
+        row: dict = {
+            "Campaign":           campaign_name,
+            "Asset Group Name":   ag.name,
+            "Final URL":          ag.final_url,
             "Final URL Expansion": "Yes" if ag.final_url_expansion else "No",
-            "Audience Signal": "; ".join(ag.audience_signals[:3]),
+            "Audience Signal":    ";".join(ag.audience_signals[:3]),
+            "Status":             "Enabled",
         }
-
-        for i, h in enumerate(ag.headlines[:15], 1):
+        for i, h  in enumerate(ag.headlines[:15], 1):
             row[f"Headline {i}"] = h
-
         for i, lh in enumerate(ag.long_headlines[:5], 1):
             row[f"Long Headline {i}"] = lh
-
-        for i, d in enumerate(ag.descriptions[:5], 1):
+        for i, d  in enumerate(ag.descriptions[:4], 1):
             row[f"Description {i}"] = d
-
-        # Images as notes
-        for i, img_url in enumerate(ag.images[:3], 1):
-            row[f"Image {i}"] = img_url
-
-        if ag.logo_url:
-            row["Logo"] = ag.logo_url
-        if ag.youtube_video_url:
-            row["YouTube Video URL"] = ag.youtube_video_url
-
         if ag.has_missing_assets:
             row["Missing Assets"] = " | ".join(ag.missing_asset_notes)
-
         return row
 
-    # ── Negative keyword rows ─────────────────────────────────────────────────
+    # ── Account-level negative keywords ──────────────────────────────────────
 
-    def _export_negative_keywords(self, campaign: CampaignPlan) -> List[dict]:
-        # Shared negative keyword lists are not importable via CSV bulk upload
-        # in Google Ads Editor — they must be managed manually in the UI.
-        return []
-
-    # ── Global negatives ──────────────────────────────────────────────────────
-
-    def _export_global_negatives(self, plan: AccountPlan) -> List[dict]:
-        rows = []
-        for kw in plan.global_negative_keywords:
-            rows.append({
-                "Type": "Negative Keyword",
-                "Campaign": "",  # blank = applies to all campaigns in upload
+    def _global_negative_rows(self, plan: AccountPlan) -> List[dict]:
+        return [
+            {
                 "Keyword": kw.text,
-                "Match Type": kw.match_type.value,
-            })
-        return rows
+                "Type":    "Negative",
+            }
+            for kw in plan.global_negative_keywords
+        ]
 
 
 def export_plan_to_csv(plan: AccountPlan) -> str:
-    """Convenience function."""
-    exporter = AdsEditorCsvExporter()
-    return exporter.export(plan)
+    """Convenience wrapper."""
+    return AdsEditorCsvExporter().export(plan)

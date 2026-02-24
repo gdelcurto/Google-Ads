@@ -25,7 +25,8 @@ from app.domain.schemas.campaign_plan import (
 
 def _parse_csv(csv_str: str) -> tuple[list[str], list[dict]]:
     """Return (headers, list-of-row-dicts) from a CSV string, skipping comment rows."""
-    # The exporter writes a comment row first (starts with '#') followed by the real header
+    # Strip UTF-8 BOM if present
+    csv_str = csv_str.lstrip("\ufeff")
     lines = csv_str.splitlines()
     # Find the first non-comment line — that's the real header
     non_comment_lines = [l for l in lines if not l.lstrip('"').startswith('#') and l.strip()]
@@ -131,7 +132,7 @@ def test_csv_has_required_headers():
     output = exporter.export(plan)
     headers, _ = _parse_csv(output)
 
-    required = {"Type", "Campaign", "Ad Group", "Status"}
+    required = {"Campaign", "Ad Group", "Status", "Campaign Status", "Ad Group Status"}
     missing = required - set(headers)
     assert not missing, f"Missing required headers: {missing}"
 
@@ -143,10 +144,11 @@ def test_csv_has_keyword_and_ad_rows():
     output = exporter.export(plan)
     _, rows = _parse_csv(output)
 
-    types = {r.get("Type", "") for r in rows}
-    assert any("Keyword" in t for t in types), f"No Keyword rows found — types: {types}"
-    assert any("Responsive" in t or "RSA" in t or "Ad" in t for t in types), \
-        f"No Ad rows found — types: {types}"
+    # Keywords are identified by the "Keyword" column; RSA rows by "Headline 1"
+    kw_texts = [r.get("Keyword", "") for r in rows]
+    assert any(kw_texts), "No Keyword rows found (Keyword column empty in all rows)"
+    rsa_rows = [r for r in rows if r.get("Headline 1")]
+    assert rsa_rows, "No RSA rows found (Headline 1 empty in all rows)"
 
 
 # ── test_csv_negative_keywords_match_type ─────────────────────────────────────

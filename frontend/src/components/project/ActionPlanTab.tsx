@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { T } from '../../styles/theme'
 import { CAMPAIGN_STRATEGY, TYPE_COLOR } from './constants'
+import { exportToDocx } from './exportDocx'
 
 const btnOutline: React.CSSProperties = {
   background: 'transparent', color: T.text, border: `1px solid ${T.border}`,
@@ -7,6 +9,13 @@ const btnOutline: React.CSSProperties = {
 }
 
 export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
+  const [exportingDocx, setExportingDocx] = useState(false)
+
+  const handleExportDocx = async () => {
+    setExportingDocx(true)
+    try { await exportToDocx(brief) } finally { setExportingDocx(false) }
+  }
+
   const client  = (brief.client           || {}) as Record<string, unknown>
   const hotel   = (brief.hotel_specifics  || {}) as Record<string, unknown>
   const loc     = (hotel.location         || {}) as Record<string, unknown>
@@ -61,11 +70,11 @@ export function ActionPlanTab({ brief }: { brief: Record<string, unknown> }) {
   const bodyText: React.CSSProperties = { fontSize: 14, lineHeight: 1.75, color: '#333', fontFamily: SG }
 
   return (
-    <div id="action-plan-print" style={docStyle}>
+    <div style={docStyle}>
 
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
-        <button style={{ ...btnOutline, fontSize: 13 }} onClick={() => window.print()}>
-          🖨 Stampa / Salva PDF
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24, gap: 10 }}>
+        <button style={{ ...btnOutline, fontSize: 13 }} onClick={handleExportDocx} disabled={exportingDocx}>
+          {exportingDocx ? '⏳ Generazione…' : '📄 Esporta Word'}
         </button>
       </div>
 
