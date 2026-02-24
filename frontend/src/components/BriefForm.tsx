@@ -19,6 +19,7 @@ import { useAutofillBinding }  from './brief/hooks/useAutofillBinding'
 import { useKeywordSuggest }   from './brief/hooks/useKeywordSuggest'
 import { useSitelinkSuggest }  from './brief/hooks/useSitelinkSuggest'
 import { useBudgetStrategy }   from './brief/hooks/useBudgetStrategy'
+import { useCopySuggest }      from './brief/hooks/useCopySuggest'
 
 import { Step0InfoBase }  from './brief/steps/Step0InfoBase'
 import { Step1Obiettivi } from './brief/steps/Step1Obiettivi'
@@ -97,6 +98,9 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
 
   const { slSuggestMutation, slSuggestingLang, setSlSuggestingLang } =
     useSitelinkSuggest({ form, setLangs, setErrors, projectId })
+
+  const { triggerCopy, isGenerating: copySuggestIsGenerating } =
+    useCopySuggest({ form, setLangs, setErrors, projectId })
 
   // ── Budget recalculation (uses strategyResult from hook) ───────────────────
   const frontendToBackend: Record<string, string> = {
@@ -370,6 +374,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
           slSuggestMutation={slSuggestMutation} kwSuggestMutation={kwSuggestMutation}
           slSuggestingLang={slSuggestingLang} kwSuggestingLang={kwSuggestingLang}
           setSlSuggestingLang={setSlSuggestingLang} setKwSuggestingLang={setKwSuggestingLang}
+          copySuggestTrigger={triggerCopy} copySuggestIsGenerating={copySuggestIsGenerating}
           setErrors={setErrors}
         />
       )}

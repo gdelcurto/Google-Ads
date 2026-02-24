@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { LangState, SitelinkState } from '../types'
+import { CopyTarget } from '../hooks/useCopySuggest'
 import { css } from '../styles'
 import { T } from '../../../styles/theme'
 import { toLines } from '../utils'
@@ -11,6 +12,7 @@ function PerTypeCopySection({
   headlinesValue, descriptionsValue,
   headlinesPlaceholder, descriptionsPlaceholder,
   onHeadlinesChange, onDescriptionsChange,
+  onAiGenerate, aiGenerating,
 }: {
   label: string
   description: string
@@ -20,9 +22,12 @@ function PerTypeCopySection({
   descriptionsPlaceholder: string
   onHeadlinesChange: (v: string) => void
   onDescriptionsChange: (v: string) => void
+  onAiGenerate?: () => void
+  aiGenerating?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const hasContent = headlinesValue.trim().length > 0 || descriptionsValue.trim().length > 0
+  const showAiBtn = onAiGenerate && descriptionsValue.trim() === '' && !aiGenerating
 
   return (
     <div style={{ border: `1px solid ${hasContent ? T.primary : T.borderLight}`, borderRadius: T.radiusSm, marginBottom: 10 }}>
@@ -46,6 +51,21 @@ function PerTypeCopySection({
       {open && (
         <div style={{ padding: '14px 14px 10px', borderTop: `1px solid ${T.borderLight}` }}>
           <p style={{ fontSize: 12, color: T.textGray, marginBottom: 12, marginTop: 0 }}>{description}</p>
+
+          {/* AI generation button — visible only when descriptions are empty */}
+          {(showAiBtn || aiGenerating) && (
+            <div style={{ marginBottom: 12 }}>
+              <button
+                style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: aiGenerating ? 0.6 : 1 }}
+                onClick={onAiGenerate}
+                disabled={aiGenerating}
+              >
+                {aiGenerating
+                  ? <><i className="fa-solid fa-hourglass-half"></i> Generando copy...</>
+                  : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera headline e descrizioni con AI</>}
+              </button>
+            </div>
+          )}
 
           <div style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 12, fontWeight: 600, color: T.text, display: 'block', marginBottom: 4 }}>
@@ -107,6 +127,8 @@ interface Props {
   kwSuggestingLang: number | null
   setSlSuggestingLang: (v: number | null) => void
   setKwSuggestingLang: (v: number | null) => void
+  copySuggestTrigger: (langIdx: number, lang: LangState, target: CopyTarget) => void
+  copySuggestIsGenerating: (langIdx: number, target: CopyTarget) => boolean
   setErrors: (errs: string[]) => void
 }
 
@@ -115,6 +137,7 @@ export function Step2Lingue({
   addSitelink, removeSitelink, setSitelinkField,
   slSuggestMutation, kwSuggestMutation,
   slSuggestingLang, kwSuggestingLang, setSlSuggestingLang, setKwSuggestingLang,
+  copySuggestTrigger, copySuggestIsGenerating,
   setErrors,
 }: Props) {
   return (
@@ -214,7 +237,20 @@ export function Step2Lingue({
           </div>
 
           <div style={css.field}>
-            <label style={css.label}>Descrizioni RSA * (una per riga — min 2, max 90 caratteri ciascuna)</label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <label style={{ ...css.label, marginBottom: 0 }}>Descrizioni RSA * (una per riga — min 2, max 90 caratteri ciascuna)</label>
+              {lang.descriptions.trim() === '' && (
+                <button
+                  style={{ ...css.btnAdd, fontSize: 11, padding: '4px 10px', flexShrink: 0, marginLeft: 8, opacity: copySuggestIsGenerating(i, 'generic') ? 0.6 : 1 }}
+                  onClick={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'generic') }}
+                  disabled={copySuggestIsGenerating(i, 'generic')}
+                >
+                  {copySuggestIsGenerating(i, 'generic')
+                    ? <><i className="fa-solid fa-hourglass-half"></i> Generando...</>
+                    : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera con AI</>}
+                </button>
+              )}
+            </div>
             <textarea
               style={{ ...css.textarea, minHeight: 100 }}
               value={lang.descriptions}
@@ -339,6 +375,8 @@ export function Step2Lingue({
             descriptionsPlaceholder={'Prenota sul sito ufficiale di Hotel Bella Vista e ottieni la miglior tariffa garantita.'}
             onHeadlinesChange={v => setLangField(i, 'brand_headlines', v)}
             onDescriptionsChange={v => setLangField(i, 'brand_descriptions', v)}
+            onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'brand') }}
+            aiGenerating={copySuggestIsGenerating(i, 'brand')}
           />
 
           <PerTypeCopySection
@@ -350,6 +388,8 @@ export function Step2Lingue({
             descriptionsPlaceholder={'Hotel 4 stelle nel cuore di Roma. Prenota online e risparmia fino al 20% sulla tariffa ufficiale.'}
             onHeadlinesChange={v => setLangField(i, 'acquisition_headlines', v)}
             onDescriptionsChange={v => setLangField(i, 'acquisition_descriptions', v)}
+            onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'acquisition') }}
+            aiGenerating={copySuggestIsGenerating(i, 'acquisition')}
           />
 
           <PerTypeCopySection
@@ -361,6 +401,8 @@ export function Step2Lingue({
             descriptionsPlaceholder={'Hai visitato il nostro sito? Completa la prenotazione oggi e approfitta di una tariffa esclusiva.'}
             onHeadlinesChange={v => setLangField(i, 'retargeting_headlines', v)}
             onDescriptionsChange={v => setLangField(i, 'retargeting_descriptions', v)}
+            onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'retargeting') }}
+            aiGenerating={copySuggestIsGenerating(i, 'retargeting')}
           />
         </div>
       ))}
