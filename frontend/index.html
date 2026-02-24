@@ -33,18 +33,29 @@
       input, select, textarea, button {
         font-family: inherit;
       }
-      @page { margin: 1.5cm; }
+      @page { size: A4; margin: 1.5cm; }
       @media print {
+        /* Hide everything except the action-plan printable area */
         body * { visibility: hidden !important; }
         #action-plan-print, #action-plan-print * { visibility: visible !important; }
         #action-plan-print {
-          position: absolute !important;
-          left: 0 !important; top: 0 !important;
+          /* Static flow — critical for multi-page pagination */
+          position: static !important;
+          display: block !important;
           width: 100% !important; max-width: none !important;
           margin: 0 !important; padding: 0 !important;
           box-shadow: none !important;
+          overflow: visible !important;
+        }
+        /* Unlock scrollable ancestors so full content renders */
+        html, body {
+          height: auto !important;
+          overflow: visible !important;
         }
         .no-print { display: none !important; }
+        /* Page-break helpers — keep individual cards/blocks intact */
+        .print-avoid { break-inside: avoid !important; page-break-inside: avoid !important; }
+        .print-page  { break-before: page !important; page-break-before: always !important; }
       }
     </style>
   </head>
