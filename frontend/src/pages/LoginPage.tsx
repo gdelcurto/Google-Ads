@@ -103,7 +103,7 @@ export default function LoginPage() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.cardTop}>
-          <img src={T.logoBlastness} alt="Blastness" style={s.logo} />
+          <img src={T.logoApp} alt="AdAtelier" style={s.logo} />
         </div>
         <div style={s.cardBody}>
           <div style={s.title}>Google Ads Campaigns</div>
