@@ -285,13 +285,42 @@ class CampaignOrchestrator:
     ) -> AccountPlan:
         """
         AI-enhanced plan generation:
+          0. Pre-generate acquisition keyword themes via AI (for languages without them)
           1. Generate campaign structure via sync generate_plan()
           2. Enhance all copy with Claude (parallel per ad group)
           3. Validate enhanced copy with Claude (parallel per campaign type)
-          4. Merge AI issues into the plan and recalculate validity flags
+          4. Merge AI copy validation issues into plan
+          5. Run AI strategic advisor (budget, bidding, negative keywords) in parallel
+          6. Merge AI strategic insights into plan
         """
+        import asyncio
         from app.connectors.ai_copy_generator import AICopyGenerator
         from app.connectors.ai_validator import AIValidator
+        from app.connectors.ai_strategic_advisor import (
+            analyze_budget_strategy_ai,
+            analyze_bidding_strategy_ai,
+            analyze_negative_keywords_ai,
+            generate_acquisition_keywords_ai,
+        )
+
+        # ── Step 0: AI acquisition keyword pre-generation ─────────────────────
+        # For languages that have no keyword themes in the brief, generate them
+        # via AI before the sync generators run (so AcquisitionSearchGenerator
+        # gets themed ad groups instead of falling back to vertical templates).
+        try:
+            ai_kw = await generate_acquisition_keywords_ai(brief, api_key)
+            if ai_kw:
+                merged_kw = dict(brief.acquisition_keywords or {})
+                merged_kw.update(ai_kw)
+                brief = brief.model_copy(update={"acquisition_keywords": merged_kw})
+                logger.info(
+                    f"AI pre-generated acquisition keywords for project {project_id}: "
+                    f"languages={list(ai_kw.keys())}"
+                )
+        except Exception as exc:
+            logger.warning(
+                f"AI keyword pre-generation skipped for project {project_id}: {exc}"
+            )
 
         # ── Step 1: Rule-based generation ─────────────────────────────────────
         plan = self.generate_plan(
@@ -327,7 +356,7 @@ class CampaignOrchestrator:
                 "Skipping AI validation issues."
             )
 
-        # ── Step 4: Merge AI issues into plan ─────────────────────────────────
+        # ── Step 4: Merge AI copy validation issues ────────────────────────────
         if ai_issues:
             ai_warnings, ai_errors = _apply_issues_to_campaigns(ai_issues, plan.campaigns)
             new_warnings = plan.validation_warnings + ai_warnings
@@ -340,6 +369,43 @@ class CampaignOrchestrator:
                     not new_errors and all(c.can_publish for c in plan.campaigns)
                 ),
             })
+
+        # ── Step 5: AI strategic advisor (budget, bidding, negatives) ─────────
+        # Run all three advisor analyses in parallel — each is independent.
+        advisor_results = await asyncio.gather(
+            analyze_budget_strategy_ai(brief, api_key),
+            analyze_bidding_strategy_ai(brief, api_key),
+            analyze_negative_keywords_ai(brief, plan.campaigns, api_key),
+            return_exceptions=True,
+        )
+
+        advisor_issues: list[ValidationIssue] = []
+        for result in advisor_results:
+            if isinstance(result, list):
+                advisor_issues.extend(result)
+            elif isinstance(result, Exception):
+                logger.warning(
+                    f"AI strategic advisor error for project {project_id}: {result}"
+                )
+
+        # ── Step 6: Merge AI strategic insights into plan ─────────────────────
+        if advisor_issues:
+            adv_warnings, adv_errors = _apply_issues_to_campaigns(
+                advisor_issues, plan.campaigns
+            )
+            plan = plan.model_copy(update={
+                "validation_warnings": plan.validation_warnings + adv_warnings,
+                "validation_errors": plan.validation_errors + adv_errors,
+                "is_valid": not (plan.validation_errors + adv_errors),
+                "publish_ready": (
+                    not (plan.validation_errors + adv_errors)
+                    and all(c.can_publish for c in plan.campaigns)
+                ),
+            })
+            logger.info(
+                f"AI strategic advisor complete for project {project_id}: "
+                f"{len(advisor_issues)} insight(s) added"
+            )
 
         return plan
 
