@@ -299,31 +299,23 @@ class CampaignOrchestrator:
         from app.connectors.ai_validator import AIValidator
         from app.connectors.ai_strategic_advisor import (
             analyze_budget_strategy_ai,
-            analyze_bidding_strategy_ai,
             analyze_negative_keywords_ai,
             generate_acquisition_keywords_ai,
             optimize_brief_budget_ai,
-            optimize_brief_kpi_ai,
         )
 
-        # ── Step 0: AI brief pre-enrichment (budget + KPI + keywords, parallel) ─
-        # All three run BEFORE the sync generators so the rule-based pipeline
+        # ── Step 0: AI brief pre-enrichment (budget + keywords, parallel) ──────
+        # Both run BEFORE the sync generators so the rule-based pipeline
         # uses AI-recommended configuration instead of defaults / empty templates.
         budget_was_optimized = False
-        kpi_was_optimized = False
         try:
             budget_task = asyncio.ensure_future(optimize_brief_budget_ai(brief, api_key))
-            kpi_task    = asyncio.ensure_future(optimize_brief_kpi_ai(brief, api_key))
             kw_task     = asyncio.ensure_future(generate_acquisition_keywords_ai(brief, api_key))
-            (optimized_brief, budget_was_optimized), (kpi_brief, kpi_was_optimized), ai_kw = (
-                await asyncio.gather(budget_task, kpi_task, kw_task)
+            (optimized_brief, budget_was_optimized), ai_kw = (
+                await asyncio.gather(budget_task, kw_task)
             )
 
-            # Apply budget optimisation, then layer KPI optimisation on top
             brief = optimized_brief
-            if kpi_was_optimized:
-                # merge: keep budget from optimized_brief, KPI from kpi_brief
-                brief = brief.model_copy(update={"objectives": kpi_brief.objectives})
 
             # Merge AI-generated keyword themes
             if ai_kw:
@@ -387,16 +379,13 @@ class CampaignOrchestrator:
                 ),
             })
 
-        # ── Step 5: AI strategic advisor (budget residual, bidding, negatives) ─
-        # Skip the budget and/or bidding advisors when those settings were
-        # already AI-optimized in Step 0 to avoid retroactive warnings.
+        # ── Step 5: AI strategic advisor (budget residual, negatives) ───────────
+        # Skip the budget advisor when budget was already AI-optimized in Step 0.
         advisor_coroutines = [
             analyze_negative_keywords_ai(brief, plan.campaigns, api_key),
         ]
         if not budget_was_optimized:
             advisor_coroutines.insert(0, analyze_budget_strategy_ai(brief, api_key))
-        if not kpi_was_optimized:
-            advisor_coroutines.append(analyze_bidding_strategy_ai(brief, api_key))
 
         advisor_results = await asyncio.gather(*advisor_coroutines, return_exceptions=True)
 
