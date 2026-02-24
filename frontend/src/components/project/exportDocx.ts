@@ -31,7 +31,7 @@ const C = {
   accent:     'E10098',   // pink — key numbers, step bullets
   body:       '374151',   // paragraph text
   muted:      '6B7280',   // captions
-  thBg:       '1F2937',   // table header background
+  thBg:       'E10098',   // table header background (primary pink)
   thText:     'FFFFFF',   // table header text
   rowAlt:     'F9FAFB',   // alternating row tint
   totBg:      'FDF4F9',   // totale row — light pink
@@ -295,26 +295,25 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
             th('Budget / g',    MIX.daily),
           ],
         }),
-        ...typeRows.map(({ type, monthlyAmt, pct }, i) => {
+        ...typeRows.map(({ type, monthlyAmt, pct }) => {
           const info = CAMPAIGN_STRATEGY[type]
-          const bg   = i % 2 === 0 ? C.white : C.rowAlt
           return new TableRow({ children: [
-            td(String(info?.priority ?? '—'), MIX.n,      { center: true, bg }),
-            td(info?.label ?? type,           MIX.name,   { bold: true,   bg }),
-            td(info?.funnel ?? '—',           MIX.funnel, { center: true, bg }),
-            td(`€ ${Math.round(monthlyAmt).toLocaleString('it-IT')}`, MIX.budget, { bold: true, center: true, bg }),
-            td(`${pct.toFixed(0)} %`,         MIX.pct,    { center: true, bg }),
-            td(`€ ${Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}`, MIX.daily, { center: true, bg }),
+            td(String(info?.priority ?? '—'), MIX.n,      { center: true }),
+            td(info?.label ?? type,           MIX.name,   { bold: true }),
+            td(info?.funnel ?? '—',           MIX.funnel, { center: true }),
+            td(`€ ${Math.round(monthlyAmt).toLocaleString('it-IT')}`, MIX.budget, { bold: true, center: true }),
+            td(`${pct.toFixed(0)} %`,         MIX.pct,    { center: true }),
+            td(`€ ${Math.round(monthlyAmt / 30.44).toLocaleString('it-IT')}`, MIX.daily, { center: true }),
           ]})
         }),
         // TOTALE row — colSpan 3 for first 3 cols, then 3 individual cells
         new TableRow({ children: [
-          td('TOTALE', 0, { bold: true, bg: C.totBg, color: C.totText, size: 22, span: 3 }),
+          td('TOTALE', 0, { bold: true, color: C.totText, size: 22, span: 3 }),
           td(`€ ${Math.round(totalMonthly).toLocaleString('it-IT')}`, MIX.budget,
-             { bold: true, center: true, bg: C.totBg, color: C.accent, size: 24 }),
-          td('100 %', MIX.pct,  { bold: true, center: true, bg: C.totBg, color: C.totText }),
+             { bold: true, center: true, color: C.accent, size: 24 }),
+          td('100 %', MIX.pct,  { bold: true, center: true, color: C.totText }),
           td(`€ ${Math.round(totalMonthly / 30.44).toLocaleString('it-IT')}`, MIX.daily,
-             { center: true, bg: C.totBg, color: C.totText }),
+             { center: true, color: C.totText }),
         ]}),
       ],
     }),
@@ -358,7 +357,6 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
           new TableRow({ children: [
             new TableCell({
               width:         { size: DET.label, type: WidthType.DXA },
-              shading:       { fill: C.labelBg, type: 'solid' },
               verticalAlign: VerticalAlign.CENTER,
               margins:       { top: 80, bottom: 80, left: 140, right: 140 },
               children: [new Paragraph({
@@ -414,56 +412,21 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
               th('Brand terms',          LANG.bt,   { left: true }),
             ],
           }),
-          ...languages.map((lang, i) => {
+          ...languages.map((lang) => {
             const l  = lang as Record<string, unknown>
             const hl = (l.headlines   as string[] | undefined) ?? []
             const bt = (l.brand_terms as string[] | undefined) ?? []
-            const bg = i % 2 === 0 ? C.white : C.rowAlt
             return new TableRow({ children: [
-              td(`${l.code} — ${l.name}`, LANG.lang, { bold: true, bg }),
-              td((l.landing_page as string | undefined) || '—', LANG.url, { bg, size: 18 }),
-              td(hl.slice(0, 2).join(' · ') || '—', LANG.hl, { bg, size: 18 }),
-              td(bt.slice(0, 3).join(', ')  || '—', LANG.bt, { bg, size: 18 }),
+              td(`${l.code} — ${l.name}`, LANG.lang, { bold: true }),
+              td((l.landing_page as string | undefined) || '—', LANG.url, { size: 18 }),
+              td(hl.slice(0, 2).join(' · ') || '—', LANG.hl, { size: 18 }),
+              td(bt.slice(0, 3).join(', ')  || '—', LANG.bt, { size: 18 }),
             ]})
           }),
         ],
       }),
     )
   }
-
-  // ─── 5. PROSSIMI PASSI ────────────────────────────────────────────────────
-  children.push(h1('5. Prossimi passi'))
-
-  ;[
-    { n: '01', title: 'Approvazione piano',          desc: 'Revisione e firma del preventivo da parte del cliente' },
-    { n: '02', title: 'Setup account Google Ads',    desc: 'Configurazione customer ID, conversioni, tag, FLOODLIGHT' },
-    { n: '03', title: 'Caricamento asset visivi',    desc: 'Immagini per Performance Max e Retargeting (se attivi)' },
-    { n: '04', title: 'Attivazione Brand + Acquisition', desc: 'Prima le campagne ad alto intento, poi le altre' },
-    { n: '05', title: 'Periodo di apprendimento',    desc: '4–6 settimane per ottimizzazione automatica Google' },
-    { n: '06', title: 'Primo report risultati',      desc: 'Analisi KPI, ROAS e aggiustamenti strategici' },
-  ].forEach(item => {
-    children.push(new Paragraph({
-      spacing: { before: 80, after: 80 },
-      children: [
-        new TextRun({ text: `${item.n}.  `, bold: true, color: C.accent, size: 24 }),
-        new TextRun({ text: `${item.title} — `, bold: true, size: 22, color: C.dark }),
-        new TextRun({ text: item.desc, size: 22, color: C.muted }),
-      ],
-    }))
-  })
-
-  children.push(
-    gap(400),
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing:   { before: 0, after: 0 },
-      border:    { top: { style: 'single', size: 4, color: C.border, space: 8 } },
-      children: [new TextRun({
-        text: `Documento generato da Google Ads Planner  ·  ${brandName}  ·  ${today}`,
-        size: 18, color: 'BBBBBB',
-      })],
-    }),
-  )
 
   // ─── build & download ─────────────────────────────────────────────────────
   const doc = new Document({
