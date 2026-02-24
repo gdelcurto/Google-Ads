@@ -366,11 +366,25 @@ export default function Layout() {
       <main style={{
         flex: 1,
         marginLeft: SIDEBAR_W,
-        padding: '40px 36px',
+        padding: '0 36px 40px',
         boxSizing: 'border-box',
         minHeight: '100vh',
         width: `calc(100% - ${SIDEBAR_W}px)`,
       }}>
+        {/* App header */}
+        <div style={{
+          paddingTop: 28,
+          paddingBottom: 20,
+          marginBottom: 28,
+          borderBottom: `1px solid ${T.borderLight}`,
+        }}>
+          <img
+            src="https://www.mentefredda.it/AdAtelier.svg"
+            alt="AdAtelier"
+            style={{ height: 28, display: 'block' }}
+          />
+        </div>
+
         <Outlet />
       </main>
     </div>
