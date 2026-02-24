@@ -40,6 +40,8 @@ class BidStrategy(str, Enum):
     target_roas = "Target ROAS"
     maximize_conversions = "Maximize conversions"
     maximize_conversion_value = "Maximize conversion value"
+    maximize_clicks = "Maximize clicks"
+    target_impression_share = "Target impression share"
     manual_cpc = "Manual CPC"
     enhanced_cpc = "Enhanced CPC"
 

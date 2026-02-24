@@ -13,10 +13,6 @@ export interface FormState {
   timezone: string
   google_ads_customer_id: string
   primary_objective: string
-  target_cpa_eur: string
-  target_roas: string
-  max_cpc_brand: string
-  max_cpc_acquisition: string
   primary_conversion_action: string
   total_monthly_eur: string
   hotel_category: string
@@ -72,7 +68,17 @@ export interface LangState {
   retargeting_descriptions: string
 }
 
-export type TypeObjective = { primary_objective: string; primary_conversion_action: string }
+export type BidStrategyChoice =
+  | 'maximize_conversions'
+  | 'maximize_conversion_value'
+  | 'maximize_clicks'
+  | 'target_impression_share'
+
+export type TypeObjective = {
+  primary_objective: string
+  primary_conversion_action: string
+  bid_strategy: BidStrategyChoice
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -105,10 +111,6 @@ export const DEFAULT_FORM: FormState = {
   timezone: 'Europe/Rome',
   google_ads_customer_id: '',
   primary_objective: 'direct_bookings',
-  target_cpa_eur: '',
-  target_roas: '',
-  max_cpc_brand: '',
-  max_cpc_acquisition: '',
   primary_conversion_action: 'purchase',
   total_monthly_eur: '',
   hotel_category: 'city_hotel',
@@ -151,7 +153,24 @@ export const DEFAULT_LANG: LangState = {
 export const DEFAULT_TYPE_OBJECTIVE: TypeObjective = {
   primary_objective: 'direct_bookings',
   primary_conversion_action: 'purchase',
+  bid_strategy: 'maximize_conversions',
 }
+
+// Default bid strategy per campaign type key (frontend key)
+export const DEFAULT_BID_STRATEGY_BY_TYPE: Record<string, BidStrategyChoice> = {
+  brand:       'maximize_clicks',
+  acquisition: 'maximize_conversions',
+  retargeting: 'maximize_conversions',
+  pmax:        'maximize_conversion_value',
+  demand_gen:  'maximize_conversions',
+}
+
+export const BID_STRATEGY_OPTIONS: { value: BidStrategyChoice; label: string }[] = [
+  { value: 'maximize_conversions',       label: 'Numero di Conversioni' },
+  { value: 'maximize_conversion_value',  label: 'Valore di Conversione' },
+  { value: 'maximize_clicks',            label: 'Massimizza i Click' },
+  { value: 'target_impression_share',    label: 'Quota Impressioni' },
+]
 
 export const OBJECTIVE_OPTIONS = [
   { value: 'direct_bookings', label: 'Prenotazioni dirette' },

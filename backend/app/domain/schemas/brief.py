@@ -43,6 +43,25 @@ class ObjectiveType(str, Enum):
     brand_awareness = "brand_awareness"
 
 
+class BidStrategyChoice(str, Enum):
+    """Bid strategy choices exposed to the user in the brief wizard.
+    Maps 1-to-1 onto Google Ads API bidding strategies."""
+    maximize_conversions = "maximize_conversions"        # Numero di Conversioni
+    maximize_conversion_value = "maximize_conversion_value"  # Valore di Conversione
+    maximize_clicks = "maximize_clicks"                  # Massimizza i click
+    target_impression_share = "target_impression_share"  # Quota impressioni
+
+
+# Sensible per-type defaults
+_DEFAULT_BID_STRATEGY: dict[str, BidStrategyChoice] = {
+    "search_brand": BidStrategyChoice.maximize_clicks,
+    "search_acquisition": BidStrategyChoice.maximize_conversions,
+    "retargeting": BidStrategyChoice.maximize_conversions,
+    "performance_max": BidStrategyChoice.maximize_conversion_value,
+    "demand_gen": BidStrategyChoice.maximize_conversions,
+}
+
+
 class CampaignTypeKey(str, Enum):
     search_brand = "search_brand"
     search_acquisition = "search_acquisition"
@@ -94,9 +113,10 @@ class ConversionsConfig(BaseModel):
 
 
 class CampaignTypeObjective(BaseModel):
-    """Per-campaign-type objective and conversion action override."""
+    """Per-campaign-type objective, conversion action and bid strategy override."""
     primary: ObjectiveType
     primary_conversion_action: str = "purchase"
+    bid_strategy: BidStrategyChoice = BidStrategyChoice.maximize_conversions
 
 
 class ObjectivesInfo(BaseModel):
@@ -117,6 +137,13 @@ class ObjectivesInfo(BaseModel):
         """Return the primary conversion action for a specific campaign type."""
         entry = self.per_campaign_type.get(campaign_type_key)
         return entry.primary_conversion_action if entry else self.conversions.primary_conversion_action
+
+    def get_bid_strategy_for(self, campaign_type_key: str) -> BidStrategyChoice:
+        """Return the explicit bid strategy for a campaign type, falling back to per-type default."""
+        entry = self.per_campaign_type.get(campaign_type_key)
+        if entry and entry.bid_strategy:
+            return entry.bid_strategy
+        return _DEFAULT_BID_STRATEGY.get(campaign_type_key, BidStrategyChoice.maximize_conversions)
 
 
 class BudgetByLanguage(BaseModel):
@@ -389,17 +416,6 @@ class Brief(BaseModel):
     # NOTE: audiences (remarketing lists, in-market segments) are configured
     # manually by the strategist — no auto-fill.  Retargeting/PMax/Demand Gen
     # campaigns will only be generated when audiences are explicitly set.
-
-    @model_validator(mode="after")
-    def auto_fill_kpi_defaults(self) -> "Brief":
-        """Set sensible KPI defaults when neither tCPA nor tROAS are provided.
-        Hotels typically target direct bookings with a CPA of ~45 EUR
-        and a ROAS of ~8x."""
-        kpi = self.objectives.kpi
-        if not kpi.target_cpa_eur and not kpi.target_roas:
-            kpi.target_cpa_eur = 45.0
-            kpi.target_roas = 8.0
-        return self
 
     @model_validator(mode="after")
     def auto_distribute_budget(self) -> "Brief":

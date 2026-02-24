@@ -393,3 +393,13 @@ class GoogleAdsApiConnector:
             gads_campaign.maximize_conversions.target_cpa_micros = 0
         elif bid == "Maximize conversion value":
             gads_campaign.maximize_conversion_value.target_roas = 0
+        elif bid == "Maximize clicks":
+            # target_spend with no cpc_bid_ceiling = uncapped maximize clicks
+            gads_campaign.target_spend.cpc_bid_ceiling_micros = 0
+        elif bid == "Target impression share":
+            # Aim for top of page, 100% impression share, no CPC cap
+            gads_campaign.target_impression_share.location = (
+                client.enums.TargetImpressionShareLocationEnum.TOP_OF_PAGE
+            )
+            gads_campaign.target_impression_share.location_fraction_micros = 1_000_000  # 100%
+            gads_campaign.target_impression_share.cpc_bid_ceiling_micros = 0

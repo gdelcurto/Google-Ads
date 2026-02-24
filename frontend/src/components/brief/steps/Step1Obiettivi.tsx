@@ -1,5 +1,5 @@
 import React from 'react'
-import { FormState, LangState, TypeObjective, CAMPAIGN_TYPES, DEFAULT_TYPE_OBJECTIVE, OBJECTIVE_OPTIONS } from '../types'
+import { FormState, LangState, TypeObjective, BidStrategyChoice, CAMPAIGN_TYPES, DEFAULT_TYPE_OBJECTIVE, DEFAULT_BID_STRATEGY_BY_TYPE, OBJECTIVE_OPTIONS, BID_STRATEGY_OPTIONS } from '../types'
 import { css } from '../styles'
 import { T } from '../../../styles/theme'
 import { StrategyResult } from '../hooks/useBudgetStrategy'
@@ -102,56 +102,59 @@ export function Step1Obiettivi({
       </div>
 
       <div style={css.section}>
-        <div style={css.sectionTitle}>KPI Target (opzionali)</div>
-        <div style={css.grid2}>
-          <div style={css.field}>
-            <label style={css.label}>Target CPA (€)</label>
-            <input
-              style={css.input}
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.target_cpa_eur}
-              onChange={e => setField('target_cpa_eur', e.target.value)}
-              placeholder="es. 25.00"
-            />
-          </div>
-          <div style={css.field}>
-            <label style={css.label}>Target ROAS</label>
-            <input
-              style={css.input}
-              type="number"
-              min="0"
-              step="0.1"
-              value={form.target_roas}
-              onChange={e => setField('target_roas', e.target.value)}
-              placeholder="es. 4.0"
-            />
-          </div>
-          <div style={css.field}>
-            <label style={css.label}>Max CPC Brand (€)</label>
-            <input
-              style={css.input}
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.max_cpc_brand}
-              onChange={e => setField('max_cpc_brand', e.target.value)}
-              placeholder="es. 1.50"
-            />
-          </div>
-          <div style={css.field}>
-            <label style={css.label}>Max CPC Acquisition (€)</label>
-            <input
-              style={css.input}
-              type="number"
-              min="0"
-              step="0.01"
-              value={form.max_cpc_acquisition}
-              onChange={e => setField('max_cpc_acquisition', e.target.value)}
-              placeholder="es. 2.00"
-            />
-          </div>
+        <div style={css.sectionTitle}>Strategia di offerta per tipologia di campagna</div>
+        <div style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
+          Definisci la strategia di offerta da applicare su Google Ads per ogni tipo di campagna attivo.
+        </div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Tipo campagna
+                </th>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Strategia di offerta *
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {CAMPAIGN_TYPES.map(ct => {
+                const isSel = selectedTypes.has(ct.key)
+                if (!isSel) return null
+                const obj: TypeObjective = objectivesByType[ct.key] ?? {
+                  ...DEFAULT_TYPE_OBJECTIVE,
+                  bid_strategy: DEFAULT_BID_STRATEGY_BY_TYPE[ct.key] as BidStrategyChoice,
+                }
+                return (
+                  <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
+                      {ct.label}
+                    </td>
+                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                      <select
+                        style={{ ...css.select, marginBottom: 0 }}
+                        value={obj.bid_strategy ?? DEFAULT_BID_STRATEGY_BY_TYPE[ct.key]}
+                        onChange={e => setObjectivesByType(prev => ({
+                          ...prev,
+                          [ct.key]: { ...obj, bid_strategy: e.target.value as BidStrategyChoice },
+                        }))}
+                      >
+                        {BID_STRATEGY_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {[...selectedTypes].length === 0 && (
+            <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
+              Seleziona almeno un tipo di campagna nella sezione Budget qui sotto.
+            </div>
+          )}
         </div>
       </div>
 

@@ -5,15 +5,28 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from app.domain.schemas.brief import Brief, LanguagePlan, UtmConfig
+from app.domain.schemas.brief import Brief, BidStrategyChoice, LanguagePlan, UtmConfig
 from app.domain.schemas.campaign_plan import (
-    AssetPack, CalloutAsset, CampaignSettings, CampaignStatus, CampaignType,
+    AssetPack, BidStrategy, CalloutAsset, CampaignSettings, CampaignStatus, CampaignType,
     RSAd, PinnedHeadline, SitelinkAsset, StructuredSnippetAsset,
 )
+
+# Maps the brief-level BidStrategyChoice enum → campaign plan BidStrategy enum
+_CHOICE_TO_BID_STRATEGY: dict[BidStrategyChoice, BidStrategy] = {
+    BidStrategyChoice.maximize_conversions: BidStrategy.maximize_conversions,
+    BidStrategyChoice.maximize_conversion_value: BidStrategy.maximize_conversion_value,
+    BidStrategyChoice.maximize_clicks: BidStrategy.maximize_clicks,
+    BidStrategyChoice.target_impression_share: BidStrategy.target_impression_share,
+}
 
 
 class BaseGenerator:
     """Shared utilities for all campaign generators."""
+
+    def resolve_bid_strategy(self, brief: Brief, campaign_type_key: str) -> BidStrategy:
+        """Resolve the BidStrategy for a campaign type from the brief's per-type setting."""
+        choice = brief.objectives.get_bid_strategy_for(campaign_type_key)
+        return _CHOICE_TO_BID_STRATEGY.get(choice, BidStrategy.maximize_conversions)
 
     def build_campaign_name(
         self,

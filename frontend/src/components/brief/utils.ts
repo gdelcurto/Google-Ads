@@ -2,8 +2,8 @@
 
 import { ApiCallLogEntry } from '../../api/projects'
 import {
-  CAMPAIGN_TYPES, DEFAULT_LANG, LANG_IDS,
-  FormState, LangState, RemarketingListState, TypeObjective,
+  CAMPAIGN_TYPES, DEFAULT_LANG, DEFAULT_BID_STRATEGY_BY_TYPE, LANG_IDS,
+  BidStrategyChoice, FormState, LangState, RemarketingListState, TypeObjective,
 } from './types'
 
 // ── Text utilities ────────────────────────────────────────────────────────────
@@ -56,7 +56,6 @@ export function briefToForm(b: Record<string, unknown>): FormState {
   const meta    = (b.meta || {}) as Record<string, unknown>
   const client  = (b.client || {}) as Record<string, unknown>
   const obj     = (b.objectives || {}) as Record<string, unknown>
-  const kpi     = (obj.kpi || {}) as Record<string, unknown>
   const conv    = (obj.conversions || {}) as Record<string, unknown>
   const budgets = (b.budgets || {}) as Record<string, unknown>
   const hotel   = (b.hotel_specifics || {}) as Record<string, unknown>
@@ -76,10 +75,6 @@ export function briefToForm(b: Record<string, unknown>): FormState {
     timezone: String(client.timezone || 'Europe/Rome'),
     google_ads_customer_id: String(client.google_ads_customer_id || ''),
     primary_objective: String(obj.primary || 'direct_bookings'),
-    target_cpa_eur: kpi.target_cpa_eur != null ? String(kpi.target_cpa_eur) : '',
-    target_roas: kpi.target_roas != null ? String(kpi.target_roas) : '',
-    max_cpc_brand: kpi.max_cpc_brand != null ? String(kpi.max_cpc_brand) : '',
-    max_cpc_acquisition: kpi.max_cpc_acquisition != null ? String(kpi.max_cpc_acquisition) : '',
     primary_conversion_action: String(conv.primary_conversion_action || 'purchase'),
     total_monthly_eur: budgets.total_monthly_eur != null ? String(budgets.total_monthly_eur) : '',
     hotel_category: String(hotel.category || 'city_hotel'),
@@ -158,6 +153,7 @@ export function briefToObjectivesByType(b: Record<string, unknown>): Record<stri
       result[ct.key] = {
         primary_objective: String(entry.primary || 'direct_bookings'),
         primary_conversion_action: String(entry.primary_conversion_action || 'purchase'),
+        bid_strategy: (String(entry.bid_strategy || DEFAULT_BID_STRATEGY_BY_TYPE[ct.key])) as BidStrategyChoice,
       }
     }
   }
@@ -259,12 +255,7 @@ export function buildBrief(
         return (firstType && objectivesByType[firstType.key]?.primary_objective) || 'direct_bookings'
       })(),
       secondary: [],
-      kpi: {
-        target_cpa_eur: form.target_cpa_eur ? parseFloat(form.target_cpa_eur) : null,
-        target_roas: form.target_roas ? parseFloat(form.target_roas) : null,
-        max_cpc_brand: form.max_cpc_brand ? parseFloat(form.max_cpc_brand) : null,
-        max_cpc_acquisition: form.max_cpc_acquisition ? parseFloat(form.max_cpc_acquisition) : null,
-      },
+      kpi: {},
       conversions: {
         primary_conversion_action: (() => {
           const firstType = CAMPAIGN_TYPES.find(ct => selectedTypes.has(ct.key))
@@ -278,10 +269,15 @@ export function buildBrief(
         CAMPAIGN_TYPES
           .filter(ct => selectedTypes.has(ct.key))
           .map(ct => {
-            const obj = objectivesByType[ct.key] ?? { primary_objective: 'direct_bookings', primary_conversion_action: 'purchase' }
+            const obj = objectivesByType[ct.key] ?? {
+              primary_objective: 'direct_bookings',
+              primary_conversion_action: 'purchase',
+              bid_strategy: DEFAULT_BID_STRATEGY_BY_TYPE[ct.key],
+            }
             return [ct.backendKey, {
               primary: obj.primary_objective,
               primary_conversion_action: obj.primary_conversion_action || 'purchase',
+              bid_strategy: obj.bid_strategy || DEFAULT_BID_STRATEGY_BY_TYPE[ct.key],
             }]
           })
       ),
