@@ -221,7 +221,100 @@ SOLO JSON, nessun testo aggiuntivo."""
         return brief, False
 
 
-# ── Budget Strategist AI (residual post-check) ───────────────────────────────
+# ── Bidding KPI Pre-optimization ─────────────────────────────────────────────
+
+async def optimize_brief_kpi_ai(brief: "Brief", api_key: str) -> "tuple[Brief, bool]":
+    """
+    Pre-optimize KPI targets (Target CPA / Target ROAS) BEFORE campaign generation.
+
+    Runs in Step 0 alongside the budget optimizer.  It fires only when the
+    current CPA is inconsistent with the monthly budget (expected conversions
+    budget/CPA < MIN_CONVERSIONS_THRESHOLD), indicating the bid strategy will
+    not have enough conversion signal to work properly.
+
+    Returns (modified_brief, True) when KPIs were updated,
+    (original_brief, False) otherwise.
+    The flag lets the orchestrator skip analyze_bidding_strategy_ai() so no
+    retroactive bidding warnings appear after the correction.
+    """
+    import anthropic
+
+    MIN_CONVERSIONS = 20  # Below this the algorithm under-optimises
+
+    kpi = brief.objectives.kpi
+    total = brief.budgets.total_monthly_eur
+    hotel_cat = brief.hotel_specifics.category.value
+    stars = brief.hotel_specifics.stars
+    primary_obj = brief.objectives.primary.value
+
+    # Only act when there is a CPA target and the expected volume is too low
+    if not kpi.target_cpa_eur or total <= 0:
+        return brief, False
+
+    expected_conversions = total / kpi.target_cpa_eur
+    if expected_conversions >= MIN_CONVERSIONS:
+        return brief, False  # KPIs already consistent — nothing to pre-fix
+
+    kpi_lines = [f"Target CPA: €{kpi.target_cpa_eur:.2f}"]
+    if kpi.target_roas:
+        kpi_lines.append(f"Target ROAS: {kpi.target_roas:.1f}x")
+
+    prompt = f"""Sei un esperto di bid strategy Google Ads per l'hospitality.
+
+PROFILO: {hotel_cat} {stars}★ — Budget €{total:.0f}/mese — Obiettivo: {primary_obj}
+KPI ATTUALI: {', '.join(kpi_lines)}
+PROBLEMA: Con questo budget e Target CPA attuale si stimano solo ~{expected_conversions:.0f} conversioni/mese.
+Per ottimizzare Target CPA servono ≥{MIN_CONVERSIONS} conversioni/mese.
+
+Rispondi SOLO con JSON con il valore CPA corretto (intero euro):
+{{"target_cpa_eur": <intero>}}
+
+Considera: ADR tipico per {hotel_cat} {stars}★, CPC medio hospitality, CTR atteso.
+Il nuovo CPA deve garantire ≥{MIN_CONVERSIONS} conversioni/mese con budget €{total:.0f}.
+SOLO JSON, nessun testo aggiuntivo."""
+
+    try:
+        client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
+        response = await client.messages.create(
+            model=_MODEL,
+            max_tokens=100,
+            system=combined_skills(BID_STRATEGY_RECOMMENDATIONS),
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+
+        m = re.search(r'\{[^}]+\}', raw, re.DOTALL)
+        if not m:
+            logger.warning(f"AI KPI optimization: no JSON in response: {raw[:100]}")
+            return brief, False
+
+        kpi_dict = json.loads(m.group(0))
+        new_cpa = kpi_dict.get("target_cpa_eur")
+        if not isinstance(new_cpa, (int, float)) or new_cpa <= 0:
+            return brief, False
+
+        new_cpa_f = float(new_cpa)
+        # Sanity cap: new CPA must be higher than current and not absurdly large
+        if new_cpa_f <= kpi.target_cpa_eur or new_cpa_f > 500:
+            return brief, False
+
+        new_kpi = kpi.model_copy(update={"target_cpa_eur": new_cpa_f})
+        new_objectives = brief.objectives.model_copy(update={"kpi": new_kpi})
+        optimized = brief.model_copy(update={"objectives": new_objectives})
+
+        logger.info(
+            f"AI KPI pre-optimization: Target CPA €{kpi.target_cpa_eur:.0f} → "
+            f"€{new_cpa_f:.0f} (budget €{total:.0f}, "
+            f"expected {total/new_cpa_f:.0f} conversions/month)"
+        )
+        return optimized, True
+
+    except Exception as exc:
+        logger.warning(f"AI KPI pre-optimization failed: {exc}")
+        return brief, False
+
+
+
 
 async def analyze_budget_strategy_ai(
     brief: "Brief",
