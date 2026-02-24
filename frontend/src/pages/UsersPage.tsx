@@ -14,7 +14,7 @@ const s: Record<string, React.CSSProperties> = {
   h2: { fontSize: 16, fontWeight: 700, color: T.text, marginBottom: 16 },
   btn: {
     background: T.primary, color: '#fff', border: 'none',
-    padding: '8px 16px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 13,
+    padding: '10px 20px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14,
   },
   btnOutline: {
     background: 'transparent', color: T.text, border: `1px solid ${T.border}`,
