@@ -120,25 +120,24 @@ class AdsEditorCsvExporter:
             "Headline 13",
             "Headline 14",
             "Headline 15",
-            "Headline 1 Position",
-            "Headline 2 Position",
-            "Headline 3 Position",
+            "Headline 1 position",
+            "Headline 2 position",
+            "Headline 3 position",
             "Description 1",
             "Description 2",
             "Description 3",
             "Description 4",
-            "Description 1 Position",
-            "Description 2 Position",
+            "Description 1 position",
+            "Description 2 position",
             "Final URL",
             "Path 1",
             "Path 2",
-            "Sitelink Text",
-            "Sitelink Description Line 1",
-            "Sitelink Description Line 2",
-            "Sitelink Final URL",
-            "Callout Text",
-            "Snippet Header",
+            "Link Text",
+            "Description Line 1",
+            "Description Line 2",
+            "Header",
             "Snippet Values",
+            "Callout text",
             "Asset Group Name",
             "Long Headline 1",
             "Long Headline 2",
@@ -267,7 +266,7 @@ class AdsEditorCsvExporter:
         for i, h in enumerate(ad.headlines[:15], 1):
             row[f"Headline {i}"] = h.text
             if h.pin_position:
-                row[f"Headline {i} Position"] = h.pin_position
+                row[f"Headline {i} position"] = h.pin_position
 
         # Descriptions (up to 4)
         for i, d in enumerate(ad.descriptions[:4], 1):
@@ -292,10 +291,10 @@ class AdsEditorCsvExporter:
                     rows.append({
                         "Type": "Sitelink",
                         "Campaign": campaign.campaign_name,
-                        "Sitelink Text": sl.text,
-                        "Sitelink Description Line 1": sl.description_1,
-                        "Sitelink Description Line 2": sl.description_2,
-                        "Sitelink Final URL": sl.final_url,
+                        "Link Text": sl.text,
+                        "Description Line 1": sl.description_1,
+                        "Description Line 2": sl.description_2,
+                        "Final URL": sl.final_url,
                     })
                     seen_sitelinks.add(key)
 
@@ -305,7 +304,7 @@ class AdsEditorCsvExporter:
                     rows.append({
                         "Type": "Callout",
                         "Campaign": campaign.campaign_name,
-                        "Callout Text": co.text,
+                        "Callout text": co.text,
                     })
                     seen_callouts.add(key)
 
@@ -315,7 +314,7 @@ class AdsEditorCsvExporter:
                     rows.append({
                         "Type": "Structured Snippet",
                         "Campaign": campaign.campaign_name,
-                        "Snippet Header": sn.header,
+                        "Header": sn.header,
                         "Snippet Values": "; ".join(sn.values),
                     })
                     seen_snippets.add(key)
