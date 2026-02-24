@@ -812,7 +812,7 @@ Regole output:
 
         steps.append({
             "step": 1,
-            "label": "Chiamata AI (Claude Haiku)",
+            "label": "Chiamata AI (Claude Sonnet)",
             "detail": (
                 f"Prompt: {len(ai_prompt)} car. — solo profilo hotel + schema output, zero regole hardcoded. "
                 "System: BID_STRATEGY_RECOMMENDATIONS + BUDGET_SCENARIO_PLANNER"
@@ -822,7 +822,7 @@ Regole output:
 
         try:
             message = await self._client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-4-6",
                 max_tokens=1600,
                 system=combined_skills(BID_STRATEGY_RECOMMENDATIONS, BUDGET_SCENARIO_PLANNER),
                 messages=[{"role": "user", "content": ai_prompt}],
@@ -831,7 +831,7 @@ Regole output:
                 agent="BudgetStrategyAgent",
                 reason=f"AI strategy — {hotel_category} {stars}★",
                 endpoint="POST /api/autofill/budget-strategy",
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-4-6",
                 usage=message.usage,
             )
             ai_raw_response = message.content[0].text.strip()
