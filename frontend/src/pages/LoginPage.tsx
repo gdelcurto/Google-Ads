@@ -19,11 +19,12 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: T.shadowMd,
   },
   cardTop: {
-    background: T.navBg,
+    background: 'rgb(247 247 247)',
     padding: '28px 40px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    borderBottom: '1px solid #e4e4e4',
   },
   logo: { height: 28 },
   cardBody: { padding: '36px 40px' },
