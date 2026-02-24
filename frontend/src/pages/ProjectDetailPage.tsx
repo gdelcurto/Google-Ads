@@ -13,6 +13,7 @@ import { ActionPlanTab } from '../components/project/ActionPlanTab'
 import { CampaignPreviewCard } from '../components/project/CampaignPreviewCard'
 import { ScanLogTab } from '../components/project/ScanLogTab'
 import { ApiLogTab } from '../components/project/ApiLogTab'
+import { BudgetLogTab } from '../components/project/BudgetLogTab'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 28 },
@@ -90,7 +91,7 @@ const s: Record<string, React.CSSProperties> = {
 }
 
 
-type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log'
+type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log' | 'budget_log'
 
 
 export default function ProjectDetailPage() {
@@ -171,11 +172,23 @@ export default function ProjectDetailPage() {
 
   const generateMutation = useMutation({
     mutationFn: () => projectsApi.generate(id!, true),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['plan', id] })
       qc.invalidateQueries({ queryKey: ['project', id] })
       setMessage({ type: 'success', text: 'Piano generato con successo (dry run).' })
       setActiveTab('campaigns')
+      // Persist BudgetStrategistAgent validation issues to budget log
+      if (id && Array.isArray(data?.validation_warnings_structured)) {
+        const budgetIssues = data.validation_warnings_structured
+          .filter((i: any) => i.agent === 'BudgetStrategistAgent')
+        if (budgetIssues.length > 0) {
+          const key = `budget_validation_log_${id}`
+          const ts = new Date().toISOString()
+          const existing = (() => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } })()
+          const stamped = budgetIssues.map((i: any) => ({ ...i, ts }))
+          localStorage.setItem(key, JSON.stringify([...stamped, ...existing].slice(0, 50)))
+        }
+      }
     },
     onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
@@ -325,6 +338,7 @@ export default function ProjectDetailPage() {
           ['audit',       'Audit Log'],
           ['scan_log',    'Scan Log'],
           ['api_log',     'API Log'],
+          ['budget_log',  'Budget Log'],
         ] as [Tab, string][]).filter(([t]) => tabs[t as keyof typeof tabs])).map(([t, label]) => (
           <button
             key={t}
@@ -519,6 +533,10 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'api_log' && (
         <ApiLogTab projectId={id!} />
+      )}
+
+      {activeTab === 'budget_log' && (
+        <BudgetLogTab projectId={id!} />
       )}
     </div>
   )

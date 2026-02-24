@@ -55,6 +55,7 @@ class PermissionBase(BaseModel):
     tab_audit: bool = True
     tab_scan_log: bool = True
     tab_api_log: bool = True
+    tab_budget_log: bool = True
 
 
 class PermissionCreate(PermissionBase):
@@ -108,6 +109,7 @@ async def _perm_resp(p: ProjectPermission, db: AsyncSession) -> PermissionRespon
         tab_audit=p.tab_audit,
         tab_scan_log=p.tab_scan_log,
         tab_api_log=p.tab_api_log,
+        tab_budget_log=p.tab_budget_log,
         created_at=p.created_at.isoformat(),
         created_by=p.created_by,
     )
@@ -246,6 +248,7 @@ async def add_permission(
         tab_audit=payload.tab_audit,
         tab_scan_log=payload.tab_scan_log,
         tab_api_log=payload.tab_api_log,
+        tab_budget_log=payload.tab_budget_log,
         created_by=current_user.user_id,
     )
     db.add(perm)
@@ -274,6 +277,7 @@ async def update_permission(
     perm.tab_audit = payload.tab_audit
     perm.tab_scan_log = payload.tab_scan_log
     perm.tab_api_log = payload.tab_api_log
+    perm.tab_budget_log = payload.tab_budget_log
     await db.flush()
     return await _perm_resp(perm, db)
 

@@ -149,6 +149,7 @@ class ProjectPermission(Base):
     tab_audit: Mapped[bool] = mapped_column(Boolean, default=True)
     tab_scan_log: Mapped[bool] = mapped_column(Boolean, default=True)
     tab_api_log: Mapped[bool] = mapped_column(Boolean, default=True)
+    tab_budget_log: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
 

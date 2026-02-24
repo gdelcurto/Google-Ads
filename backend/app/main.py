@@ -111,6 +111,7 @@ def _ensure_missing_columns(conn) -> None:
         ("project_permissions", "tab_audit", "BOOLEAN NOT NULL DEFAULT 1"),
         ("project_permissions", "tab_scan_log", "BOOLEAN NOT NULL DEFAULT 1"),
         ("project_permissions", "tab_api_log", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_budget_log", "BOOLEAN NOT NULL DEFAULT 1"),
     ]
     for table, column, col_type in _COLUMN_FIXES:
         if table in insp.get_table_names():

@@ -337,7 +337,7 @@ def _full_tabs() -> dict:
     return {
         "overview": True, "campaigns": True, "preview": True,
         "brief": True, "action_plan": True, "plan_json": True,
-        "audit": True, "scan_log": True, "api_log": True,
+        "audit": True, "scan_log": True, "api_log": True, "budget_log": True,
     }
 
 
@@ -359,6 +359,7 @@ def _perm_to_dict(p: ProjectPermission) -> dict:
             "audit": p.tab_audit,
             "scan_log": p.tab_scan_log,
             "api_log": p.tab_api_log,
+            "budget_log": p.tab_budget_log,
         },
     }
 

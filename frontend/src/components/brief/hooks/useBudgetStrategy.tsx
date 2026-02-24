@@ -68,6 +68,20 @@ export function useBudgetStrategy({
       }
       setBudgetByTypeLang(newBudget)
       if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
+      // Save full strategy result to budget log for the Budget Log tab
+      const key = `budget_strategy_log_${projectId}`
+      const existing = (() => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } })()
+      existing.unshift({
+        ts: new Date().toISOString(),
+        overall_strategy: data.overall_strategy || '',
+        suggested_total_monthly_eur: data.suggested_total_monthly_eur,
+        min_budget_warning: data.min_budget_warning ?? null,
+        recommended_types: data.recommended_types,
+        budget_split: data.budget_split,
+        daily_by_type_lang: data.daily_by_type_lang,
+        rationale: data.rationale || {},
+      })
+      localStorage.setItem(key, JSON.stringify(existing.slice(0, 10)))
     },
     onError: (e: Error) => setErrors([`Strategia budget: ${e.message}`]),
   })

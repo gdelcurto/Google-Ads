@@ -108,6 +108,7 @@ const TAB_LABELS: Record<string, string> = {
   tab_audit:       'Audit Log',
   tab_scan_log:    'Scan Log',
   tab_api_log:     'API Log',
+  tab_budget_log:  'Budget Log',
 }
 
 const ALL_TABS = Object.keys(TAB_LABELS) as (keyof PermissionCreate)[]
@@ -129,6 +130,7 @@ function initPermForm(overrides?: Partial<PermissionCreate>): PermissionCreate {
     tab_audit: true,
     tab_scan_log: true,
     tab_api_log: true,
+    tab_budget_log: true,
     ...overrides,
   }
 }
@@ -148,6 +150,7 @@ function permFromItem(p: PermissionItem): PermissionCreate {
     tab_audit: p.tab_audit,
     tab_scan_log: p.tab_scan_log,
     tab_api_log: p.tab_api_log,
+    tab_budget_log: p.tab_budget_log,
   }
 }
 

@@ -33,6 +33,7 @@ export interface PermissionTabs {
   audit: boolean
   scan_log: boolean
   api_log: boolean
+  budget_log: boolean
 }
 
 export interface PermissionItem {
@@ -52,6 +53,7 @@ export interface PermissionItem {
   tab_audit: boolean
   tab_scan_log: boolean
   tab_api_log: boolean
+  tab_budget_log: boolean
   created_at: string
   created_by: string
 }
@@ -70,6 +72,7 @@ export interface PermissionCreate {
   tab_audit: boolean
   tab_scan_log: boolean
   tab_api_log: boolean
+  tab_budget_log: boolean
 }
 
 export interface MyPermissions {
@@ -81,7 +84,7 @@ export interface MyPermissions {
 export const DEFAULT_ALL_TABS: PermissionTabs = {
   overview: true, campaigns: true, preview: true,
   brief: true, action_plan: true, plan_json: true,
-  audit: true, scan_log: true, api_log: true,
+  audit: true, scan_log: true, api_log: true, budget_log: true,
 }
 
 export const usersApi = {
