@@ -218,13 +218,13 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing:   { before: 0, after: 120 },
-      children:  [new TextRun({ text: brandName, bold: true, size: 80, color: C.dark })],
+      children:  [new TextRun({ text: brandName, bold: true, size: 52, color: C.dark, font: 'Space Grotesk' })],
     }),
   )
 
   const subtitle = [category, stars > 0 ? '★'.repeat(stars) : '', address].filter(Boolean).join(' · ')
   if (subtitle) {
-    children.push(p(subtitle, { size: 26, color: C.muted, align: AlignmentType.CENTER, after: 100 }))
+    children.push(p(subtitle, { size: 22, color: C.muted, align: AlignmentType.CENTER, after: 100 }))
   }
   children.push(
     p(
@@ -233,7 +233,7 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
       { size: 20, color: C.muted, align: AlignmentType.CENTER, after: 80 },
     ),
     p('DOCUMENTO RISERVATO — USO INTERNO E CLIENTE', {
-      size: 18, color: 'AAAAAA', allCaps: true,
+      size: 20, color: 'AAAAAA', allCaps: true,
       align: AlignmentType.CENTER, after: 600,
     }),
   )
@@ -433,7 +433,7 @@ export async function exportToDocx(brief: Record<string, unknown>): Promise<void
     styles: {
       default: {
         document: {
-          run: { font: 'Calibri', size: 22, color: C.dark },
+          run: { font: 'Space Grotesk', size: 22, color: C.dark },
         },
       },
     },
