@@ -99,7 +99,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
   const { slSuggestMutation, slSuggestingLang, setSlSuggestingLang } =
     useSitelinkSuggest({ form, setLangs, setErrors, projectId })
 
-  const { triggerCopy, isGenerating: copySuggestIsGenerating } =
+  const { triggerCopy, isGenerating: copySuggestIsGenerating, hasError: copySuggestHasError } =
     useCopySuggest({ form, setLangs, setErrors, projectId })
 
   // ── Budget recalculation (uses strategyResult from hook) ───────────────────
@@ -374,7 +374,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
           slSuggestMutation={slSuggestMutation} kwSuggestMutation={kwSuggestMutation}
           slSuggestingLang={slSuggestingLang} kwSuggestingLang={kwSuggestingLang}
           setSlSuggestingLang={setSlSuggestingLang} setKwSuggestingLang={setKwSuggestingLang}
-          copySuggestTrigger={triggerCopy} copySuggestIsGenerating={copySuggestIsGenerating}
+          copySuggestTrigger={triggerCopy} copySuggestIsGenerating={copySuggestIsGenerating} copySuggestHasError={copySuggestHasError}
           setErrors={setErrors}
         />
       )}

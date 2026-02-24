@@ -20,6 +20,7 @@ interface UseCopySuggestParams {
 export function useCopySuggest({ form, setLangs, setErrors, projectId }: UseCopySuggestParams) {
   // Key format: "${langIdx}-${target}"
   const [generatingKey, setGeneratingKey] = useState<string | null>(null)
+  const [errorKey, setErrorKey]           = useState<string | null>(null)
 
   const mutation = useMutation({
     mutationFn: ({ lang, target }: { langIdx: number; lang: LangState; target: CopyTarget }) => {
@@ -64,19 +65,24 @@ export function useCopySuggest({ form, setLangs, setErrors, projectId }: UseCopy
       setGeneratingKey(null)
       if (data.api_call_log) appendApiLog(projectId, data.api_call_log)
     },
-    onError: (e: Error) => {
+    onError: (e: Error, { langIdx, target }) => {
       setErrors([`Generazione copy AI: ${e.message}`])
       setGeneratingKey(null)
+      setErrorKey(`${langIdx}-${target}`)
     },
   })
 
   const triggerCopy = (langIdx: number, lang: LangState, target: CopyTarget) => {
     setGeneratingKey(`${langIdx}-${target}`)
+    setErrorKey(null)
     mutation.mutate({ langIdx, lang, target })
   }
 
   const isGenerating = (langIdx: number, target: CopyTarget) =>
     generatingKey === `${langIdx}-${target}`
 
-  return { triggerCopy, isGenerating }
+  const hasError = (langIdx: number, target: CopyTarget) =>
+    errorKey === `${langIdx}-${target}`
+
+  return { triggerCopy, isGenerating, hasError }
 }

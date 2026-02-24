@@ -78,6 +78,28 @@ def _filter_by_limit(items: list, max_chars: int) -> list:
     return [s for s in items if isinstance(s, str) and len(s.rstrip()) <= max_chars]
 
 
+def _truncate_to_limit(items: list, max_chars: int) -> list:
+    """Keep items within max_chars, truncating at word boundary instead of discarding.
+
+    Preferred over _filter_by_limit when we need to guarantee at least some
+    output even if the LLM generates slightly-over-limit text.
+    """
+    result = []
+    for s in items:
+        if not isinstance(s, str) or not s.strip():
+            continue
+        s = s.strip()
+        if len(s) <= max_chars:
+            result.append(s)
+        else:
+            cut = s[:max_chars].rstrip()
+            space = cut.rfind(' ')
+            if space > max_chars // 2:
+                cut = cut[:space]
+            result.append(cut)
+    return result
+
+
 def _truncate_assets(data: dict) -> dict:
     """Post-process: discard over-limit headlines/descriptions, trim sitelinks.
 
@@ -635,10 +657,10 @@ class ClaudeEnricher:
         raw = message.content[0].text.strip()
         parsed = json.loads(_extract_json_object(raw))
         result = {
-            "headlines": _filter_by_limit(
+            "headlines": _truncate_to_limit(
                 [h for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()], 30
             ),
-            "descriptions": _filter_by_limit(
+            "descriptions": _truncate_to_limit(
                 [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
             ),
         }

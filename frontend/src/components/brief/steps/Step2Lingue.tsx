@@ -12,7 +12,7 @@ function PerTypeCopySection({
   headlinesValue, descriptionsValue,
   headlinesPlaceholder, descriptionsPlaceholder,
   onHeadlinesChange, onDescriptionsChange,
-  onAiGenerate, aiGenerating,
+  onAiGenerate, aiGenerating, aiError,
 }: {
   label: string
   description: string
@@ -24,6 +24,7 @@ function PerTypeCopySection({
   onDescriptionsChange: (v: string) => void
   onAiGenerate?: () => void
   aiGenerating?: boolean
+  aiError?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const hasContent = headlinesValue.trim().length > 0 || descriptionsValue.trim().length > 0
@@ -56,6 +57,7 @@ function PerTypeCopySection({
           {(showAiBtn || aiGenerating) && (
             <div style={{ marginBottom: 12 }}>
               <button
+                type="button"
                 style={{ ...css.btnAdd, fontSize: 12, padding: '6px 14px', opacity: aiGenerating ? 0.6 : 1 }}
                 onClick={onAiGenerate}
                 disabled={aiGenerating}
@@ -64,6 +66,11 @@ function PerTypeCopySection({
                   ? <><i className="fa-solid fa-hourglass-half"></i> Generando copy...</>
                   : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera headline e descrizioni con AI</>}
               </button>
+              {aiError && !aiGenerating && (
+                <span style={{ marginLeft: 10, fontSize: 11, color: '#dc2626' }}>
+                  <i className="fa-solid fa-triangle-exclamation"></i> Errore generazione — riprova
+                </span>
+              )}
             </div>
           )}
 
@@ -129,6 +136,7 @@ interface Props {
   setKwSuggestingLang: (v: number | null) => void
   copySuggestTrigger: (langIdx: number, lang: LangState, target: CopyTarget) => void
   copySuggestIsGenerating: (langIdx: number, target: CopyTarget) => boolean
+  copySuggestHasError: (langIdx: number, target: CopyTarget) => boolean
   setErrors: (errs: string[]) => void
 }
 
@@ -137,7 +145,7 @@ export function Step2Lingue({
   addSitelink, removeSitelink, setSitelinkField,
   slSuggestMutation, kwSuggestMutation,
   slSuggestingLang, kwSuggestingLang, setSlSuggestingLang, setKwSuggestingLang,
-  copySuggestTrigger, copySuggestIsGenerating,
+  copySuggestTrigger, copySuggestIsGenerating, copySuggestHasError,
   setErrors,
 }: Props) {
   return (
@@ -240,15 +248,23 @@ export function Step2Lingue({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <label style={{ ...css.label, marginBottom: 0 }}>Descrizioni RSA * (una per riga — min 2, max 90 caratteri ciascuna)</label>
               {lang.descriptions.trim() === '' && (
-                <button
-                  style={{ ...css.btnAdd, fontSize: 11, padding: '4px 10px', flexShrink: 0, marginLeft: 8, opacity: copySuggestIsGenerating(i, 'generic') ? 0.6 : 1 }}
-                  onClick={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'generic') }}
-                  disabled={copySuggestIsGenerating(i, 'generic')}
-                >
-                  {copySuggestIsGenerating(i, 'generic')
-                    ? <><i className="fa-solid fa-hourglass-half"></i> Generando...</>
-                    : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera con AI</>}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
+                  <button
+                    type="button"
+                    style={{ ...css.btnAdd, fontSize: 11, padding: '4px 10px', opacity: copySuggestIsGenerating(i, 'generic') ? 0.6 : 1 }}
+                    onClick={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'generic') }}
+                    disabled={copySuggestIsGenerating(i, 'generic')}
+                  >
+                    {copySuggestIsGenerating(i, 'generic')
+                      ? <><i className="fa-solid fa-hourglass-half"></i> Generando...</>
+                      : <><i className="fa-solid fa-wand-magic-sparkles"></i> Genera con AI</>}
+                  </button>
+                  {copySuggestHasError(i, 'generic') && !copySuggestIsGenerating(i, 'generic') && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: '#dc2626' }}>
+                      <i className="fa-solid fa-triangle-exclamation"></i> Errore — riprova
+                    </span>
+                  )}
+                </div>
               )}
             </div>
             <textarea
@@ -377,6 +393,7 @@ export function Step2Lingue({
             onDescriptionsChange={v => setLangField(i, 'brand_descriptions', v)}
             onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'brand') }}
             aiGenerating={copySuggestIsGenerating(i, 'brand')}
+            aiError={copySuggestHasError(i, 'brand')}
           />
 
           <PerTypeCopySection
@@ -390,6 +407,7 @@ export function Step2Lingue({
             onDescriptionsChange={v => setLangField(i, 'acquisition_descriptions', v)}
             onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'acquisition') }}
             aiGenerating={copySuggestIsGenerating(i, 'acquisition')}
+            aiError={copySuggestHasError(i, 'acquisition')}
           />
 
           <PerTypeCopySection
@@ -403,6 +421,7 @@ export function Step2Lingue({
             onDescriptionsChange={v => setLangField(i, 'retargeting_descriptions', v)}
             onAiGenerate={() => { if (!brandName) { setErrors(['Inserisci prima il nome del brand (Step 0)']); return }; copySuggestTrigger(i, lang, 'retargeting') }}
             aiGenerating={copySuggestIsGenerating(i, 'retargeting')}
+            aiError={copySuggestHasError(i, 'retargeting')}
           />
         </div>
       ))}
