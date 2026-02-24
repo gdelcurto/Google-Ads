@@ -325,7 +325,7 @@ export default function Layout() {
           background: '#fff',
         }}>
           <img
-            src="https://www.blastness.com/loghi/2342/logofooter.png"
+            src={T.logoBlastness}
             alt="Blastness"
             style={{ width: 34, objectFit: 'contain' }}
           />
@@ -379,7 +379,7 @@ export default function Layout() {
           borderBottom: `1px solid ${T.borderLight}`,
         }}>
           <img
-            src="https://www.mentefredda.it/AdAtelier.svg"
+            src={T.logoApp}
             alt="AdAtelier"
             style={{ height: 28, display: 'block' }}
           />
