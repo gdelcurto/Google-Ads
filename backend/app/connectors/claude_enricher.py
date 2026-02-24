@@ -663,9 +663,13 @@ class ClaudeEnricher:
             "headlines": _filter_by_limit(
                 [h for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()], 30
             ),
-            "descriptions": _filter_by_limit(
-                [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
-            ),
+            # Descriptions: no length filter — return complete sentences as-is.
+            # Slightly-over-90-char descriptions are far better than empty output;
+            # the brief form validator will highlight any that need manual trimming.
+            "descriptions": [
+                d.strip() for d in parsed.get("descriptions", [])
+                if isinstance(d, str) and d.strip()
+            ],
         }
 
         # ── Brand headline enforcement ────────────────────────────────
