@@ -45,9 +45,6 @@ class AdsEditorCsvExporter:
         output = io.StringIO()
         writer = csv.writer(output, quoting=csv.QUOTE_ALL)
 
-        # Header comment
-        self._write_header_comment(writer, plan)
-
         rows = []
 
         for campaign in plan.campaigns:
@@ -71,17 +68,14 @@ class AdsEditorCsvExporter:
 
         return output.getvalue()
 
-    def _write_header_comment(self, writer: csv.writer, plan: AccountPlan):
-        """Write metadata as comments (not parsed by Ads Editor)."""
-        # Ads Editor ignores rows not matching known "Type" values
-        # We prepend a separate info section
-        writer.writerow([
-            "# Google Ads Editor Export",
-            f"# Client: {plan.client_name}",
-            f"# Generated: {plan.generated_at.isoformat()}",
-            f"# Campaigns: {plan.total_campaigns}",
-            f"# Status: {'VALID' if plan.is_valid else 'HAS ERRORS'}",
-        ])
+    def _plan_metadata_comment(self, plan: AccountPlan) -> str:
+        """Returns plan metadata as a plain string (for logging, not for CSV output)."""
+        return (
+            f"Client: {plan.client_name} | "
+            f"Generated: {plan.generated_at.isoformat()} | "
+            f"Campaigns: {plan.total_campaigns} | "
+            f"Status: {'VALID' if plan.is_valid else 'HAS ERRORS'}"
+        )
 
     def _get_all_headers(self, rows: List[dict]) -> List[str]:
         """Collect all unique column headers from all rows, in standard order."""
@@ -226,12 +220,17 @@ class AdsEditorCsvExporter:
         rows = []
         for ag in campaign.ad_groups:
             for kw in ag.keywords:
-                row_type = "Negative Keyword" if kw.is_negative else "Keyword"
+                if kw.is_negative:
+                    row_type = "Campaign Negative Keyword"
+                    ad_group_val = ""
+                else:
+                    row_type = "Keyword"
+                    ad_group_val = ag.name
                 row = {
                     "Type": row_type,
                     "Status": "Enabled",
                     "Campaign": campaign.campaign_name,
-                    "Ad Group": ag.name if not kw.is_negative else "",
+                    "Ad Group": ad_group_val,
                     "Keyword": kw.text,
                     "Match Type": kw.match_type.value,
                 }
@@ -291,7 +290,7 @@ class AdsEditorCsvExporter:
                 key = sl.text
                 if key not in seen_sitelinks:
                     rows.append({
-                        "Type": "Sitelink Asset",
+                        "Type": "Campaign Sitelink",
                         "Campaign": campaign.campaign_name,
                         "Sitelink Text": sl.text,
                         "Sitelink Description Line 1": sl.description_1,
@@ -304,7 +303,7 @@ class AdsEditorCsvExporter:
                 key = co.text
                 if key not in seen_callouts:
                     rows.append({
-                        "Type": "Callout Asset",
+                        "Type": "Campaign Callout",
                         "Campaign": campaign.campaign_name,
                         "Callout Text": co.text,
                     })
@@ -314,7 +313,7 @@ class AdsEditorCsvExporter:
                 key = sn.header
                 if key not in seen_snippets:
                     rows.append({
-                        "Type": "Structured Snippet Asset",
+                        "Type": "Campaign Structured Snippet",
                         "Campaign": campaign.campaign_name,
                         "Snippet Header": sn.header,
                         "Snippet Values": "; ".join(sn.values),
@@ -368,14 +367,9 @@ class AdsEditorCsvExporter:
     # ── Negative keyword rows ─────────────────────────────────────────────────
 
     def _export_negative_keywords(self, campaign: CampaignPlan) -> List[dict]:
-        rows = []
-        for list_name in campaign.shared_negative_keyword_lists:
-            rows.append({
-                "Type": "Campaign Negative Keyword List",
-                "Campaign": campaign.campaign_name,
-                "Negative Keyword List": list_name,
-            })
-        return rows
+        # Shared negative keyword lists are not importable via CSV bulk upload
+        # in Google Ads Editor — they must be managed manually in the UI.
+        return []
 
     # ── Global negatives ──────────────────────────────────────────────────────
 
@@ -383,10 +377,10 @@ class AdsEditorCsvExporter:
         rows = []
         for kw in plan.global_negative_keywords:
             rows.append({
-                "Type": "Negative Keyword List",
+                "Type": "Campaign Negative Keyword",
+                "Campaign": "",  # blank = applies to all campaigns in upload
                 "Keyword": kw.text,
                 "Match Type": kw.match_type.value,
-                "Negative Keyword List": "Global Negatives - Hotel",
             })
         return rows
 
