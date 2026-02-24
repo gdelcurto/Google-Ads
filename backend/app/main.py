@@ -175,7 +175,6 @@ async def _recover_stale_jobs():
     clear error and can retry.
     """
     from datetime import datetime
-    from zoneinfo import ZoneInfo
     from sqlalchemy import select, update
     from app.database import AsyncSessionLocal
     from app.domain.models import AutofillJob
@@ -196,7 +195,7 @@ async def _recover_stale_jobs():
                     "Job interrotto da un riavvio del server. "
                     "Rilancia la scansione per riprovare."
                 ),
-                completed_at=datetime.now(ZoneInfo("Europe/Rome")),
+                completed_at=datetime.utcnow(),
             )
         )
         await db.commit()

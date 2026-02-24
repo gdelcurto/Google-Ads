@@ -4,9 +4,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
-from zoneinfo import ZoneInfo
-
-_TZ_ROME = ZoneInfo("Europe/Rome")
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -122,7 +119,7 @@ async def _update_job_status(
         if error is not None:
             job.error_message = str(error)[:2000]
         if status in ("completed", "failed"):
-            job.completed_at = datetime.now(_TZ_ROME)
+            job.completed_at = datetime.utcnow()
         await db.commit()
 
 
