@@ -143,12 +143,11 @@ def test_csv_has_keyword_and_ad_rows():
     output = exporter.export(plan)
     _, rows = _parse_csv(output)
 
-    # In flat format there is no "Type" column — identify rows by their unique columns
+    # Keywords are identified by the "Keyword" column; RSA rows by "Headline 1"
     kw_texts = [r.get("Keyword", "") for r in rows]
     assert any(kw_texts), "No Keyword rows found (Keyword column empty in all rows)"
-    ad_types = [r.get("Ad type", "") for r in rows]
-    assert any("search ad" in t.lower() for t in ad_types), \
-        f"No RSA rows found — Ad type values: {set(ad_types)}"
+    rsa_rows = [r for r in rows if r.get("Headline 1")]
+    assert rsa_rows, "No RSA rows found (Headline 1 empty in all rows)"
 
 
 # ── test_csv_negative_keywords_match_type ─────────────────────────────────────
