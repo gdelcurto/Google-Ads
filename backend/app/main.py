@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import engine, get_db, Base
-from app.domain.models import User  # noqa: F401 — registers models on Base.metadata
+from app.domain.models import User, ProjectPermission  # noqa: F401 — registers models on Base.metadata
 from app.auth import hash_password
 
 settings = get_settings()
@@ -102,6 +102,15 @@ def _ensure_missing_columns(conn) -> None:
     _COLUMN_FIXES = [
         ("projects", "deleted_at", "DATETIME"),
         ("autofill_jobs", "scraped_json", "TEXT"),
+        ("project_permissions", "tab_overview", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_campaigns", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_preview", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_brief", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_action_plan", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_plan_json", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_audit", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_scan_log", "BOOLEAN NOT NULL DEFAULT 1"),
+        ("project_permissions", "tab_api_log", "BOOLEAN NOT NULL DEFAULT 1"),
     ]
     for table, column, col_type in _COLUMN_FIXES:
         if table in insp.get_table_names():
@@ -246,9 +255,10 @@ app.add_middleware(
 )
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
-from app.routers import auth, autofill, campaigns, export, projects, templates
+from app.routers import auth, autofill, campaigns, export, projects, templates, users
 
 app.include_router(auth.router)
+app.include_router(users.router)
 app.include_router(projects.router)
 app.include_router(campaigns.router)
 app.include_router(export.router)

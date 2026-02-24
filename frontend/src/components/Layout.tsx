@@ -289,9 +289,21 @@ const s: Record<string, React.CSSProperties> = {
 
 // ── Layout ───────────────────────────────────────────────────────────────────
 
+function getTokenRole(): string | null {
+  try {
+    const token = localStorage.getItem('token')
+    if (!token) return null
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.role ?? null
+  } catch {
+    return null
+  }
+}
+
 export default function Layout() {
   const navigate = useNavigate()
   const token = localStorage.getItem('token')
+  const role = getTokenRole()
 
   if (!token) {
     return <Navigate to="/login" replace />
@@ -310,6 +322,12 @@ export default function Layout() {
         </Link>
         <div style={s.navDivider} />
         <Link to="/projects" style={s.navLink}>Progetti</Link>
+        {role === 'admin' && (
+          <>
+            <div style={s.navDivider} />
+            <Link to="/users" style={s.navLink}>Utenti</Link>
+          </>
+        )}
         <div style={s.spacer} />
         <NotificationBell />
         <button style={s.logoutBtn} onClick={logout}>Logout</button>

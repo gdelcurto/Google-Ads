@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi } from '../api/projects'
+import { getMyPermissions, type MyPermissions, DEFAULT_ALL_TABS } from '../api/users'
 import BriefForm from '../components/BriefForm'
 import { T } from '../styles/theme'
 import { useAutofillJobs } from '../contexts/AutofillJobContext'
@@ -120,6 +121,17 @@ export default function ProjectDetailPage() {
     queryKey: ['project', id],
     queryFn: () => projectsApi.get(id!),
   })
+
+  const { data: myPerms } = useQuery<MyPermissions>({
+    queryKey: ['my-permissions', id],
+    queryFn: () => getMyPermissions(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  })
+
+  // Resolved tabs — default to all visible until permissions load
+  const tabs = myPerms?.tabs ?? DEFAULT_ALL_TABS
+  const canWrite = myPerms?.can_write ?? true
 
   const { data: plan } = useQuery({
     queryKey: ['plan', id],
@@ -259,9 +271,11 @@ export default function ProjectDetailPage() {
       )}
 
       <div style={s.actions}>
-        <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
-          {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
-        </button>
+        {canWrite && (
+          <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
+            {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
+          </button>
+        )}
         <button
           style={s.btnGreen}
           onClick={async () => {
@@ -276,27 +290,31 @@ export default function ProjectDetailPage() {
         >
           Esporta CSV
         </button>
-        <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
-          {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
-        </button>
+        {canWrite && (
+          <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
+            {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
+          </button>
+        )}
       </div>
 
       <div style={s.tabs}>
-        {(['overview', 'campaigns', 'preview', 'brief', 'action_plan', 'plan_json', 'audit', 'scan_log', 'api_log'] as Tab[]).map(t => (
+        {(([
+          ['overview',    'Overview'],
+          ['campaigns',   'Campagne'],
+          ['preview',     'Anteprima'],
+          ['brief',       'Brief'],
+          ['action_plan', "Piano d'azione"],
+          ['plan_json',   'Modifica Piano'],
+          ['audit',       'Audit Log'],
+          ['scan_log',    'Scan Log'],
+          ['api_log',     'API Log'],
+        ] as [Tab, string][]).filter(([t]) => tabs[t as keyof typeof tabs])).map(([t, label]) => (
           <button
             key={t}
             style={{ ...s.tab, ...(activeTab === t ? s.tabActive : {}) }}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'overview'     ? 'Overview'
-              : t === 'campaigns'  ? 'Campagne'
-              : t === 'preview'    ? 'Anteprima'
-              : t === 'brief'      ? 'Brief'
-              : t === 'action_plan'? 'Piano d\'azione'
-              : t === 'plan_json'  ? 'Modifica Piano'
-              : t === 'audit'      ? 'Audit Log'
-              : t === 'scan_log'   ? 'Scan Log'
-              : 'API Log'}
+            {label}
           </button>
         ))}
       </div>

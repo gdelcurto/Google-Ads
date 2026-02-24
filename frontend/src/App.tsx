@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import TrashPage from './pages/TrashPage'
+import UsersPage from './pages/UsersPage'
 import Layout from './components/Layout'
 import { AutofillJobProvider, useAutofillJobs, type AutofillNotification } from './contexts/AutofillJobContext'
 
@@ -117,6 +118,7 @@ function AppRoutes() {
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="trash" element={<TrashPage />} />
+          <Route path="users" element={<UsersPage />} />
         </Route>
       </Routes>
       <GlobalAutofillToasts />
