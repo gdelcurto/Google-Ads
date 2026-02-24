@@ -67,7 +67,7 @@ function th(
 ): TableCell {
   return new TableCell({
     width:         { size: widthDxa, type: WidthType.DXA },
-    shading:       { fill: C.thBg, type: 'solid' },
+    shading:       { fill: C.thBg, type: 'clear' },
     verticalAlign: VerticalAlign.CENTER,
     margins:       { top: 80, bottom: 80, left: 140, right: 140 },
     children: [new Paragraph({
