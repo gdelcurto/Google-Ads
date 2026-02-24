@@ -248,28 +248,13 @@ async def suggest_budget_strategy(
 ) -> BudgetStrategyResponse:
     """Suggest campaign types, budget allocation and rationale based on hotel profile."""
     settings = get_settings()
-    enricher = ClaudeEnricher(settings.anthropic_api_key) if settings.anthropic_api_key else None
-    if enricher:
-        result = await enricher.suggest_budget_strategy(payload.model_dump())
-    else:
-        from app.connectors.claude_enricher import (
-            _suggest_budget, _select_campaign_types, _compute_split, _compute_daily,
-            _STATIC_RATIONALE, _FRONTEND_KEYS,
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Chiave API Anthropic non configurata. La strategia budget richiede l'AI.",
         )
-        total = _suggest_budget(payload.stars, payload.hotel_category)
-        recommended, warning = _select_campaign_types(total)
-        split = _compute_split(recommended)
-        daily = _compute_daily(split, total, payload.languages)
-        result = {
-            "recommended_types": recommended,
-            "budget_split": {k: round(v * 100, 1) for k, v in split.items()},
-            "daily_by_type_lang": daily,
-            "rationale": {t: _STATIC_RATIONALE.get(t, "") for t in recommended},
-            "overall_strategy": f"Strategia full-funnel con {len(recommended)} campagne — €{total:.0f}/mese.",
-            "suggested_total_monthly_eur": total,
-            "min_budget_warning": warning,
-            "api_call_log": None,
-        }
+    enricher = ClaudeEnricher(settings.anthropic_api_key)
+    result = await enricher.suggest_budget_strategy(payload.model_dump())
     return BudgetStrategyResponse(**result)
 
 

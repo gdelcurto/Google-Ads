@@ -379,13 +379,14 @@ _TYPE_COPY_PROMPTS: dict[str, dict] = {
 
 # ── Budget strategy helpers ───────────────────────────────────────────────────
 
-_BASE_WEIGHTS: dict[str, float] = {
-    "search_brand": 0.12,
-    "search_acquisition": 0.28,
-    "performance_max": 0.38,
-    "retargeting": 0.10,
-    "demand_gen": 0.12,
-}
+# Valid campaign type keys — used only for whitelist validation of AI output.
+_VALID_CAMPAIGN_TYPES: list[str] = [
+    "search_brand", "search_acquisition", "performance_max", "retargeting", "demand_gen",
+]
+
+# Minimal structural fallback used only when the AI call fails entirely.
+_FALLBACK_TYPES: list[str] = ["search_brand", "search_acquisition"]
+
 _FRONTEND_KEYS: dict[str, str] = {
     "search_brand": "brand",
     "search_acquisition": "acquisition",
@@ -393,47 +394,6 @@ _FRONTEND_KEYS: dict[str, str] = {
     "retargeting": "retargeting",
     "demand_gen": "demand_gen",
 }
-_STATIC_RATIONALE: dict[str, str] = {
-    "search_brand": "Protegge il traffico branded dalle OTA e intercetta utenti ad altissima intenzione d'acquisto con CPC contenuto e ROAS elevato.",
-    "search_acquisition": "Intercetta utenti che cercano attivamente hotel nella tua destinazione. È il motore principale per acquisire nuovi clienti diretti.",
-    "performance_max": "Campagna omnicanale (Search, Display, YouTube, Maps) che scala automaticamente su tutti i touchpoint Google.",
-    "retargeting": "Re-ingaggia i visitatori che hanno esplorato il sito senza prenotare. Alta probabilità di conversione a basso CPA.",
-    "demand_gen": "Campagna awareness su YouTube, Discover e Gmail per raggiungere viaggiatori nella fase di ispirazione.",
-}
-
-
-def _suggest_budget(stars: int, hotel_category: str) -> float:
-    base: dict[int, float] = {1: 300, 2: 500, 3: 800, 4: 1500, 5: 3000}
-    amount = base.get(min(max(stars, 1), 5), 800)
-    cat = hotel_category.lower()
-    if any(k in cat for k in ("resort", "luxury", "palazzo")):
-        amount *= 1.4
-    elif any(k in cat for k in ("boutique", "charme", "design")):
-        amount *= 1.15
-    return round(amount / 100) * 100
-
-
-def _select_campaign_types(total_monthly: float) -> tuple[list[str], Optional[str]]:
-    warning: Optional[str] = None
-    if total_monthly < 300:
-        warning = (
-            f"Budget €{total_monthly:.0f}/mese è sotto la soglia minima consigliata di €300. "
-            "Si consiglia di investire almeno €300/mese per ottenere dati statistici significativi."
-        )
-        return ["search_brand", "search_acquisition"], warning
-    if total_monthly < 600:
-        return ["search_brand", "search_acquisition"], None
-    if total_monthly < 1500:
-        return ["search_brand", "search_acquisition", "retargeting"], None
-    if total_monthly < 3000:
-        return ["search_brand", "search_acquisition", "performance_max", "retargeting"], None
-    return ["search_brand", "search_acquisition", "performance_max", "retargeting", "demand_gen"], None
-
-
-def _compute_split(recommended: list[str]) -> dict[str, float]:
-    raw = {k: _BASE_WEIGHTS[k] for k in recommended}
-    total = sum(raw.values())
-    return {k: round(v / total, 4) for k, v in raw.items()}
 
 
 def _compute_daily(
@@ -782,41 +742,28 @@ Regole:
         """
         Suggest total budget, campaign types, split and rationale via a single Claude call.
 
-        When the user has already entered a budget, Claude only determines the optimal
-        split and rationale for that fixed amount.
-        When no budget is provided, Claude also recommends the total monthly spend
-        based on hotel profile, replacing the static _suggest_budget() lookup table.
-        Falls back to static tables only if the AI call fails.
+        Claude reasons entirely from its own Google Ads expertise and the skill files
+        (BID_STRATEGY_RECOMMENDATIONS + BUDGET_SCENARIO_PLANNER). No hardcoded
+        thresholds, weights or rationale text — all strategic decisions come from the AI.
+
+        Python is responsible only for:
+        - Whitelisting campaign type names (validation)
+        - Normalising split percentages to sum to 100%
+        - Computing daily budgets (pure arithmetic)
+        - Minimal UX fallback when the AI call fails entirely
         """
         user_budget = payload.get("total_monthly_budget_eur", 0) or 0
         budget_provided = user_budget > 0
         stars = payload.get("stars", 3)
         hotel_category = payload.get("hotel_category", "city_hotel")
         languages = payload.get("languages", ["IT"])
-
-        # ── Step 1: Static reference budget ──────────────────────────────────
-        static_base = _suggest_budget(stars, hotel_category)
-        static_total = float(user_budget) if budget_provided else static_base
-        static_recommended, warning = _select_campaign_types(static_total)
-        static_split = _compute_split(static_recommended)
-        steps: list[dict] = []
-
-        # Step 1: static reference — shown as comparison baseline, NOT sent to AI
-        steps.append({
-            "step": 1,
-            "label": "Riferimento statico (fallback)",
-            "detail": (
-                f"Baseline di fallback — categoria: {hotel_category}, stelle: {stars}"
-                + (f", budget cliente: €{user_budget:.0f}" if budget_provided else f" → €{static_base:.0f}/mese (lookup table)")
-                + " — NON inviato all'AI"
-            ),
-            "value": f"€{static_total:.0f}/mese · " + ", ".join(static_recommended),
-        })
-
         langs_str = ", ".join(languages)
         n_langs = len(languages)
-        all_types = list(_BASE_WEIGHTS.keys())
-        split_example = ", ".join(f'"{t}": 20' for t in all_types[:3])
+
+        # Fallback values — used only if the AI call fails entirely.
+        fallback_total = float(user_budget) if budget_provided else 1000.0
+        fallback_types = list(_FALLBACK_TYPES)
+        fallback_split = {t: 1.0 / len(fallback_types) for t in fallback_types}
 
         if budget_provided:
             budget_line = f"BUDGET MENSILE: €{user_budget:.0f} (fissato dal cliente)"
@@ -825,9 +772,7 @@ Regole:
             budget_line = "BUDGET MENSILE: non specificato — suggerisci l'importo ottimale (intero, multiplo di 100)"
             total_field = '"suggested_total_eur": 1500,'
 
-        # ── Minimal prompt: hotel profile + output schema only ────────────────
-        # No hardcoded thresholds or benchmark percentages — Claude reasons
-        # from its own Google Ads expertise and the skill files in system prompt.
+        types_str = ", ".join(_VALID_CAMPAIGN_TYPES)
         ai_prompt = f"""Analizza il profilo di questo hotel e definisci la strategia di campagne Google Ads ottimale.
 
 HOTEL: {payload.get('brand_name', '')} — {hotel_category} {stars}★
@@ -835,13 +780,13 @@ PAESE: {payload.get('country', 'IT')} — LINGUE: {langs_str} ({n_langs} {'lingu
 {budget_line}
 
 Tipi campagna disponibili (usa ESATTAMENTE questi nomi chiave):
-  search_brand, search_acquisition, performance_max, retargeting, demand_gen
+  {types_str}
 
 Rispondi ESCLUSIVAMENTE con un oggetto JSON valido:
 {{
   {total_field}
   "recommended_types": ["search_brand", "search_acquisition", "performance_max"],
-  "split": {{{split_example}}},
+  "split": {{"search_brand": 15, "search_acquisition": 35, "performance_max": 50}},
   "overall": "2-3 frasi di strategia specifica per questo hotel",
   "search_brand": "motivazione concreta",
   "search_acquisition": "motivazione",
@@ -857,22 +802,20 @@ Regole output:
         rationale: dict[str, str] = {}
         overall_strategy = ""
         api_log: Optional[dict] = None
-        recommended = static_recommended
-        split = static_split
-        total_monthly = static_total
+        recommended: list[str] = fallback_types
+        split: dict[str, float] = dict(fallback_split)
+        total_monthly = fallback_total
         ai_raw_response: Optional[str] = None
         ai_used = False
+        warning: Optional[str] = None
+        steps: list[dict] = []
 
-        # ── Step 2: AI call ───────────────────────────────────────────────────
-        # Prompt contains only hotel profile + output schema.
-        # No hardcoded thresholds or benchmark percentages — all strategic
-        # reasoning comes from Claude's knowledge + skill files.
         steps.append({
-            "step": 2,
+            "step": 1,
             "label": "Chiamata AI (Claude Haiku)",
             "detail": (
                 f"Prompt: {len(ai_prompt)} car. — solo profilo hotel + schema output, zero regole hardcoded. "
-                f"System: BID_STRATEGY_RECOMMENDATIONS + BUDGET_SCENARIO_PLANNER"
+                "System: BID_STRATEGY_RECOMMENDATIONS + BUDGET_SCENARIO_PLANNER"
             ),
             "value": "in corso…",
         })
@@ -886,7 +829,7 @@ Regole output:
             )
             api_log = _api_log_entry(
                 agent="BudgetStrategyAgent",
-                reason=f"AI total+strategy+split — {hotel_category} {stars}★",
+                reason=f"AI strategy — {hotel_category} {stars}★",
                 endpoint="POST /api/autofill/budget-strategy",
                 model="claude-haiku-4-5-20251001",
                 usage=message.usage,
@@ -900,56 +843,48 @@ Regole output:
             logger.debug(f"BudgetStrategy Claude raw: {ai_raw_response[:600]}")
             parsed = json.loads(_extract_json_object(ai_raw_response))
 
-            # ── Step 3: AI total budget (only when not provided by user) ─────
+            # ── AI total budget (only when not provided by user) ──────────────
             if not budget_provided:
                 ai_total = parsed.get("suggested_total_eur")
                 if isinstance(ai_total, (int, float)) and 100 <= ai_total <= 50000:
                     total_monthly = float(ai_total)
-                    _, warning = _select_campaign_types(total_monthly)
                     steps.append({
-                        "step": 3,
+                        "step": 2,
                         "label": "Budget totale — decisione AI",
-                        "detail": (
-                            f"AI ha stimato €{total_monthly:.0f} per {hotel_category} {stars}★ "
-                            f"(fallback statico era €{static_total:.0f})"
-                        ),
+                        "detail": f"AI ha stimato €{total_monthly:.0f} per {hotel_category} {stars}★",
                         "value": f"€{total_monthly:.0f}/mese",
                     })
-                    logger.info(
-                        f"BudgetStrategy AI total: €{static_total:.0f} (static) → "
-                        f"€{total_monthly:.0f} (AI) for {hotel_category} {stars}★"
-                    )
+                    logger.info(f"BudgetStrategy AI total: €{total_monthly:.0f} for {hotel_category} {stars}★")
                 else:
                     steps.append({
-                        "step": 3,
+                        "step": 2,
                         "label": "Budget totale — decisione AI",
-                        "detail": f"AI non ha restituito valore valido → fallback statico €{static_total:.0f}",
-                        "value": f"€{static_total:.0f}/mese (FALLBACK)",
+                        "detail": f"AI non ha restituito valore valido → fallback €{fallback_total:.0f}",
+                        "value": f"€{total_monthly:.0f}/mese (FALLBACK)",
                     })
 
-            # ── Step 4: AI recommended types ──────────────────────────────────
-            ai_types = [t for t in parsed.get("recommended_types", []) if t in _BASE_WEIGHTS]
+            # ── AI recommended types ──────────────────────────────────────────
+            ai_types = [t for t in parsed.get("recommended_types", []) if t in _VALID_CAMPAIGN_TYPES]
             if ai_types:
                 recommended = ai_types
                 steps.append({
-                    "step": 4,
+                    "step": 3,
                     "label": "Tipi campagna — scelta AI",
                     "detail": (
-                        f"AI ha scelto autonomamente basandosi su: profilo {hotel_category} {stars}★, "
+                        f"AI ha scelto autonomamente: profilo {hotel_category} {stars}★, "
                         f"budget €{total_monthly:.0f}, {n_langs} {'lingua' if n_langs == 1 else 'lingue'}"
-                        + (f" · Diverso dal fallback [{', '.join(static_recommended)}]" if sorted(ai_types) != sorted(static_recommended) else " · Coincide col fallback statico")
                     ),
                     "value": ", ".join(recommended),
                 })
             else:
                 steps.append({
-                    "step": 4,
+                    "step": 3,
                     "label": "Tipi campagna — scelta AI",
-                    "detail": "AI non ha restituito tipi validi → FALLBACK statico",
+                    "detail": "AI non ha restituito tipi validi → FALLBACK brand+acquisition",
                     "value": ", ".join(recommended) + " (FALLBACK)",
                 })
 
-            # ── Step 5: AI split percentages ──────────────────────────────────
+            # ── AI split percentages ──────────────────────────────────────────
             ai_split_raw: dict = parsed.get("split", {})
             ai_split = {
                 k: float(v)
@@ -959,7 +894,7 @@ Regole output:
             if ai_split:
                 for t in recommended:
                     if t not in ai_split:
-                        ai_split[t] = _BASE_WEIGHTS.get(t, 1.0) * 10
+                        ai_split[t] = 1.0
                 total_pct = sum(ai_split.values())
                 split = {k: ai_split[k] / total_pct for k in recommended}
                 raw_sum = sum(
@@ -968,7 +903,7 @@ Regole output:
                     if isinstance(ai_split_raw.get(k), (int, float))
                 )
                 steps.append({
-                    "step": 5,
+                    "step": 4,
                     "label": "Split — ragionamento AI + normalizzazione Python",
                     "detail": (
                         "AI grezzo: "
@@ -985,43 +920,47 @@ Regole output:
                     + ", ".join(f"{k}={round(v*100)}%" for k, v in split.items())
                 )
             else:
+                n = len(recommended)
+                split = {t: 1.0 / n for t in recommended}
                 steps.append({
-                    "step": 5,
+                    "step": 4,
                     "label": "Split — ragionamento AI + normalizzazione Python",
-                    "detail": "AI non ha restituito split valido → FALLBACK pesi statici",
+                    "detail": "AI non ha restituito split valido → split uniforme",
                     "value": " · ".join(f"{k} {round(v * 100)}%" for k, v in split.items()) + " (FALLBACK)",
                 })
-                split = _compute_split(recommended)
-                logger.warning("BudgetStrategy: no valid split from Claude, using static fallback")
+                logger.warning("BudgetStrategy: no valid split from Claude, using uniform fallback")
 
-            # ── Step 6: Rationale text ────────────────────────────────────────
+            # ── Rationale text ────────────────────────────────────────────────
             overall_strategy = parsed.get("overall", "")
             for t in recommended:
-                rationale[t] = parsed.get(t, _STATIC_RATIONALE.get(t, ""))
+                rationale[t] = parsed.get(t, "")
             steps.append({
-                "step": 6,
+                "step": 5,
                 "label": "Rationale — testo AI per tipo campagna",
                 "detail": f"Generato da AI per {len(rationale)} tipi campagna",
                 "value": "OK",
             })
 
+            # UX safety net: warn if budget is below the Google Ads minimum
+            # for statistical significance (not a strategy decision).
+            if total_monthly < 300:
+                warning = (
+                    f"Budget €{total_monthly:.0f}/mese è sotto la soglia minima consigliata di €300. "
+                    "Si consiglia di investire almeno €300/mese per ottenere dati statistici significativi."
+                )
+
         except Exception as exc:
             steps[-1]["value"] = f"FALLBACK (errore: {exc})"
-            logger.warning(f"BudgetStrategy AI failed: {exc}. Using static fallback.")
-            total_monthly = static_total
-            recommended = static_recommended
-            split = static_split
-            for t in recommended:
-                rationale[t] = _STATIC_RATIONALE.get(t, "")
-            overall_strategy = (
-                f"Strategia full-funnel con {len(recommended)} campagne — "
-                f"€{total_monthly:.0f}/mese."
-            )
+            logger.warning(f"BudgetStrategy AI failed: {exc}. Using fallback.")
+            recommended = fallback_types
+            split = dict(fallback_split)
+            total_monthly = fallback_total
+            overall_strategy = ""
 
-        # ── Step 7: Daily budget computation (pure math, no AI) ──────────────
+        # ── Daily budget computation (pure math, no AI) ───────────────────────
         daily = _compute_daily(split, total_monthly, languages)
         steps.append({
-            "step": 7,
+            "step": len(steps) + 1,
             "label": "Budget giornaliero — calcolo Python",
             "detail": (
                 f"€{total_monthly:.0f}/mese ÷ 30.44 giorni ÷ {n_langs} {'lingua' if n_langs == 1 else 'lingue'}"
@@ -1033,7 +972,6 @@ Regole output:
             ),
         })
 
-        # Prepend split summary so the user immediately sees AI-generated percentages
         _type_labels = {
             "search_brand": "Brand Search", "search_acquisition": "Acquisition",
             "performance_max": "Performance Max", "retargeting": "Retargeting",
@@ -1044,7 +982,7 @@ Regole output:
             for k, v in split.items()
         )
         full_strategy = (
-            f"Distribuzione {'AI' if ai_used else 'statica'}: {split_summary}\n\n{overall_strategy}".strip()
+            f"Distribuzione {'AI' if ai_used else 'fallback'}: {split_summary}\n\n{overall_strategy}".strip()
             if overall_strategy else split_summary
         )
 
