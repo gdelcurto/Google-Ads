@@ -42,7 +42,14 @@ export interface AdGroupPreview {
 
 export interface PMaxAssetGroupPreview {
   name: string
+  headlines: string[]
+  long_headlines: string[]
+  descriptions: string[]
   headlines_count: number
+  images: string[]
+  logo_url: string | null
+  youtube_video_url: string | null
+  final_url: string
   has_missing_assets: boolean
   missing_asset_notes: string[]
   audience_signals: string[]
@@ -185,6 +192,8 @@ export interface EnrichedAutofillResult extends Omit<AutofillResult, 'languages'
     acquisition_descriptions: string[]
     retargeting_headlines: string[]
     retargeting_descriptions: string[]
+    kw_themes_text?: string
+    kw_negative_text?: string
   })[]
   _scan_log?: ScanLogEntry[]
   _api_log?: ApiCallLogEntry[]

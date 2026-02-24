@@ -16,20 +16,23 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "autofill_jobs",
-        sa.Column("id", sa.String(), nullable=False),
-        sa.Column("project_id", sa.String(), nullable=False),
-        sa.Column("url", sa.String(2000), nullable=False),
-        sa.Column("languages_json", sa.Text(), nullable=False),
-        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
-        sa.Column("result_json", sa.Text(), nullable=True),
-        sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
-        sa.Column("completed_at", sa.DateTime(), nullable=True),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_autofill_jobs_project_id", "autofill_jobs", ["project_id"])
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    if "autofill_jobs" not in insp.get_table_names():
+        op.create_table(
+            "autofill_jobs",
+            sa.Column("id", sa.String(), nullable=False),
+            sa.Column("project_id", sa.String(), nullable=False),
+            sa.Column("url", sa.String(2000), nullable=False),
+            sa.Column("languages_json", sa.Text(), nullable=False),
+            sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
+            sa.Column("result_json", sa.Text(), nullable=True),
+            sa.Column("error_message", sa.Text(), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=True),
+            sa.Column("completed_at", sa.DateTime(), nullable=True),
+            sa.PrimaryKeyConstraint("id"),
+        )
+        op.create_index("ix_autofill_jobs_project_id", "autofill_jobs", ["project_id"])
 
 
 def downgrade() -> None:

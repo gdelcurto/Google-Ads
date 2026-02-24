@@ -38,11 +38,93 @@ logging.basicConfig(level=logging.INFO if not settings.app_debug else logging.DE
 logger = logging.getLogger(__name__)
 
 
+def _run_alembic_upgrade() -> None:
+    """Run Alembic migrations synchronously (called via run_in_executor).
+
+    Handles the case where the DB was bootstrapped via create_all without
+    Alembic tracking (no alembic_version table). In that scenario we stamp
+    the DB at revision 002 (last migration already covered by create_all)
+    so that only new migrations (003+) get applied.
+    """
+    try:
+        from alembic.config import Config as AlembicConfig
+        from alembic import command as alembic_command
+        from sqlalchemy import create_engine, inspect
+
+        ini_path = Path(__file__).parent.parent / "alembic.ini"
+        alembic_cfg = AlembicConfig(str(ini_path))
+
+        # Build a sync URL from the async DATABASE_URL env var
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        sync_url = (
+            db_url
+            .replace("postgresql+asyncpg://", "postgresql://")
+            .replace("sqlite+aiosqlite:///", "sqlite:///")
+        )
+        if not sync_url:
+            # Fall back to the value in alembic.ini
+            from configparser import ConfigParser
+            cp = ConfigParser()
+            cp.read(str(ini_path))
+            sync_url = cp.get("alembic", "sqlalchemy.url", fallback="")
+
+        if not sync_url:
+            logger.warning("No DATABASE_URL found — skipping Alembic upgrade")
+            return
+
+        sync_engine = create_engine(sync_url)
+        insp = inspect(sync_engine)
+        if "alembic_version" not in insp.get_table_names():
+            # DB was created by create_all without Alembic tracking.
+            # Stamp at 002 so only migrations after 002 (i.e. 003+) run.
+            logger.info("No alembic_version table found — stamping DB at revision 002")
+            alembic_command.stamp(alembic_cfg, "002")
+        sync_engine.dispose()
+
+        alembic_command.upgrade(alembic_cfg, "head")
+        logger.info("Alembic migrations applied (upgrade head)")
+    except Exception as exc:
+        logger.warning(f"Alembic upgrade failed: {exc} — falling back to create_all")
+
+
+def _ensure_missing_columns(conn) -> None:
+    """Add any columns that exist in ORM models but not in the DB.
+
+    This handles the edge case where Alembic migrations fail (e.g. duplicate
+    column from a prior create_all) and create_all can't ALTER existing tables.
+    Uses raw DDL so it works on both SQLite and PostgreSQL.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(conn)
+    _COLUMN_FIXES = [
+        ("projects", "deleted_at", "DATETIME"),
+        ("autofill_jobs", "scraped_json", "TEXT"),
+    ]
+    for table, column, col_type in _COLUMN_FIXES:
+        if table in insp.get_table_names():
+            existing = {c["name"] for c in insp.get_columns(table)}
+            if column not in existing:
+                conn.execute(text(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                ))
+                logger.info(f"Added missing column {table}.{column}")
+
+
 # ─── Lifespan ─────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Run DB migrations then seed admin on startup."""
-    # Create all tables (idempotent: skips existing tables)
+    # Run Alembic migrations first (handles schema changes on existing DBs)
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _run_alembic_upgrade)
+    except Exception as exc:
+        logger.error(f"Migration executor failed: {exc}", exc_info=True)
+
+    # create_all as safety net for brand-new DBs not tracked by Alembic
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -51,18 +133,73 @@ async def lifespan(app: FastAPI):
         logger.error("Database connection timed out after 10s — app will start anyway")
     except Exception as exc:
         logger.error(f"Database init failed — app will start anyway: {exc}", exc_info=True)
+
+    # Safety net: add columns that migrations couldn't add (e.g. if Alembic
+    # failed because create_all had already created the table with old columns).
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(_ensure_missing_columns)
+    except Exception as exc:
+        logger.warning(f"Schema column safety-net failed: {exc}")
+
     try:
         await asyncio.wait_for(_seed_admin(), timeout=10.0)
     except asyncio.TimeoutError:
         logger.error("Admin seed timed out — app will start anyway")
     except Exception as exc:
         logger.error(f"Admin seed failed — app will start anyway: {exc}", exc_info=True)
+
+    # Mark any jobs left in "pending"/"running" as failed — they were
+    # interrupted by a process restart (Railway deploy, crash, etc.).
+    try:
+        await asyncio.wait_for(_recover_stale_jobs(), timeout=10.0)
+    except asyncio.TimeoutError:
+        logger.error("Stale job recovery timed out — app will start anyway")
+    except Exception as exc:
+        logger.warning(f"Stale job recovery failed: {exc}")
+
     logger.info(
         f"Google Ads Campaigns API started "
         f"[env={settings.app_env}] [debug={settings.app_debug}]"
     )
     yield
     logger.info("Shutting down")
+
+
+async def _recover_stale_jobs():
+    """Mark any pending/running autofill jobs as failed on startup.
+
+    When Railway redeploys or the process crashes, background tasks are killed
+    mid-flight. The job row stays in "pending" or "running" forever because
+    nothing updates it. This recovery marks them as failed so the user sees a
+    clear error and can retry.
+    """
+    from datetime import datetime
+    from sqlalchemy import select, update
+    from app.database import AsyncSessionLocal
+    from app.domain.models import AutofillJob
+
+    async with AsyncSessionLocal() as db:
+        stale = await db.execute(
+            select(AutofillJob.id).where(AutofillJob.status.in_(["pending", "running"]))
+        )
+        stale_ids = [row[0] for row in stale.fetchall()]
+        if not stale_ids:
+            return
+        await db.execute(
+            update(AutofillJob)
+            .where(AutofillJob.id.in_(stale_ids))
+            .values(
+                status="failed",
+                error_message=(
+                    "Job interrotto da un riavvio del server. "
+                    "Rilancia la scansione per riprovare."
+                ),
+                completed_at=datetime.utcnow(),
+            )
+        )
+        await db.commit()
+        logger.info(f"Recovered {len(stale_ids)} stale autofill job(s): {stale_ids}")
 
 
 async def _seed_admin():

@@ -17,7 +17,11 @@ import asyncio
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+_TZ_ROME = ZoneInfo("Europe/Rome")
 from typing import Callable, Dict, List, Optional
 
 from app.connectors.web_scraper import (
@@ -46,7 +50,7 @@ def _api_log_entry(agent: str, reason: str, endpoint: str, model: str, usage) ->
     in_p, out_p = _MODEL_PRICING.get(model, (1.0, 5.0))
     cost_usd = (usage.input_tokens * in_p + usage.output_tokens * out_p) / 1_000_000
     return {
-        "ts":            datetime.utcnow().isoformat(),
+        "ts":            datetime.now(_TZ_ROME).isoformat(),
         "agent":         agent,
         "reason":        reason,
         "endpoint":      endpoint,
@@ -60,35 +64,30 @@ def _api_log_entry(agent: str, reason: str, endpoint: str, model: str, usage) ->
 # ── Text helpers ──────────────────────────────────────────────────────────────
 
 def _trim_to_word(text: str, max_chars: int) -> str:
-    """Ensure text fits within max_chars without cutting words mid-way."""
+    """Trim sitelink text to max_chars at word boundary (sitelinks only)."""
     text = text.rstrip()
+    if len(text) <= max_chars:
+        return text
     cut = text[:max_chars]
+    space = cut.rfind(' ')
+    return cut[:space] if space > 0 else cut
 
-    if len(text) > max_chars:
-        if text[max_chars] != ' ':
-            space = cut.rfind(' ')
-            if space > 0:
-                return cut[:space]
-            return cut
-        return cut
 
-    if len(text) == max_chars and max_chars >= 40 and cut and cut[-1].isalpha():
-        space = cut.rfind(' ')
-        if space > 0:
-            return cut[:space]
-        return cut
-
-    return cut
+def _filter_by_limit(items: list, max_chars: int) -> list:
+    """Discard items exceeding char limit instead of truncating them."""
+    return [s for s in items if isinstance(s, str) and len(s.rstrip()) <= max_chars]
 
 
 def _truncate_assets(data: dict) -> dict:
-    """Post-process: trim headlines/descriptions/callouts to Google Ads limits."""
+    """Post-process: discard over-limit headlines/descriptions, trim sitelinks.
+
+    USP principale is informational (not a Google Ads asset) — never discarded.
+    """
     for lang in data.get('languages', []):
-        lang['headlines']    = [_trim_to_word(h, 30) for h in lang.get('headlines', [])]
-        lang['descriptions'] = [_trim_to_word(d, 90) for d in lang.get('descriptions', [])]
-        lang['callouts']     = [_trim_to_word(c, 25) for c in lang.get('callouts', [])]
-        if lang.get('usp_main'):
-            lang['usp_main'] = _trim_to_word(lang['usp_main'], 90)
+        lang['headlines']    = _filter_by_limit(lang.get('headlines', []), 30)
+        lang['descriptions'] = _filter_by_limit(lang.get('descriptions', []), 90)[:4]
+        lang['callouts']     = _filter_by_limit(lang.get('callouts', []), 25)
+        # usp_main is informational context, not a Google Ads asset — leave as-is
     return data
 
 
@@ -144,13 +143,20 @@ OFFERTA DIRETTA vs OTA
 ═══ REGOLE ASSOLUTE SUI CARATTERI ═══
 
 Conta OGNI carattere (lettere, spazi, apostrofi, trattini) prima di rispondere.
-NON troncare le parole: se una parola non entra per intero entro il limite, NON includerla.
 
   HEADLINE   → massimo 30 caratteri
   DESCRIZIONI → massimo 90 caratteri
   CALLOUT     → massimo 25 caratteri
   SITELINK testo       → massimo 25 caratteri
   SITELINK descrizione → massimo 35 caratteri ciascuna
+
+REGOLA FONDAMENTALE: ogni headline, descrizione, callout e sitelink DEVE essere
+una FRASE COMPLETA con senso compiuto. Se il testo non sta nel limite di caratteri,
+RISCRIVILO più corto. NON troncare MAI una frase a metà.
+  ✗ "Resort 4 stelle Bagno di" — VIETATO: troncato, senza senso
+  ✓ "Resort 4 Stelle a Bagno" — OK: frase compiuta e comprensibile
+  ✗ "Immergiti nel benessere nel cuore del Parco. Camere" — VIETATO
+  ✓ "Benessere nel cuore del Parco." — OK: senso compiuto
 
 ═══ CONTENUTO AUTENTICO ═══
 
@@ -174,8 +180,14 @@ Lingue richieste: {languages}
 
 ═══ ISTRUZIONI PER IL COPY ═══
 
+USP PRINCIPALE (obbligatoria, per ogni lingua):
+- Una frase che sintetizza il vantaggio competitivo principale dell'hotel
+- Basata su dati REALI trovati nel sito (posizione, servizi, categoria)
+- Esempio: "Resort 4 stelle con spa e piscina a 50m dalla spiaggia di Jesolo"
+- NON lasciare vuota: è il campo più importante per la strategia copy
+
 HEADLINES (≤ 30 caratteri ciascuna):
-- Genera almeno 8 headline diverse che coprono questi 4 temi:
+- Genera almeno 10 headline diverse che coprono questi 4 temi:
   1. Brand/identità (es. "[Nome Hotel] Ufficiale", "4 Stelle sul Lago di Como")
   2. Prenotazione diretta (es. "Miglior Tariffa Garantita", "Prenota Senza Commissioni")
   3. Servizi/USP specifici (es. "Spa e Piscina Infinity", "Colazione Buffet Inclusa")
@@ -184,10 +196,14 @@ HEADLINES (≤ 30 caratteri ciascuna):
 - Ogni headline = un argomento di vendita indipendente, non variazioni dello stesso
 - VERIFICA: conta i caratteri di ogni headline prima di includerla
 
-DESCRIZIONI (≤ 90 caratteri ciascuna):
-- Prima descrizione: beneficio principale + CTA
-- Seconda descrizione: USP diversa + urgency/rassicurazione
+DESCRIZIONI (≤ 90 caratteri ciascuna — OBBLIGATORIE, esattamente 4):
+- Genera esattamente 4 descrizioni per lingua — né più né meno, questo campo NON deve mai essere vuoto
+- Descrizione 1: beneficio principale + CTA (es. "Prenota sul sito ufficiale e risparmia.")
+- Descrizione 2: USP diversa + urgency/rassicurazione
+- Descrizione 3: servizio/esperienza specifica dell'hotel
+- Descrizione 4: vantaggio prenotazione diretta o garanzia
 - Sii specifico: cita servizi reali, non generalità
+- Conta i caratteri: ogni descrizione DEVE stare entro 90 caratteri
 
 CALLOUT (≤ 25 caratteri ciascuno):
 - Fatti concreti, non aggettivi — "Piscina Riscaldata" batte "Servizi Eccellenti"
@@ -220,10 +236,12 @@ LANDING PAGE PER LINGUA (CRITICO):
       "landing_page": "https://www.dominio.it/it/",
       "brand_terms": ["Grand Hotel Bellevue", "Hotel Bellevue Roma"],
       "usp_main": "Hotel 4 stelle a 2 min dal Colosseo, colazione inclusa e miglior tariffa garantita.",
-      "headlines": ["Grand Hotel Bellevue Roma", "Miglior Tariffa Garantita", "2 Min dal Colosseo"],
+      "headlines": ["Grand Hotel Bellevue Roma", "Miglior Tariffa Garantita", "2 Min dal Colosseo", "Prenota Senza Commissioni", "Terrazza Panoramica", "Colazione Buffet Inclusa", "Sito Ufficiale", "Camera Vista Fori", "Check-in Anticipato", "Cancellazione Gratuita"],
       "descriptions": [
-        "Hotel 4 stelle nel cuore di Roma, a 2 minuti dal Colosseo. Prenota diretto e risparmia.",
-        "Colazione inclusa ogni mattina, terrazza panoramica e parcheggio. Cancellazione gratis."
+        "Hotel 4 stelle nel cuore di Roma, a 2 min dal Colosseo. Prenota diretto.",
+        "Colazione inclusa, terrazza panoramica e parcheggio. Cancellazione gratis.",
+        "Sito ufficiale: miglior tariffa garantita e vantaggi esclusivi per te.",
+        "Camere vista Fori Imperiali, WiFi gratis e concierge dedicato 24/7."
       ],
       "callouts": ["Miglior Prezzo Online", "Colazione Inclusa", "Cancellazione Gratis"]
     }}
@@ -411,7 +429,7 @@ class ClaudeEnricher:
 
     def __init__(self, api_key: str) -> None:
         import anthropic
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        self._client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=4)
         self._system_prompt = self._build_system_prompt()
 
     def _build_system_prompt(self) -> str:
@@ -593,8 +611,12 @@ class ClaudeEnricher:
             f"Lingua output: {lang_name} ({lang_code})\n\n"
             f"═══ REGOLE HEADLINE (≤ 30 caratteri) ═══\n{meta['headline_rules']}\n\n"
             f"═══ REGOLE DESCRIZIONI (≤ 90 caratteri) ═══\n{meta['description_rules']}\n\n"
+            f"REGOLA TASSATIVA: ogni headline e descrizione DEVE essere una FRASE COMPLETA.\n"
+            f"  ✗ 'Resort 4 stelle Bagno di' — VIETATO: testo troncato\n"
+            f"  ✓ 'Resort 4 Stelle a Bagno' — OK: senso compiuto\n"
+            f"Se non sta nel limite, RISCRIVILA più corta. NON troncare MAI.\n\n"
             'Genera ESATTAMENTE questo JSON, zero testo aggiuntivo:\n'
-            '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8"],"descriptions":["d1","d2"]}'
+            '{"headlines":["h1","h2","h3","h4","h5","h6","h7","h8","h9","h10"],"descriptions":["d1","d2","d3"]}'
         )
 
         message = await self._client.messages.create(
@@ -606,11 +628,45 @@ class ClaudeEnricher:
         raw = message.content[0].text.strip()
         parsed = json.loads(_extract_json_object(raw))
         result = {
-            "headlines": [_trim_to_word(h, 30) for h in parsed.get("headlines", [])
-                          if isinstance(h, str) and h.strip()],
-            "descriptions": [_trim_to_word(d, 90) for d in parsed.get("descriptions", [])
-                              if isinstance(d, str) and d.strip()],
+            "headlines": _filter_by_limit(
+                [h for h in parsed.get("headlines", []) if isinstance(h, str) and h.strip()], 30
+            ),
+            "descriptions": _filter_by_limit(
+                [d for d in parsed.get("descriptions", []) if isinstance(d, str) and d.strip()], 90
+            ),
         }
+
+        # ── Brand headline enforcement ────────────────────────────────
+        # Validator requires at least one headline containing the brand name.
+        # If the LLM didn't include it, inject a branded headline at position 1.
+        brand_name = common.get("brand_name", "")
+        if campaign_type == "brand" and result["headlines"] and brand_name:
+            _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+            bn = _norm(brand_name)
+            has_brand = any(bn in _norm(h) for h in result["headlines"])
+            if not has_brand:
+                # Build a branded headline that fits 30 chars
+                candidate = brand_name if len(brand_name) <= 30 else brand_name[:30].rsplit(" ", 1)[0]
+                if candidate:
+                    result["headlines"].insert(0, candidate)
+                    # Keep max 15 headlines (Google RSA limit)
+                    result["headlines"] = result["headlines"][:15]
+
+        # ── Acquisition: strip brand name from headlines ─────────────
+        # Acquisition targets users who don't know the brand; validator
+        # rejects any headline containing brand_terms.
+        # Keep originals if filtering leaves fewer than 3 (RSA minimum).
+        if campaign_type == "acquisition" and result["headlines"] and brand_name:
+            _norm = lambda s: unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode().lower()
+            bn = _norm(brand_name)
+            brand_words = [w for w in bn.split() if len(w) >= 4]
+            filtered = [
+                h for h in result["headlines"]
+                if not any(bw in _norm(h) for bw in [bn] + brand_words)
+            ]
+            if len(filtered) >= 3:
+                result["headlines"] = filtered
+
         log = _api_log_entry(
             agent=f"TypeCopyAgent ({campaign_type})",
             reason=f"Generazione copy RSA {meta['label']} — {lang_name}",
@@ -781,6 +837,11 @@ Rispondi ESCLUSIVAMENTE con JSON valido:
 
 # ── Background job runner (called from autofill.py via BackgroundTasks) ───────
 
+# Maximum wall-clock time for the entire autofill pipeline (scrape + AI calls).
+# Prevents background jobs from hanging forever when a site or API is unreachable.
+_JOB_TIMEOUT_SECONDS = 300  # 5 minutes
+
+
 async def run_autofill_job(
     job_id: str,
     url: str,
@@ -795,85 +856,136 @@ async def run_autofill_job(
     2. Call Claude Sonnet for the main brief JSON.
     3. For each language in parallel: sitelinks + RSA copies (brand/acq/ret).
     4. Persist enriched result via update_status callback.
+
+    Wrapped in asyncio.wait_for with a global timeout to avoid hung jobs.
     """
-    from app.connectors.web_scraper import scrape_hotel_site, ScrapedSite
-
-    await update_status(job_id, "running")
+    logger.info(f"AutofillJob {job_id} background task started — url={url} langs={langs}")
     try:
-        enricher = ClaudeEnricher(api_key)
-
-        if content and content.strip():
-            scraped = ScrapedSite(
-                content=content.strip()[:14000],
-                lang_urls={},
-                lang_landings={},
-                scan_log=[scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata")],
-            )
-        else:
-            scraped = await scrape_hotel_site(url, langs)
-
-        data, brief_log = await enricher.enrich_brief(scraped, langs, url=url)
-        api_log: List[dict] = [brief_log]
-
-        common = {
-            "brand_name": data.get("brand_name", ""),
-            "hotel_category": data.get("hotel_category", "city_hotel"),
-            "stars": data.get("stars", 3),
-            "services": data.get("services", []),
-            "strengths": data.get("strengths", []),
-        }
-        booking_url = data.get("booking_engine_url") or f"https://{data.get('domain', '')}"
-
-        async def _enrich_language(lang: dict) -> dict:
-            code    = lang.get("code", "IT")
-            landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
-            usp     = lang.get("usp_main")
-            sitemap_lang_urls = scraped.lang_urls.get(code, [])
-
-            async def _safe_sitelinks():
-                try:
-                    sl, log = await enricher.suggest_sitelinks(
-                        common, code, landing, booking_url, sitemap_lang_urls
-                    )
-                    api_log.append(log)
-                    return sl
-                except Exception as exc:
-                    logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
-                    return []
-
-            async def _safe_copy(ctype):
-                try:
-                    result, log = await enricher.suggest_type_copy(common, code, usp, ctype)
-                    api_log.append(log)
-                    return result
-                except Exception as exc:
-                    logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
-                    return {"headlines": [], "descriptions": []}
-
-            sl, brand, acq, ret = await asyncio.gather(
-                _safe_sitelinks(),
-                _safe_copy("brand"),
-                _safe_copy("acquisition"),
-                _safe_copy("retargeting"),
-            )
-            return {
-                **lang,
-                "sitelinks": sl,
-                "brand_headlines": brand["headlines"],
-                "brand_descriptions": brand["descriptions"],
-                "acquisition_headlines": acq["headlines"],
-                "acquisition_descriptions": acq["descriptions"],
-                "retargeting_headlines": ret["headlines"],
-                "retargeting_descriptions": ret["descriptions"],
-            }
-
-        enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
-        data["languages"] = list(enriched)
-        data["_api_log"] = api_log
-
-        await update_status(job_id, "completed", result=data)
-        logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")
-
+        await update_status(job_id, "running")
+        await asyncio.wait_for(
+            _run_autofill_pipeline(job_id, url, langs, content, api_key, update_status),
+            timeout=_JOB_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"AutofillJob {job_id} timed out after {_JOB_TIMEOUT_SECONDS}s")
+        await update_status(
+            job_id, "failed",
+            error=f"Job scaduto dopo {_JOB_TIMEOUT_SECONDS // 60} minuti. "
+                  "Il sito potrebbe essere lento o irraggiungibile. Riprova più tardi.",
+        )
     except Exception as exc:
         logger.error(f"AutofillJob {job_id} failed: {exc}", exc_info=True)
         await update_status(job_id, "failed", error=str(exc))
+
+
+async def _run_autofill_pipeline(
+    job_id: str,
+    url: str,
+    langs: List[str],
+    content: Optional[str],
+    api_key: str,
+    update_status: Callable,
+) -> None:
+    """Inner pipeline extracted so run_autofill_job can wrap it with a timeout."""
+    from app.connectors.web_scraper import scrape_hotel_site, ScrapedSite
+
+    enricher = ClaudeEnricher(api_key)
+
+    if content and content.strip():
+        scraped = ScrapedSite(
+            content=content.strip()[:14000],
+            lang_urls={},
+            lang_landings={},
+            scan_log=[scan_entry("info", "📋 Contenuto manuale fornito — scansione sito saltata")],
+        )
+    else:
+        scraped = await scrape_hotel_site(url, langs)
+
+    # Persist the scraped data so the brief can be regenerated later
+    # without re-scraping the website or re-calling the AI.
+    scraped_payload = {
+        "content": scraped.content,
+        "lang_urls": scraped.lang_urls,
+        "lang_landings": scraped.lang_landings,
+    }
+    await update_status(job_id, "running", scraped=scraped_payload)
+
+    data, brief_log = await enricher.enrich_brief(scraped, langs, url=url)
+    api_log: List[dict] = [brief_log]
+
+    common = {
+        "brand_name": data.get("brand_name", ""),
+        "hotel_category": data.get("hotel_category", "city_hotel"),
+        "stars": data.get("stars", 3),
+        "services": data.get("services", []),
+        "strengths": data.get("strengths", []),
+    }
+    booking_url = data.get("booking_engine_url") or f"https://{data.get('domain', '')}"
+
+    async def _enrich_language(lang: dict) -> dict:
+        code    = lang.get("code", "IT")
+        landing = lang.get("landing_page") or f"https://{data.get('domain', '')}"
+        usp     = lang.get("usp_main")
+        sitemap_lang_urls = scraped.lang_urls.get(code, [])
+
+        async def _safe_sitelinks():
+            try:
+                sl, log = await enricher.suggest_sitelinks(
+                    common, code, landing, booking_url, sitemap_lang_urls
+                )
+                api_log.append(log)
+                return sl
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: sitelinks failed for {code}: {exc}")
+                return []
+
+        async def _safe_copy(ctype):
+            try:
+                result, log = await enricher.suggest_type_copy(common, code, usp, ctype)
+                api_log.append(log)
+                return result
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: type-copy {ctype} failed for {code}: {exc}")
+                return {"headlines": [], "descriptions": []}
+
+        async def _safe_keywords():
+            try:
+                kw_payload = {
+                    **common,
+                    "domain": data.get("domain", ""),
+                    "language_code": code,
+                }
+                result, log = await enricher.suggest_keywords(kw_payload)
+                api_log.append(log)
+                return result
+            except Exception as exc:
+                logger.warning(f"Job {job_id}: keywords failed for {code}: {exc}")
+                return {"kw_themes_text": "", "kw_negative_text": ""}
+
+        sl, brand, acq, ret, kw = await asyncio.gather(
+            _safe_sitelinks(),
+            _safe_copy("brand"),
+            _safe_copy("acquisition"),
+            _safe_copy("retargeting"),
+            _safe_keywords(),
+        )
+        return {
+            **lang,
+            "sitelinks": sl,
+            "brand_headlines": brand["headlines"],
+            "brand_descriptions": brand["descriptions"],
+            "acquisition_headlines": acq["headlines"],
+            "acquisition_descriptions": acq["descriptions"],
+            "retargeting_headlines": ret["headlines"],
+            "retargeting_descriptions": ret["descriptions"],
+            "kw_themes_text": kw.get("kw_themes_text", ""),
+            "kw_negative_text": kw.get("kw_negative_text", ""),
+        }
+
+    enriched = await asyncio.gather(*[_enrich_language(lang) for lang in data.get("languages", [])])
+    data["languages"] = list(enriched)
+    data["_api_log"] = api_log
+    data["_scan_log"] = scraped.scan_log
+
+    await update_status(job_id, "completed", result=data)
+    logger.info(f"AutofillJob {job_id} completed — brand: {data.get('brand_name')}")

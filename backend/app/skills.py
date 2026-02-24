@@ -47,6 +47,9 @@ AB_TEST_ANALYZER             = "31-google-and-meta-ab-test-analyzer.md"
 AD_SPEND_ALLOCATOR           = "32-google-and-meta-ad-spend-allocator.md"
 UTM_TRACKING_GENERATOR       = "44-google-and-meta-utm-tracking-generator.md"
 
+# Cross-cutting strategic framework for L1 agents
+CORE_PPC_FRAMEWORK           = "45-core-ppc-reasoning-framework.md"
+
 
 @lru_cache(maxsize=None)
 def load_skill(filename: str) -> str:

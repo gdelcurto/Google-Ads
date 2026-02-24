@@ -171,6 +171,9 @@ export function AutofillJobProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     const poll = async () => {
+      // Skip polling when not authenticated — avoids 401 loops on the login page.
+      if (!localStorage.getItem('token')) return
+
       const projectIds = Array.from(runningRef.current)
       if (projectIds.length === 0) return
 

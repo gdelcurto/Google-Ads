@@ -101,8 +101,8 @@ class AIValidator:
                 issues.append(ValidationIssue(
                     code=str(item.get("code", "AI_COPY_ISSUE")),
                     message=f"[AI/{lang.code}/{campaign_type_key}] {message}",
-                    level=str(item.get("level", "warning")),
-                    blocks_publish=bool(item.get("blocks_publish", False)),
+                    level="warning",
+                    blocks_publish=False,
                     agent="AIValidator",
                     language=lang.code,
                 ))

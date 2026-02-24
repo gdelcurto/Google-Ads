@@ -1,0 +1,20 @@
+{
+  "servers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/mcp-server-playwright@latest"
+      ],
+      "description": "Browser automation for inspecting hotel landing pages during web scraper development and debugging autofill brief results."
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ],
+      "description": "Up-to-date documentation lookup for google-ads Python SDK, FastAPI, SQLAlchemy 2.0, Pydantic v2, React 18, and other project dependencies."
+    }
+  }
+}

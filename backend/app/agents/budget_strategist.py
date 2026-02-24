@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, List
 
 from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
+from app.skills import CORE_PPC_FRAMEWORK
 
 if TYPE_CHECKING:
     from app.domain.schemas.brief import Brief
@@ -21,6 +22,7 @@ class BudgetStrategistAgent(CampaignAgent):
     BLOCKING_RULES = [
         "BUDGET_ZERO_TOTAL",
     ]
+    SKILL_FILES = (CORE_PPC_FRAMEWORK,)
 
     GUIDELINES = """
     ══════════════════════════════════════════════════════════════════

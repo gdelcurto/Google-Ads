@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 # Default budget split across campaign types (weights, not percentages).
 # Applied when by_campaign_type is not manually specified.
@@ -142,7 +142,7 @@ class StructuredSnippet(BaseModel):
 
 
 class UspInfo(BaseModel):
-    main: str = Field(..., max_length=90)
+    main: str = Field(..., max_length=300)
     bullets: List[str] = Field(default_factory=list)
 
 
@@ -186,10 +186,23 @@ class LanguagePlan(BaseModel):
     brand_exclusions: List[str] = Field(default_factory=list)
     usp: UspInfo
     headlines: List[str] = Field(..., min_length=3, max_length=15, description="RSA headlines")
-    descriptions: List[str] = Field(..., min_length=2, max_length=4, description="RSA descriptions")
+    descriptions: List[str] = Field(..., min_length=2, description="RSA descriptions (max 4)")
     sitelinks: List[Sitelink] = Field(default_factory=list)
     callouts: List[str] = Field(default_factory=list)
     structured_snippets: List[StructuredSnippet] = Field(default_factory=list)
+
+    @field_validator("descriptions", mode="before")
+    @classmethod
+    def cap_descriptions(cls, v: list) -> list:
+        """Silently truncate to 4 descriptions instead of rejecting.
+
+        Google Ads RSA allows max 4 descriptions; the AI prompt asks for
+        exactly 4 but occasionally returns 5.  Truncating is safe because
+        the first 4 are always the highest-priority ones.
+        """
+        if isinstance(v, list) and len(v) > 4:
+            return v[:4]
+        return v
     # ── Per-type copy overrides ────────────────────────────────────────────
     brand_assets: Optional[PerTypeAssets] = Field(
         None,
@@ -221,6 +234,13 @@ class LanguagePlan(BaseModel):
         for d in self.descriptions:
             if len(d) > 90:
                 raise ValueError(f"Description too long (max 90 chars): '{d}'")
+        return self
+
+    @model_validator(mode="after")
+    def auto_fill_brand_exclusions(self) -> "LanguagePlan":
+        """Auto-populate brand_exclusions from brand_terms when not explicitly set."""
+        if self.brand_terms and not self.brand_exclusions:
+            self.brand_exclusions = list(self.brand_terms)
         return self
 
 
@@ -265,6 +285,28 @@ class AudienceConfig(BaseModel):
     customer_match: CustomerMatch = Field(default_factory=CustomerMatch)
     in_market_segments: List[str] = Field(default_factory=list)
     custom_intent: List[str] = Field(default_factory=list)
+
+
+class CreativeAssets(BaseModel):
+    """
+    Visual assets for PMax, Retargeting Display, and Demand Gen campaigns.
+    URLs can point to any publicly accessible image/video hosting.
+    """
+    logo_url: Optional[str] = Field(
+        None, description="Logo PNG trasparente 1200x1200 — richiesto per PMax, Retargeting Display, Demand Gen"
+    )
+    image_landscape: Optional[str] = Field(
+        None, description="Immagine orizzontale 1200x628 — richiesta per PMax e Demand Gen"
+    )
+    image_square: Optional[str] = Field(
+        None, description="Immagine quadrata 1200x1200 — richiesta per PMax e Demand Gen"
+    )
+    image_portrait: Optional[str] = Field(
+        None, description="Immagine verticale 960x1200 — opzionale (PMax)"
+    )
+    youtube_video_url: Optional[str] = Field(
+        None, description="URL video YouTube 16:9 — opzionale (PMax, Demand Gen)"
+    )
 
 
 class HotelLocation(BaseModel):
@@ -334,11 +376,30 @@ class Brief(BaseModel):
     seasonality: Optional[SeasonalityInfo] = None
     audiences: AudienceConfig = Field(default_factory=AudienceConfig)
     hotel_specifics: HotelSpecifics
+    creative_assets: CreativeAssets = Field(
+        default_factory=CreativeAssets,
+        description="Visual assets (images, logo, video) for PMax/Retargeting/DemandGen",
+    )
     policy_constraints: List[str] = Field(default_factory=list)
     acquisition_keywords: Optional[Dict[str, KeywordThemes]] = None
     naming_convention: NamingConvention = Field(default_factory=NamingConvention)
     labels: List[str] = Field(default_factory=list)
     utm_config: UtmConfig = Field(default_factory=UtmConfig)
+
+    # NOTE: audiences (remarketing lists, in-market segments) are configured
+    # manually by the strategist — no auto-fill.  Retargeting/PMax/Demand Gen
+    # campaigns will only be generated when audiences are explicitly set.
+
+    @model_validator(mode="after")
+    def auto_fill_kpi_defaults(self) -> "Brief":
+        """Set sensible KPI defaults when neither tCPA nor tROAS are provided.
+        Hotels typically target direct bookings with a CPA of ~45 EUR
+        and a ROAS of ~8x."""
+        kpi = self.objectives.kpi
+        if not kpi.target_cpa_eur and not kpi.target_roas:
+            kpi.target_cpa_eur = 45.0
+            kpi.target_roas = 8.0
+        return self
 
     @model_validator(mode="after")
     def auto_distribute_budget(self) -> "Brief":

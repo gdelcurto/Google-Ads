@@ -13,7 +13,7 @@ from app.database import get_db
 from app.domain.models import AuditLog, CampaignRecord, Project
 from app.domain.schemas.brief import Brief
 from app.domain.schemas.campaign_plan import AccountPlan
-from app.generators.orchestrator import CampaignOrchestrator
+from app.generators.orchestrator import CampaignOrchestrator, _campaign_type_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/projects", tags=["campaigns"])
@@ -164,7 +164,14 @@ async def get_plan(
     project = await _get_project_or_404(project_id, db)
     if not project.plan_json:
         raise HTTPException(status_code=404, detail="Piano non ancora generato. Esegui /generate prima.")
-    plan = AccountPlan(**json.loads(project.plan_json))
+    try:
+        plan = AccountPlan(**json.loads(project.plan_json))
+    except Exception as exc:
+        logger.error(f"Plan deserialization failed for project {project_id}: {exc}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"Piano salvato non valido. Rigenera il piano. Dettaglio: {exc}",
+        )
     return _plan_to_preview(plan)
 
 
@@ -183,7 +190,7 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
             {
                 "external_key": c.external_key,
                 "campaign_name": c.campaign_name,
-                "campaign_type": c.campaign_type.value,
+                "campaign_type": _campaign_type_key(c),
                 "language_code": c.language_code,
                 "status": c.status.value,
                 "budget_daily_eur": c.settings.budget_daily_eur,
@@ -221,7 +228,14 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
                 "pmax_asset_groups": [
                     {
                         "name": ag.name,
+                        "headlines": ag.headlines,
+                        "long_headlines": ag.long_headlines,
+                        "descriptions": ag.descriptions,
                         "headlines_count": len(ag.headlines),
+                        "images": ag.images,
+                        "logo_url": ag.logo_url,
+                        "youtube_video_url": ag.youtube_video_url,
+                        "final_url": ag.final_url,
                         "has_missing_assets": ag.has_missing_assets,
                         "missing_asset_notes": ag.missing_asset_notes,
                         "audience_signals": ag.audience_signals,

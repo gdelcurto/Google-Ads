@@ -30,7 +30,8 @@ frontend/.vite/
 
 # Editor
 .idea/
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 *.swp
 *.swo
 

@@ -12,6 +12,9 @@ interface Props {
   selectedTypes: Set<string>
 }
 
+const NEEDS_VISUALS = (t: Set<string>) =>
+  t.has('pmax') || t.has('retargeting') || t.has('demand_gen')
+
 export function Step3Hotel({
   form, setField, remarketingLists, addRemarketingList, removeRemarketingList, setRemarketingListField, selectedTypes,
 }: Props) {
@@ -151,6 +154,89 @@ export function Step3Hotel({
         ))}
         <button style={css.btnAdd} onClick={addRemarketingList}>+ Aggiungi audience list</button>
       </div>
+
+      {NEEDS_VISUALS(selectedTypes) && (
+        <div style={css.section}>
+          <div style={css.sectionTitle}>Risorse Visive</div>
+          <p style={{ fontSize: 12, color: T.textGray, marginBottom: 16 }}>
+            Richiesto per{' '}
+            {[
+              selectedTypes.has('pmax') && 'Performance Max',
+              selectedTypes.has('retargeting') && 'Retargeting Display',
+              selectedTypes.has('demand_gen') && 'Demand Gen',
+            ].filter(Boolean).join(', ')}.
+            {' '}Inserisci gli URL pubblici delle immagini/logo/video già caricati sul tuo hosting o CDN.
+          </p>
+          <div style={css.grid2}>
+            <div style={css.field}>
+              <label style={css.label}>
+                Logo *{' '}
+                <span style={{ fontWeight: 400, color: T.textGray }}>PNG trasparente, 1200×1200</span>
+              </label>
+              <input
+                style={css.input}
+                value={form.logo_url}
+                onChange={e => setField('logo_url', e.target.value)}
+                placeholder="https://cdn.hotel.it/logo-1200x1200.png"
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>
+                Immagine orizzontale *{' '}
+                <span style={{ fontWeight: 400, color: T.textGray }}>1200×628</span>
+              </label>
+              <input
+                style={css.input}
+                value={form.image_landscape}
+                onChange={e => setField('image_landscape', e.target.value)}
+                placeholder="https://cdn.hotel.it/facade-1200x628.jpg"
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>
+                Immagine quadrata *{' '}
+                <span style={{ fontWeight: 400, color: T.textGray }}>1200×1200</span>
+              </label>
+              <input
+                style={css.input}
+                value={form.image_square}
+                onChange={e => setField('image_square', e.target.value)}
+                placeholder="https://cdn.hotel.it/room-1200x1200.jpg"
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>
+                Immagine verticale{' '}
+                <span style={{ fontWeight: 400, color: T.textGray }}>960×1200 — opzionale</span>
+              </label>
+              <input
+                style={css.input}
+                value={form.image_portrait}
+                onChange={e => setField('image_portrait', e.target.value)}
+                placeholder="https://cdn.hotel.it/spa-960x1200.jpg"
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>
+                Video YouTube{' '}
+                <span style={{ fontWeight: 400, color: T.textGray }}>16:9 — opzionale</span>
+              </label>
+              <input
+                style={css.input}
+                value={form.youtube_video_url}
+                onChange={e => setField('youtube_video_url', e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+            </div>
+          </div>
+          {(selectedTypes.has('pmax') || selectedTypes.has('retargeting') || selectedTypes.has('demand_gen')) &&
+            !form.logo_url && !form.image_landscape && !form.image_square && (
+            <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, fontSize: 12, color: '#92400e' }}>
+              <strong>Attenzione:</strong> senza immagini e logo le campagne visive verranno generate con placeholder e non potranno essere pubblicate finché non carichi le risorse.
+            </div>
+          )}
+        </div>
+      )}
     </>
   )
 }

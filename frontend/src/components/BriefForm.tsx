@@ -345,6 +345,7 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
           autofillSuccess={autofillSuccess}
           startJobMutation={startJobMutation}
           setErrors={setErrors}
+          hasExistingBrief={!!existingBrief}
         />
       )}
       {step === 1 && (

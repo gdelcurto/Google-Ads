@@ -51,28 +51,33 @@ class PerformanceAuditorAgent(CampaignAgent):
         if not campaigns:
             return issues
 
-        # Check headline counts per language for Search campaigns
+        # Check headline counts per language for Search campaigns.
+        # Report once per campaign (use the minimum headline count across
+        # all ads in the campaign) to avoid duplicate warnings.
         from app.domain.schemas.campaign_plan import CampaignType
         search_campaigns = [c for c in campaigns if c.campaign_type == CampaignType.search]
 
         for campaign in search_campaigns:
+            min_count = None
             for ad_group in campaign.ad_groups:
                 for ad in ad_group.ads:
-                    headline_count = len(ad.headlines) if hasattr(ad, "headlines") else 0
-                    if 0 < headline_count < _MIN_HEADLINES_RSA:
-                        issues.append(ValidationIssue(
-                            code="AUDIT_LOW_HEADLINE_COUNT",
-                            message=(
-                                f"[Audit/{campaign.language_code}] Campagna '{campaign.campaign_name}': "
-                                f"{headline_count} headline (ottimale: {_MIN_HEADLINES_EXCELLENT}+). "
-                                f"Con meno di {_MIN_HEADLINES_RSA} headline l'Ad Strength è 'Poor' o 'Average'. "
-                                "Aggiungi headline per migliorare la copertura delle query."
-                            ),
-                            level="warning",
-                            blocks_publish=False,
-                            agent="PerformanceAuditorAgent",
-                            language=campaign.language_code,
-                        ))
+                    cnt = len(ad.headlines) if hasattr(ad, "headlines") else 0
+                    if cnt > 0 and (min_count is None or cnt < min_count):
+                        min_count = cnt
+            if min_count is not None and min_count < _MIN_HEADLINES_RSA:
+                issues.append(ValidationIssue(
+                    code="AUDIT_LOW_HEADLINE_COUNT",
+                    message=(
+                        f"[Audit/{campaign.language_code}] Campagna '{campaign.campaign_name}': "
+                        f"{min_count} headline (ottimale: {_MIN_HEADLINES_EXCELLENT}+). "
+                        f"Con meno di {_MIN_HEADLINES_RSA} headline l'Ad Strength è 'Poor' o 'Average'. "
+                        "Aggiungi headline per migliorare la copertura delle query."
+                    ),
+                    level="warning",
+                    blocks_publish=False,
+                    agent="PerformanceAuditorAgent",
+                    language=campaign.language_code,
+                ))
 
         # Check that multiple languages have consistent campaign coverage
         lang_campaign_counts: dict[str, int] = {}

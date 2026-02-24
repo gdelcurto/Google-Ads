@@ -62,6 +62,7 @@ export function briefToForm(b: Record<string, unknown>): FormState {
   const hotel   = (b.hotel_specifics || {}) as Record<string, unknown>
   const loc     = (hotel.location || {}) as Record<string, unknown>
   const geo     = (b.geo_targeting || {}) as Record<string, unknown>
+  const ca      = (b.creative_assets || {}) as Record<string, unknown>
   return {
     project_name: String(meta.project_name || ''),
     preset: String(meta.preset || 'blastness'),
@@ -90,6 +91,11 @@ export function briefToForm(b: Record<string, unknown>): FormState {
     booking_engine_url: String(hotel.booking_engine_url || ''),
     target_countries: ((geo.target_countries as string[]) || []).join('\n'),
     target_cities: ((geo.target_cities as string[]) || []).join('\n'),
+    logo_url: String((ca.logo_url as string) || ''),
+    image_landscape: String((ca.image_landscape as string) || ''),
+    image_square: String((ca.image_square as string) || ''),
+    image_portrait: String((ca.image_portrait as string) || ''),
+    youtube_video_url: String((ca.youtube_video_url as string) || ''),
   }
 }
 
@@ -309,16 +315,16 @@ export function buildBrief(
       callouts: toLines(l.callouts),
       structured_snippets: [],
       brand_assets: toLines(l.brand_headlines).length > 0 ? {
-        headlines: toLines(l.brand_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.brand_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.brand_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.brand_descriptions).filter(d => d.length <= 90),
       } : null,
       acquisition_assets: toLines(l.acquisition_headlines).length > 0 ? {
-        headlines: toLines(l.acquisition_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.acquisition_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.acquisition_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.acquisition_descriptions).filter(d => d.length <= 90),
       } : null,
       retargeting_assets: toLines(l.retargeting_headlines).length > 0 ? {
-        headlines: toLines(l.retargeting_headlines).map(h => trimToWord(h, 30)),
-        descriptions: toLines(l.retargeting_descriptions).map(d => trimToWord(d, 90)),
+        headlines: toLines(l.retargeting_headlines).filter(h => h.length <= 30),
+        descriptions: toLines(l.retargeting_descriptions).filter(d => d.length <= 90),
       } : null,
     })),
     geo_targeting: {
@@ -351,6 +357,13 @@ export function buildBrief(
       customer_match: { enabled: false },
       in_market_segments: [],
       custom_intent: [],
+    },
+    creative_assets: {
+      logo_url: form.logo_url || null,
+      image_landscape: form.image_landscape || null,
+      image_square: form.image_square || null,
+      image_portrait: form.image_portrait || null,
+      youtube_video_url: form.youtube_video_url || null,
     },
     hotel_specifics: {
       category: form.hotel_category,

@@ -5,6 +5,7 @@ SKILL: Difendi la domanda esistente e intercetta utenti che già conoscono il br
 """
 from __future__ import annotations
 
+import unicodedata
 from typing import TYPE_CHECKING, List
 
 from app.agents.base import AgentLevel, CampaignAgent, ValidationIssue
@@ -98,8 +99,18 @@ class BrandAgent(CampaignAgent):
 
     def get_headlines(self, lang: LanguagePlan) -> List[str]:
         if lang.brand_assets and lang.brand_assets.headlines:
-            return lang.brand_assets.headlines
-        return lang.headlines
+            pool = list(lang.brand_assets.headlines)
+        else:
+            pool = list(lang.headlines)
+
+        # Guarantee the primary brand term is in the pool so the RSA
+        # always contains the hotel name pinned at position 1.
+        if lang.brand_terms:
+            brand = lang.brand_terms[0]
+            if brand and len(brand) <= 30 and brand not in pool:
+                pool.insert(0, brand)
+
+        return pool
 
     def get_descriptions(self, lang: LanguagePlan) -> List[str]:
         if lang.brand_assets and lang.brand_assets.descriptions:
@@ -124,10 +135,13 @@ class BrandAgent(CampaignAgent):
             ))
             return issues
 
-        # Brand name must appear in at least one headline
-        brand_lower = [t.lower() for t in lang.brand_terms]
+        # Brand name must appear in at least one headline (accent-insensitive)
+        def _strip_accents(s: str) -> str:
+            return unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode()
+
+        brand_lower = [_strip_accents(t.lower()) for t in lang.brand_terms]
         brand_found = any(
-            any(bt in h.lower() for bt in brand_lower)
+            any(bt in _strip_accents(h.lower()) for bt in brand_lower)
             for h in headlines
         )
         if not brand_found:
