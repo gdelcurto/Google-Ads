@@ -221,7 +221,7 @@ class AdsEditorCsvExporter:
         for ag in campaign.ad_groups:
             for kw in ag.keywords:
                 if kw.is_negative:
-                    row_type = "Campaign Negative Keyword"
+                    row_type = "Negative Keyword"
                     ad_group_val = ""
                 else:
                     row_type = "Keyword"
@@ -290,7 +290,7 @@ class AdsEditorCsvExporter:
                 key = sl.text
                 if key not in seen_sitelinks:
                     rows.append({
-                        "Type": "Campaign Sitelink",
+                        "Type": "Sitelink",
                         "Campaign": campaign.campaign_name,
                         "Sitelink Text": sl.text,
                         "Sitelink Description Line 1": sl.description_1,
@@ -303,7 +303,7 @@ class AdsEditorCsvExporter:
                 key = co.text
                 if key not in seen_callouts:
                     rows.append({
-                        "Type": "Campaign Callout",
+                        "Type": "Callout",
                         "Campaign": campaign.campaign_name,
                         "Callout Text": co.text,
                     })
@@ -313,7 +313,7 @@ class AdsEditorCsvExporter:
                 key = sn.header
                 if key not in seen_snippets:
                     rows.append({
-                        "Type": "Campaign Structured Snippet",
+                        "Type": "Structured Snippet",
                         "Campaign": campaign.campaign_name,
                         "Snippet Header": sn.header,
                         "Snippet Values": "; ".join(sn.values),
@@ -377,7 +377,7 @@ class AdsEditorCsvExporter:
         rows = []
         for kw in plan.global_negative_keywords:
             rows.append({
-                "Type": "Campaign Negative Keyword",
+                "Type": "Negative Keyword",
                 "Campaign": "",  # blank = applies to all campaigns in upload
                 "Keyword": kw.text,
                 "Match Type": kw.match_type.value,
