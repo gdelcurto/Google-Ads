@@ -743,78 +743,122 @@ Regole:
     # ── Budget strategy ───────────────────────────────────────────────────────
 
     async def suggest_budget_strategy(self, payload: dict) -> dict:
-        """Suggest campaign types and budget allocation. Returns a BudgetStrategyResponse dict."""
+        """
+        Suggest campaign types, budget split and rationale via a single Claude call.
+
+        Previously Claude was only asked for the rationale text while the campaign
+        types and percentages were determined by static lookup tables (_BASE_WEIGHTS /
+        _select_campaign_types).  Now Claude returns both the strategy AND the rationale
+        in one structured JSON response, and we fall back to the static tables only if
+        the AI call fails.
+        """
         total_monthly = (
             payload["total_monthly_budget_eur"]
             if payload.get("total_monthly_budget_eur", 0) > 0
             else _suggest_budget(payload.get("stars", 3), payload.get("hotel_category", "city_hotel"))
         )
-        recommended, warning = _select_campaign_types(total_monthly)
-        split = _compute_split(recommended)
-        daily = _compute_daily(split, total_monthly, payload.get("languages", ["IT"]))
 
-        rationale: dict[str, str] = {}
-        overall_strategy = ""
-        api_log: Optional[dict] = None
+        # Static fallback values — used if AI call fails
+        static_recommended, warning = _select_campaign_types(total_monthly)
+        static_split = _compute_split(static_recommended)
 
-        type_labels = {
-            "search_brand": "Brand Search",
-            "search_acquisition": "Acquisition Search",
-            "performance_max": "Performance Max",
-            "retargeting": "Retargeting Display",
-            "demand_gen": "Demand Gen",
-        }
-        langs_str = ", ".join(payload.get("languages", []))
-        budget_source = "suggerito in base al profilo hotel" if not payload.get("total_monthly_budget_eur") else "fornito dal cliente"
-        types_str = "\n".join(
-            f"- {type_labels[t]}: {split[t]*100:.1f}% (€{total_monthly * split[t]:.0f}/mese)"
-            for t in recommended
+        langs_str = ", ".join(payload.get("languages", ["IT"]))
+        budget_source = (
+            "suggerito in base al profilo hotel"
+            if not payload.get("total_monthly_budget_eur")
+            else "fornito dal cliente"
         )
+
         ai_prompt = f"""Sei uno stratega Google Ads specializzato in hotel e hospitality.
-Genera un piano strategico per questo hotel basandoti sul suo profilo.
+Definisci la strategia budget OTTIMALE per questo hotel.
 
 HOTEL: {payload.get('brand_name', '')} — {payload.get('hotel_category', '')} {payload.get('stars', 3)} stelle
 PAESE: {payload.get('country', 'IT')}
 LINGUE: {langs_str}
 BUDGET MENSILE TOTALE: €{total_monthly:.0f} ({budget_source})
 
-CAMPAGNE CONSIGLIATE:
-{types_str}
+Tipi campagna disponibili: search_brand, search_acquisition, performance_max, retargeting, demand_gen
 
-Per ciascuna campagna scrivi UN PARAGRAFO di 2-3 frasi che spieghi:
-1. Perché questa campagna è strategica per questo tipo di hotel
-2. Quale obiettivo primario persegue nel funnel alberghiero
-3. Un consiglio pratico concreto per il settore hospitality
-
-Scrivi anche un paragrafo "overall" di 2-3 frasi sul budget complessivo e la strategia full-funnel.
+LINEE GUIDA SELEZIONE:
+- Budget <€600: solo search_brand + search_acquisition
+- Budget €600-€1499: aggiungi retargeting
+- Budget €1500-€2999: aggiungi performance_max
+- Budget ≥€3000: valuta demand_gen
+- search_brand: 18-25% (difesa branded, sempre presente)
+- search_acquisition: 30-45% (acquisizione, peso principale)
+- performance_max: 20-35% (omnicanale, se budget sufficiente)
+- retargeting: 8-15% (solo se traffico esistente)
+- demand_gen: 5-12% (solo con budget >€2500/mese)
 
 Rispondi ESCLUSIVAMENTE con JSON valido:
 {{
-  "overall": "...",
-  {', '.join(f'"{t}": "..."' for t in recommended)}
-}}"""
+  "recommended_types": ["search_brand", "search_acquisition", ...],
+  "split": {{
+    "search_brand": <intero>,
+    "search_acquisition": <intero>,
+    "...": <intero>
+  }},
+  "overall": "2-3 frasi sulla strategia complessiva e budget full-funnel per questo hotel",
+  "search_brand": "2-3 frasi specifiche per questo hotel",
+  "search_acquisition": "2-3 frasi",
+  "...": "..."
+}}
+
+I valori in split devono essere interi e sommare esattamente a 100.
+Includi nel JSON una chiave di rationale per ogni tipo in recommended_types."""
+
+        rationale: dict[str, str] = {}
+        overall_strategy = ""
+        api_log: Optional[dict] = None
+        recommended = static_recommended
+        split = static_split
 
         try:
             message = await self._client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=1200,
+                max_tokens=1500,
                 system=combined_skills(BID_STRATEGY_RECOMMENDATIONS, BUDGET_SCENARIO_PLANNER),
                 messages=[{"role": "user", "content": ai_prompt}],
             )
             api_log = _api_log_entry(
                 agent="BudgetStrategyAgent",
-                reason=f"Generazione rationale — {payload.get('hotel_category', '')} {payload.get('stars', 3)}★",
+                reason=f"AI strategy + split + rationale — {payload.get('hotel_category', '')} {payload.get('stars', 3)}★",
                 endpoint="POST /api/autofill/budget-strategy",
                 model="claude-haiku-4-5-20251001",
                 usage=message.usage,
             )
             raw = message.content[0].text.strip()
             parsed = json.loads(_extract_json_object(raw))
+
+            # ── Recommended types (validate against known keys) ────────────────
+            ai_types = [t for t in parsed.get("recommended_types", []) if t in _BASE_WEIGHTS]
+            if ai_types:
+                recommended = ai_types
+
+            # ── AI-generated split percentages ────────────────────────────────
+            ai_split_raw: dict = parsed.get("split", {})
+            ai_split = {
+                k: float(v)
+                for k, v in ai_split_raw.items()
+                if k in recommended and isinstance(v, (int, float)) and v > 0
+            }
+            if ai_split and len(ai_split) == len(recommended):
+                # Normalize so values sum to exactly 1.0
+                total_pct = sum(ai_split.values())
+                split = {k: v / total_pct for k, v in ai_split.items()}
+            else:
+                # Fall back to static weights for the AI-chosen types
+                split = _compute_split(recommended)
+
+            # ── Rationale text per type ───────────────────────────────────────
             overall_strategy = parsed.get("overall", "")
             for t in recommended:
                 rationale[t] = parsed.get(t, _STATIC_RATIONALE.get(t, ""))
+
         except Exception as exc:
-            logger.warning(f"BudgetStrategy AI rationale failed: {exc}. Using static fallback.")
+            logger.warning(f"BudgetStrategy AI failed: {exc}. Using static fallback.")
+            recommended = static_recommended
+            split = static_split
             for t in recommended:
                 rationale[t] = _STATIC_RATIONALE.get(t, "")
             overall_strategy = (
@@ -822,6 +866,8 @@ Rispondi ESCLUSIVAMENTE con JSON valido:
                 f"€{total_monthly:.0f}/mese. Le campagne sono ordinate per priorità di intento: "
                 "brand protection → acquisizione → scalabilità."
             )
+
+        daily = _compute_daily(split, total_monthly, payload.get("languages", ["IT"]))
 
         return {
             "recommended_types": recommended,
