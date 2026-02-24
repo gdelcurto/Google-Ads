@@ -133,10 +133,15 @@ class AdsEditorCsvExporter:
 
         rows.extend(self._global_negative_rows(plan))
 
+        # UTF-8 BOM so that tools like Excel / Ads Editor auto-detect encoding
         output = io.StringIO()
+        output.write("\ufeff")
         if rows:
             headers = self._headers(rows)
-            writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+            # QUOTE_MINIMAL: only quote cells that contain the delimiter, a
+            # quote character, or a newline.  Empty cells stay truly empty
+            # (not ""), which matches the official Google Ads Editor format.
+            writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
             writer.writerow(headers)
             for row in rows:
                 writer.writerow([row.get(h, "") for h in headers])

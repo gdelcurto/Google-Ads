@@ -300,5 +300,5 @@ class TestCsvExporter:
         plan = CampaignOrchestrator().generate_plan(sample_brief, "test-csv4")
         csv_output = export_plan_to_csv(plan)
 
-        # RSA rows identified by Headline 1 being non-empty (no Ad type column in this format)
-        assert '"Headline 1"' in csv_output
+        # RSA rows identified by Headline 1 column being present (no Ad type column in this format)
+        assert "Headline 1" in csv_output

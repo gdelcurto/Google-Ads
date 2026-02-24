@@ -25,7 +25,8 @@ from app.domain.schemas.campaign_plan import (
 
 def _parse_csv(csv_str: str) -> tuple[list[str], list[dict]]:
     """Return (headers, list-of-row-dicts) from a CSV string, skipping comment rows."""
-    # The exporter writes a comment row first (starts with '#') followed by the real header
+    # Strip UTF-8 BOM if present
+    csv_str = csv_str.lstrip("\ufeff")
     lines = csv_str.splitlines()
     # Find the first non-comment line — that's the real header
     non_comment_lines = [l for l in lines if not l.lstrip('"').startswith('#') and l.strip()]
