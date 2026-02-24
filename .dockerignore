@@ -21,6 +21,8 @@ data/
 *.env.local
 
 # Docs / misc
-*.md
+README.md
+CLAUDE.md
+CHANGELOG.md
 .github
 examples/
