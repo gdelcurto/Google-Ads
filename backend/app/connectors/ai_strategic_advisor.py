@@ -2,9 +2,10 @@
 AI-powered strategic advisor for L1 agents, TECH agents, and acquisition keyword generation.
 
 Provides intelligence beyond hardcoded rules:
-  - analyze_budget_strategy_ai   — AI insights on budget distribution
-  - analyze_bidding_strategy_ai  — AI insights on bid strategy coherence
-  - analyze_negative_keywords_ai — AI-generated negative keyword suggestions
+  - optimize_brief_budget_ai      — apply AI-recommended budget split BEFORE generation
+  - analyze_budget_strategy_ai    — residual AI insights on budget distribution
+  - analyze_bidding_strategy_ai   — AI insights on bid strategy coherence (with suggested_fix)
+  - analyze_negative_keywords_ai  — AI-generated negative keyword suggestions
   - generate_acquisition_keywords_ai — AI keyword themes when brief has none
 """
 from __future__ import annotations
@@ -44,20 +45,30 @@ def _extract_json_array(raw: str) -> str:
 
 
 def _parse_issues(raw: str, agent_name: str) -> List[ValidationIssue]:
-    """Parse a JSON array of issue dicts into ValidationIssue objects."""
+    """Parse a JSON array of issue dicts into ValidationIssue objects.
+
+    Each dict may optionally include a 'suggested_fix' key with:
+      {brief_path, value, action, label}
+    """
     try:
         items = json.loads(_extract_json_array(raw))
-        return [
-            ValidationIssue(
+        issues = []
+        for d in items:
+            if not isinstance(d, dict) or not d.get("message"):
+                continue
+            fix = d.get("suggested_fix")
+            # Validate fix structure — discard malformed fixes
+            if fix and not (isinstance(fix, dict) and fix.get("brief_path") and fix.get("label")):
+                fix = None
+            issues.append(ValidationIssue(
                 code=d.get("code", f"{agent_name.upper().replace(' ', '_')}_AI_ISSUE"),
                 message=d.get("message", ""),
                 level=d.get("level", "warning"),
                 blocks_publish=False,
                 agent=f"{agent_name} (AI)",
-            )
-            for d in items
-            if isinstance(d, dict) and d.get("message")
-        ]
+                suggested_fix=fix,
+            ))
+        return issues
     except Exception as exc:
         logger.warning(f"Failed to parse AI issues from {agent_name}: {exc}")
         return []
@@ -78,27 +89,101 @@ def _parse_keyword_themes_text(text: str) -> Dict[str, List[str]]:
     return themes
 
 
-# ── Budget Strategist AI ──────────────────────────────────────────────────────
+# ── Budget Pre-optimization ───────────────────────────────────────────────────
+
+async def optimize_brief_budget_ai(brief: "Brief", api_key: str) -> "Brief":
+    """
+    Apply AI-recommended budget allocation to the brief BEFORE campaign generation.
+
+    Calls ClaudeEnricher.suggest_budget_strategy() to get an optimal split
+    based on the hotel profile and total budget, then rebuilds
+    budgets.by_campaign_type with the AI-recommended weights.
+
+    Returns a modified brief copy. Falls back to the original brief silently
+    on any error so generation always proceeds.
+    """
+    from app.connectors.claude_enricher import ClaudeEnricher
+    from app.domain.schemas.brief import BudgetByLanguage
+
+    total = brief.budgets.total_monthly_eur
+    if total <= 0:
+        return brief
+
+    lang_codes = [lang.code for lang in brief.languages]
+
+    payload = {
+        "brand_name": brief.client.brand_name,
+        "hotel_category": brief.hotel_specifics.category.value,
+        "stars": brief.hotel_specifics.stars,
+        "country": brief.client.country,
+        "languages": lang_codes,
+        "total_monthly_budget_eur": total,
+    }
+
+    try:
+        enricher = ClaudeEnricher(api_key)
+        strategy = await enricher.suggest_budget_strategy(payload)
+
+        # budget_split: {backend_type_key: percentage}  e.g. {"search_brand": 13.3}
+        budget_split: dict = strategy.get("budget_split", {})
+        if not budget_split:
+            return brief
+
+        n_langs = max(len(lang_codes), 1)
+        new_by_type: dict = {}
+
+        for type_key, pct in budget_split.items():
+            monthly_for_type = round(total * pct / 100, 2)
+            per_lang = round(monthly_for_type / n_langs, 2)
+            new_by_type[type_key] = BudgetByLanguage(
+                total=monthly_for_type,
+                by_language={lang: per_lang for lang in lang_codes},
+            )
+
+        # Merge: AI allocation wins for recommended types;
+        # types in the brief but not in the AI recommendation keep their values
+        # (e.g. a manually configured demand_gen the AI didn't recommend).
+        merged = dict(brief.budgets.by_campaign_type)
+        merged.update(new_by_type)
+
+        new_budgets = brief.budgets.model_copy(update={"by_campaign_type": merged})
+        optimized = brief.model_copy(update={"budgets": new_budgets})
+
+        changed = [
+            f"{k}: €{v.total:.0f}" for k, v in new_by_type.items()
+        ]
+        logger.info(
+            f"AI budget pre-optimization applied — total €{total:.0f} → "
+            f"{', '.join(changed)}"
+        )
+        return optimized
+
+    except Exception as exc:
+        logger.warning(f"AI budget pre-optimization failed (using existing): {exc}")
+        return brief
+
+
+# ── Budget Strategist AI (residual post-check) ───────────────────────────────
 
 async def analyze_budget_strategy_ai(
     brief: "Brief",
     api_key: str,
 ) -> List[ValidationIssue]:
     """
-    AI analysis of budget distribution beyond hardcoded BudgetStrategistAgent rules.
-    Detects strategic issues specific to the hotel category and campaign mix.
-    Returns up to 3 warning/info ValidationIssue objects.
+    Residual AI analysis of budget distribution after pre-optimization.
+    Catches issues that the split alone cannot fix (e.g. total too low for
+    the chosen strategy, missing campaign types for the hotel category).
+    Returns up to 2 warning/info ValidationIssue objects.
     """
     import anthropic
 
     total = brief.budgets.total_monthly_eur
     if total <= 0:
-        return []  # Already blocked by hardcoded rule
+        return []
 
     by_type = brief.budgets.by_campaign_type
     hotel_cat = brief.hotel_specifics.category.value
     stars = brief.hotel_specifics.stars
-    services = brief.hotel_specifics.services
     campaign_types = [ct.value for ct in brief.campaign_types]
 
     distribution_lines = [
@@ -108,49 +193,39 @@ async def analyze_budget_strategy_ai(
     distribution_str = (
         "\n".join(distribution_lines)
         if distribution_lines
-        else "Non specificata (distribuzione automatica)"
+        else "Non specificata"
     )
-    services_str = ", ".join(services[:10]) if services else "non specificati"
 
-    prompt = f"""Sei un esperto Google Ads specializzato in hotel e hospitality.
-Analizza la configurazione del budget di questo account Google Ads.
+    prompt = f"""Sei un esperto Google Ads per hotel. Il budget è già stato ottimizzato automaticamente.
+Individua SOLO problemi strutturali residui che la redistribuzione automatica non può risolvere.
 
-PROFILO HOTEL:
-- Categoria: {hotel_cat}
-- Stelle: {stars}
-- Servizi principali: {services_str}
-- Budget mensile totale: €{total:.0f}
-
-DISTRIBUZIONE BUDGET PER TIPO:
+PROFILO: {hotel_cat} {stars}★ — Budget €{total:.0f}/mese
+DISTRIBUZIONE ATTUALE:
 {distribution_str}
+CAMPAGNE: {', '.join(campaign_types)}
 
-CAMPAGNE CONFIGURATE: {', '.join(campaign_types)}
+Esempi di problemi residui rilevanti:
+- Budget totale troppo basso per supportare tutte le campagne scelte (<€300)
+- Mancanza di una campagna critica per questa categoria hotel
+- Combinazione di campagne incompatibile con il profilo
 
-Identifica problemi strategici avanzati che regole meccaniche non possono rilevare:
-- Distribuzione non ottimale per questo tipo di hotel (es. troppo poco a Brand per un resort stagionale)
-- Budget insufficiente per il learning period di campagne Smart Bidding (min ~€10/giorno per PMax)
-- Rischio di cannibalizzazione Brand ↔ Acquisition per questa distribuzione
-- Dipendenze critiche tra tipi di campagna con budget squilibrato
+NON segnalare: problemi già gestiti dalla redistribuzione automatica.
 
-NON segnalare: budget zero, discrepanza totale vs allocato, budget < €500 (già gestiti).
-
-Rispondi SOLO con JSON array ([] se nessun issue rilevante):
+Rispondi SOLO con JSON array (preferibilmente [] se non ci sono problemi reali):
 [{{"code": "BUDGET_...", "message": "...", "level": "warning"}}]
-- level: "warning" o "info"
-- max 3 issue ad alto impatto pratico
-- messaggi in italiano, concreti e actionable"""
+- Max 2 issue, solo problemi strutturali ad alto impatto"""
 
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
         response = await client.messages.create(
             model=_MODEL,
-            max_tokens=600,
+            max_tokens=400,
             system=combined_skills(BUDGET_SCENARIO_PLANNER, CORE_PPC_FRAMEWORK),
             messages=[{"role": "user", "content": prompt}],
         )
         issues = _parse_issues(response.content[0].text.strip(), "BudgetStrategistAgent")
         if issues:
-            logger.info(f"BudgetStrategistAgent AI: {len(issues)} insight(s)")
+            logger.info(f"BudgetStrategistAgent AI (residual): {len(issues)} insight(s)")
         return issues
     except Exception as exc:
         logger.warning(f"Budget strategy AI analysis failed: {exc}")
@@ -164,9 +239,13 @@ async def analyze_bidding_strategy_ai(
     api_key: str,
 ) -> List[ValidationIssue]:
     """
-    AI analysis of bid strategy configuration beyond hardcoded BiddingStrategistAgent rules.
-    Checks coherence between objectives, KPI targets, budget, and hotel category.
-    Returns up to 3 warning/info ValidationIssue objects.
+    AI analysis of bid strategy configuration with actionable suggested_fix.
+
+    Each issue may include a suggested_fix dict that the frontend renders
+    as a 'Applica' CTA button to patch the brief directly.
+    Allowed brief_path values for fixes: objectives.kpi.target_cpa_eur,
+    objectives.kpi.target_roas, objectives.kpi.max_cpc_brand,
+    objectives.kpi.max_cpc_acquisition.
     """
     import anthropic
 
@@ -189,42 +268,52 @@ async def analyze_bidding_strategy_ai(
     kpi_str = (
         "\n".join(kpi_lines)
         if kpi_lines
-        else "- Nessun target KPI configurato (uso Maximize Conversions di default)"
+        else "- Nessun target KPI (uso Maximize Conversions di default)"
     )
 
-    prompt = f"""Sei un esperto di bid strategy Google Ads per il settore hospitality.
-Analizza la configurazione delle bid strategy per questo account.
+    prompt = f"""Sei un esperto di bid strategy Google Ads per l'hospitality.
+Analizza la configurazione KPI e suggerisci correzioni concrete.
 
-PROFILO HOTEL:
-- Categoria: {hotel_cat}
-- Stelle: {stars}
-- Budget mensile totale: €{total:.0f}
-- Obiettivo primario: {primary_obj}
-- Campagne: {', '.join(campaign_types)}
+PROFILO: {hotel_cat} {stars}★ — Budget €{total:.0f}/mese
+Obiettivo: {primary_obj}
+Campagne: {', '.join(campaign_types)}
 
-CONFIGURAZIONE KPI / BID STRATEGY:
+KPI CONFIGURATI:
 {kpi_str}
 
-Identifica problemi strategici avanzati:
-- Coerenza tra obiettivo ({primary_obj}) e bid strategy configurata
-- Adeguatezza del budget €{total:.0f}/mese per raggiungere i KPI target
-- Rischi specifici per questa categoria hotel (es. resort stagionale vs city hotel)
-- Configurazioni mancanti importanti (es. nessun max_cpc con budget limitato)
-- Raccomandazioni su quale strategia adottare se KPI non sono impostati
+Identifica problemi di bid strategy e per ciascuno proponi un valore corretto.
+Considera: volume di conversioni atteso con questo budget, tipicità per categoria hotel,
+coerenza tra obiettivo e strategia.
 
 NON segnalare: target CPA+ROAS contemporanei, ROAS >10x, ROAS <1.5x, CPA <€5 (già gestiti).
 
-Rispondi SOLO con JSON array ([] se nessun issue):
-[{{"code": "BIDDING_...", "message": "...", "level": "warning"}}]
-- level: "warning" o "info"
-- max 3 issue ad alto impatto
-- messaggi in italiano, concreti e actionable"""
+Rispondi SOLO con JSON array ([] se tutto è corretto):
+[{{
+  "code": "BIDDING_...",
+  "message": "Spiegazione del problema e del valore consigliato.",
+  "level": "warning",
+  "suggested_fix": {{
+    "brief_path": "objectives.kpi.target_cpa_eur",
+    "value": 60,
+    "action": "set",
+    "label": "Imposta Target CPA a €60"
+  }}
+}}]
+
+Per suggested_fix usa SOLO questi brief_path:
+- "objectives.kpi.target_cpa_eur"   (float, euro)
+- "objectives.kpi.target_roas"      (float, es. 5.0)
+- "objectives.kpi.max_cpc_brand"    (float, euro)
+- "objectives.kpi.max_cpc_acquisition" (float, euro)
+
+Se non c'è un fix applicabile lascia suggested_fix a null.
+Max 3 issue ad alto impatto, messaggi in italiano."""
 
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
         response = await client.messages.create(
             model=_MODEL,
-            max_tokens=600,
+            max_tokens=700,
             system=combined_skills(BID_STRATEGY_RECOMMENDATIONS, CORE_PPC_FRAMEWORK),
             messages=[{"role": "user", "content": prompt}],
         )
@@ -245,11 +334,9 @@ async def analyze_negative_keywords_ai(
     api_key: str,
 ) -> List[ValidationIssue]:
     """
-    AI analysis of the negative keyword strategy.
-    Extracts acquisition keywords from generated campaigns, then asks Claude to:
-    - Suggest specific negatives missing for this hotel type/category
-    - Flag cannibalization risks between keyword themes
-    Returns up to 4 warning/info ValidationIssue objects.
+    AI analysis of negative keyword gaps based on hotel profile and generated keywords.
+    Returns informational issues with a suggested_fix to append specific
+    negative keywords to the brief's acquisition_keywords for each language.
     """
     import anthropic
 
@@ -257,7 +344,6 @@ async def analyze_negative_keywords_ai(
     stars = brief.hotel_specifics.stars
     services = brief.hotel_specifics.services
 
-    # Collect positive acquisition keywords from generated campaigns
     acq_keywords: List[str] = []
     for c in campaigns:
         if c.campaign_subtype == "Acquisition":
@@ -269,46 +355,58 @@ async def analyze_negative_keywords_ai(
     if not acq_keywords:
         return []
 
+    # Collect all lang codes that have acquisition campaigns
+    acq_lang_codes = list({
+        c.language_code for c in campaigns if c.campaign_subtype == "Acquisition"
+    })
+    primary_lang = acq_lang_codes[0] if acq_lang_codes else "IT"
+
     brand_terms: List[str] = []
     for lang in brief.languages:
         brand_terms.extend(lang.brand_terms)
 
-    acq_sample = acq_keywords[:30]
+    acq_sample = acq_keywords[:25]
     services_str = ", ".join(services[:8]) if services else "non specificati"
-    brand_str = ", ".join(list(dict.fromkeys(brand_terms))[:5]) if brand_terms else "non specificati"
+    brand_str = ", ".join(list(dict.fromkeys(brand_terms))[:5]) if brand_terms else "n/a"
 
-    prompt = f"""Sei un esperto Google Ads specializzato in keyword negative per il settore hotel.
-Analizza le keyword di acquisizione di questo account e suggerisci ottimizzazioni.
+    prompt = f"""Sei un esperto Google Ads specializzato in keyword negative per hotel.
 
-PROFILO HOTEL:
-- Categoria: {hotel_cat}
-- Stelle: {stars}
-- Servizi: {services_str}
-- Brand terms (già in negative list): {brand_str}
+PROFILO: {hotel_cat} {stars}★
+Servizi: {services_str}
+Brand terms (già negative): {brand_str}
 
-KEYWORD ACQUISIZIONE GENERATE:
+KEYWORD ACQUISIZIONE (campione):
 {chr(10).join(f"- {kw}" for kw in acq_sample)}
 
-Il tuo compito:
-1. Identifica keyword negative SPECIFICHE mancanti per questa categoria hotel
-   Es. hotel 5 stelle → "ostello", "hostel", "low cost", "economico", "dormitorio"
-   Es. resort → "day use" se non pertinente, "monolocale", "affitto"
-   Es. boutique → "catena", "franchising", "standard"
-2. Rileva rischi di cannibalizzazione tra i temi keyword generati
-3. Segnala query ambigue che potrebbero attrarre traffico irrilevante
+Suggerisci keyword negative specifiche mancanti per questa tipologia hotel.
+Esempi per categoria:
+- {stars}★ resort: "ostello", "hostel", "low cost", "economico", "monolocale"
+- Business hotel: "vacanza", "spiaggia", "mare" (se non pertinente)
+- Boutique: "catena", "franchising", "standardizzato"
+Rileva anche cannibalizzazione tra temi keyword.
 
-Rispondi SOLO con JSON array ([] se non hai suggerimenti ad alto impatto):
-[{{"code": "NEG_...", "message": "...", "level": "warning"}}]
-- code: usa prefisso NEG_AI_
-- level: "warning" o "info"
-- max 4 issue
-- messaggi in italiano con le keyword negative specifiche suggerite"""
+Per ogni issue includi suggested_fix con le keyword negative esatte da aggiungere.
+Il brief_path deve essere: "acquisition_keywords.{primary_lang}.negative_keywords"
+
+Rispondi SOLO con JSON array ([] se nessun problema):
+[{{
+  "code": "NEG_AI_...",
+  "message": "Descrizione del problema con le keyword specifiche.",
+  "level": "info",
+  "suggested_fix": {{
+    "brief_path": "acquisition_keywords.{primary_lang}.negative_keywords",
+    "value": ["kw1", "kw2", "kw3"],
+    "action": "append_list",
+    "label": "Aggiungi keyword negative"
+  }}
+}}]
+Max 2 issue, messaggi in italiano."""
 
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
         response = await client.messages.create(
             model=_MODEL,
-            max_tokens=700,
+            max_tokens=600,
             system=combined_skills(KEYWORD_CANNIBALIZATION, SEARCH_TERM_MINING),
             messages=[{"role": "user", "content": prompt}],
         )
@@ -329,16 +427,13 @@ async def generate_acquisition_keywords_ai(
 ) -> Dict[str, "KeywordThemes"]:
     """
     Generate acquisition keyword themes via AI for languages that have none in the brief.
-    Uses the existing ClaudeEnricher.suggest_keywords() pipeline.
-
-    Returns a dict {lang_code: KeywordThemes} ready to be merged into the brief
-    before passing it to the rule-based generators.  Falls back gracefully to an
-    empty dict if the API call fails or if all languages already have themes.
+    Uses ClaudeEnricher.suggest_keywords() and returns {lang_code: KeywordThemes}
+    ready to merge into the brief before generators run.
+    Falls back to empty dict on any error.
     """
     from app.connectors.claude_enricher import ClaudeEnricher
     from app.domain.schemas.brief import KeywordThemes
 
-    # Find languages that have no acquisition keyword themes
     missing_langs = []
     for lang in brief.languages:
         has_themes = (

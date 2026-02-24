@@ -55,6 +55,20 @@ export interface PMaxAssetGroupPreview {
   audience_signals: string[]
 }
 
+export interface ValidationWarning {
+  message: string
+  code: string
+  level: 'warning' | 'info'
+  agent: string
+  /** Present on AI advisor warnings — drives the 'Applica' CTA in the UI. */
+  suggested_fix?: {
+    brief_path: string
+    value: unknown
+    action: 'set' | 'append_list'
+    label: string
+  }
+}
+
 export interface AccountPlanPreview {
   project_id: string
   client_name: string
@@ -64,6 +78,8 @@ export interface AccountPlanPreview {
   total_campaigns: number
   validation_errors: string[]
   validation_warnings: string[]
+  /** Structured AI advisor warnings — use these when present to render CTAs. */
+  validation_warnings_structured: ValidationWarning[]
   campaigns: CampaignPreview[]
 }
 
@@ -125,6 +141,23 @@ export const projectsApi = {
 
   savePlan: (id: string, planData: Record<string, unknown>) =>
     api.put<{ status: string; campaigns: number }>(`/projects/${id}/plan`, planData).then((r) => r.data),
+
+  /**
+   * Apply a structured suggested_fix to the project brief.
+   * After calling this the caller should re-generate the plan.
+   */
+  applyBriefFix: (
+    id: string,
+    briefPath: string,
+    value: unknown,
+    action: 'set' | 'append_list' = 'set',
+  ) =>
+    api
+      .post<{ status: string; brief_path: string; value: unknown }>(
+        `/projects/${id}/apply-brief-fix`,
+        { brief_path: briefPath, value, action },
+      )
+      .then((r) => r.data),
 
   softDelete: (id: string) =>
     api.delete<{ detail: string }>(`/projects/${id}`).then((r) => r.data),

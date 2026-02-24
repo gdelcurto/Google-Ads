@@ -166,6 +166,24 @@ export default function ProjectDetailPage() {
     onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
 
+  /**
+   * Apply a suggested_fix from an AI advisor warning to the brief,
+   * then automatically re-generate the plan so the user sees the effect.
+   */
+  const handleApplyFix = async (fix: NonNullable<import('../api/projects').ValidationWarning['suggested_fix']>) => {
+    if (!id) return
+    try {
+      await projectsApi.applyBriefFix(id, fix.brief_path, fix.value, fix.action)
+      qc.invalidateQueries({ queryKey: ['brief', id] })
+      setMessage({ type: 'success', text: `Fix applicato: ${fix.label}. Rigenerazione piano in corso…` })
+      // Re-generate the plan so the user immediately sees the effect
+      generateMutation.mutate()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Errore applicazione fix'
+      setMessage({ type: 'error', text: `Impossibile applicare il fix: ${msg}` })
+    }
+  }
+
   const publishMutation = useMutation({
     mutationFn: () => projectsApi.publish(id!, true),
     onSuccess: () => setMessage({ type: 'success', text: 'Dry run completato. Controlla i risultati.' }),
@@ -267,7 +285,7 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'overview' && (
         <div>
-          {plan ? <PlanSummary plan={plan} /> : (
+          {plan ? <PlanSummary plan={plan} onApplyFix={handleApplyFix} /> : (
             <div style={s.card}>
               <p style={{ color: T.textGray }}>
                 {project.has_brief
@@ -283,7 +301,7 @@ export default function ProjectDetailPage() {
         <div>
           {plan ? (
             <>
-              <PlanSummary plan={plan} />
+              <PlanSummary plan={plan} onApplyFix={handleApplyFix} />
               {plan.campaigns.map(c => <CampaignCard key={c.external_key} campaign={c} />)}
             </>
           ) : <p style={{ color: T.textGray }}>Genera prima il piano.</p>}

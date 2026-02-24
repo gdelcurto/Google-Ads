@@ -285,13 +285,14 @@ class CampaignOrchestrator:
     ) -> AccountPlan:
         """
         AI-enhanced plan generation:
-          0. Pre-generate acquisition keyword themes via AI (for languages without them)
+          0. In parallel — AI budget pre-optimization + acquisition keyword pre-generation
+             (both modify the brief copy before sync generators run)
           1. Generate campaign structure via sync generate_plan()
           2. Enhance all copy with Claude (parallel per ad group)
           3. Validate enhanced copy with Claude (parallel per campaign type)
           4. Merge AI copy validation issues into plan
-          5. Run AI strategic advisor (budget, bidding, negative keywords) in parallel
-          6. Merge AI strategic insights into plan
+          5. Run AI strategic advisor (budget residual, bidding, negative keywords) in parallel
+          6. Merge AI strategic insights + build validation_warnings_structured with CTAs
         """
         import asyncio
         from app.connectors.ai_copy_generator import AICopyGenerator
@@ -301,14 +302,22 @@ class CampaignOrchestrator:
             analyze_bidding_strategy_ai,
             analyze_negative_keywords_ai,
             generate_acquisition_keywords_ai,
+            optimize_brief_budget_ai,
         )
 
-        # ── Step 0: AI acquisition keyword pre-generation ─────────────────────
-        # For languages that have no keyword themes in the brief, generate them
-        # via AI before the sync generators run (so AcquisitionSearchGenerator
-        # gets themed ad groups instead of falling back to vertical templates).
+        # ── Step 0: AI brief pre-enrichment (budget + keywords, parallel) ─────
+        # Both optimisations modify the brief BEFORE the sync generators run so
+        # the rule-based pipeline uses the AI-recommended configuration instead
+        # of the default auto-distribution or empty keyword templates.
         try:
-            ai_kw = await generate_acquisition_keywords_ai(brief, api_key)
+            budget_task = asyncio.ensure_future(optimize_brief_budget_ai(brief, api_key))
+            kw_task     = asyncio.ensure_future(generate_acquisition_keywords_ai(brief, api_key))
+            optimized_brief, ai_kw = await asyncio.gather(budget_task, kw_task)
+
+            # Apply optimised budget
+            brief = optimized_brief
+
+            # Merge AI-generated keyword themes
             if ai_kw:
                 merged_kw = dict(brief.acquisition_keywords or {})
                 merged_kw.update(ai_kw)
@@ -319,7 +328,7 @@ class CampaignOrchestrator:
                 )
         except Exception as exc:
             logger.warning(
-                f"AI keyword pre-generation skipped for project {project_id}: {exc}"
+                f"AI brief pre-enrichment partially failed for project {project_id}: {exc}"
             )
 
         # ── Step 1: Rule-based generation ─────────────────────────────────────
@@ -388,14 +397,28 @@ class CampaignOrchestrator:
                     f"AI strategic advisor error for project {project_id}: {result}"
                 )
 
-        # ── Step 6: Merge AI strategic insights into plan ─────────────────────
+        # ── Step 6: Merge AI strategic insights + build structured warnings ──────
         if advisor_issues:
             adv_warnings, adv_errors = _apply_issues_to_campaigns(
                 advisor_issues, plan.campaigns
             )
+            # Build structured warning list — carries suggested_fix for frontend CTAs
+            structured: list[dict] = [
+                {
+                    "message": issue.message,
+                    "code": issue.code,
+                    "level": issue.level,
+                    "agent": issue.agent,
+                    "suggested_fix": issue.suggested_fix,  # None or {brief_path, value, action, label}
+                }
+                for issue in advisor_issues
+            ]
             plan = plan.model_copy(update={
                 "validation_warnings": plan.validation_warnings + adv_warnings,
                 "validation_errors": plan.validation_errors + adv_errors,
+                "validation_warnings_structured": (
+                    plan.validation_warnings_structured + structured
+                ),
                 "is_valid": not (plan.validation_errors + adv_errors),
                 "publish_ready": (
                     not (plan.validation_errors + adv_errors)
@@ -404,7 +427,8 @@ class CampaignOrchestrator:
             })
             logger.info(
                 f"AI strategic advisor complete for project {project_id}: "
-                f"{len(advisor_issues)} insight(s) added"
+                f"{len(advisor_issues)} insight(s), "
+                f"{sum(1 for i in advisor_issues if i.suggested_fix)} with fix CTA"
             )
 
         return plan

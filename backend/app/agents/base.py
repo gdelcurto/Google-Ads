@@ -44,6 +44,7 @@ class ValidationIssue:
     agent: str            # agent class name that emitted this issue
     language: Optional[str] = None           # None = account-level, set = language-scoped
     campaign_type_key: Optional[str] = None  # None = all types, set = type-scoped
+    suggested_fix: Optional[dict] = None     # Structured CTA for frontend: {brief_path, value, action, label}
 
 
 class CampaignAgent(ABC):

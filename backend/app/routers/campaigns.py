@@ -186,6 +186,9 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
         "total_campaigns": plan.total_campaigns,
         "validation_errors": plan.validation_errors,
         "validation_warnings": plan.validation_warnings,
+        # Structured warnings carry optional suggested_fix for frontend CTAs.
+        # Each item: {message, code, level, agent, suggested_fix?}
+        "validation_warnings_structured": plan.validation_warnings_structured,
         "campaigns": [
             {
                 "external_key": c.external_key,
@@ -246,6 +249,91 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
             for c in plan.campaigns
         ],
     }
+
+
+@router.post("/{project_id}/apply-brief-fix")
+async def apply_brief_fix(
+    project_id: str,
+    fix: dict,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Apply a structured suggested_fix to the project's brief.
+
+    Request body:
+      {
+        "brief_path": "objectives.kpi.target_cpa_eur",  // dot-notation
+        "value": 60.0,
+        "action": "set"                                  // "set" | "append_list"
+      }
+
+    On success saves the updated brief and returns the new value.
+    The caller should then re-generate the plan to see the effect.
+    """
+    project = await _get_project_or_404(project_id, db)
+    if not project.brief_json:
+        raise HTTPException(status_code=400, detail="Brief non trovato per questo progetto.")
+
+    brief_path: str = fix.get("brief_path", "")
+    value = fix.get("value")
+    action: str = fix.get("action", "set")
+
+    if not brief_path:
+        raise HTTPException(status_code=422, detail="brief_path è obbligatorio.")
+    if value is None:
+        raise HTTPException(status_code=422, detail="value è obbligatorio.")
+
+    brief_dict: dict = json.loads(project.brief_json)
+
+    # Navigate to parent node using dot-notation
+    keys = brief_path.split(".")
+    node = brief_dict
+    try:
+        for key in keys[:-1]:
+            if key not in node:
+                node[key] = {}
+            node = node[key]
+        final_key = keys[-1]
+    except (TypeError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=f"Path non valido '{brief_path}': {exc}")
+
+    if action == "append_list":
+        existing = node.get(final_key, [])
+        if not isinstance(existing, list):
+            raise HTTPException(status_code=422, detail=f"Il campo '{brief_path}' non è una lista.")
+        if not isinstance(value, list):
+            raise HTTPException(status_code=422, detail="Per 'append_list' value deve essere un array.")
+        # Deduplicate while preserving order
+        seen = set(existing)
+        for item in value:
+            if item not in seen:
+                existing.append(item)
+                seen.add(item)
+        node[final_key] = existing
+    else:  # "set"
+        node[final_key] = value
+
+    # Re-validate the patched brief
+    try:
+        Brief(**brief_dict)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Brief non valido dopo il fix: {exc}")
+
+    project.brief_json = json.dumps(brief_dict)
+
+    log = AuditLog(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="apply_brief_fix",
+        entity_type="project",
+        entity_id=project_id,
+        details=json.dumps({"brief_path": brief_path, "action": action}),
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"status": "ok", "brief_path": brief_path, "value": value}
 
 
 async def _get_project_or_404(project_id: str, db: AsyncSession) -> Project:

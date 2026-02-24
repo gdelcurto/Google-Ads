@@ -1,4 +1,4 @@
-import { type AccountPlanPreview, type CampaignPreview } from '../../api/projects'
+import { type AccountPlanPreview, type CampaignPreview, type ValidationWarning } from '../../api/projects'
 import { T } from '../../styles/theme'
 import { TYPE_COLOR, TYPE_LABEL, CAMPAIGN_STRATEGY } from './constants'
 
@@ -55,7 +55,13 @@ function groupBy<K extends string>(campaigns: CampaignPreview[], keyFn: (c: Camp
   return Array.from(map.entries())
 }
 
-export function PlanSummary({ plan }: { plan: AccountPlanPreview }) {
+export function PlanSummary({
+  plan,
+  onApplyFix,
+}: {
+  plan: AccountPlanPreview
+  onApplyFix?: (fix: NonNullable<ValidationWarning['suggested_fix']>) => Promise<void>
+}) {
   const publishable = plan.campaigns.filter(c => c.can_publish).length
   const blocked = plan.campaigns.filter(c => !c.can_publish).length
   const totalBudget = plan.campaigns.reduce((sum, c) => sum + c.budget_daily_eur, 0)
@@ -101,7 +107,37 @@ export function PlanSummary({ plan }: { plan: AccountPlanPreview }) {
           <ul style={{ marginLeft: 16 }}>{plan.validation_errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
         </div>
       )}
-      {plan.validation_warnings.length > 0 && (
+
+      {/* Structured AI advisor warnings with optional 'Applica' CTA */}
+      {(plan.validation_warnings_structured?.length > 0) ? (
+        <div style={s.alert}>
+          <strong>Warning AI:</strong>
+          <ul style={{ marginLeft: 16, marginTop: 6 }}>
+            {plan.validation_warnings_structured.map((w, i) => (
+              <li key={i} style={{ marginBottom: 8, lineHeight: 1.5 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: T.textGray, marginRight: 6, textTransform: 'uppercase' }}>
+                  [{w.code}]
+                </span>
+                {w.message}
+                {w.suggested_fix && onApplyFix && (
+                  <button
+                    onClick={() => onApplyFix(w.suggested_fix!)}
+                    style={{
+                      marginLeft: 10, padding: '2px 10px',
+                      fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      background: T.primary, color: '#fff', border: 'none',
+                      borderRadius: 4,
+                    }}
+                    title={`Applica al brief: ${w.suggested_fix.brief_path}`}
+                  >
+                    {w.suggested_fix.label}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : plan.validation_warnings.length > 0 && (
         <div style={s.alert}>
           <strong>Warning:</strong>
           <ul style={{ marginLeft: 16 }}>{plan.validation_warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
