@@ -859,8 +859,9 @@ async def run_autofill_job(
 
     Wrapped in asyncio.wait_for with a global timeout to avoid hung jobs.
     """
-    await update_status(job_id, "running")
+    logger.info(f"AutofillJob {job_id} background task started — url={url} langs={langs}")
     try:
+        await update_status(job_id, "running")
         await asyncio.wait_for(
             _run_autofill_pipeline(job_id, url, langs, content, api_key, update_status),
             timeout=_JOB_TIMEOUT_SECONDS,
