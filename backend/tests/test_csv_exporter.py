@@ -131,7 +131,7 @@ def test_csv_has_required_headers():
     output = exporter.export(plan)
     headers, _ = _parse_csv(output)
 
-    required = {"Type", "Campaign", "Ad Group", "Status"}
+    required = {"Campaign", "Ad Group", "Status", "Campaign Status", "Ad Group Status"}
     missing = required - set(headers)
     assert not missing, f"Missing required headers: {missing}"
 
@@ -143,10 +143,12 @@ def test_csv_has_keyword_and_ad_rows():
     output = exporter.export(plan)
     _, rows = _parse_csv(output)
 
-    types = {r.get("Type", "") for r in rows}
-    assert any("Keyword" in t for t in types), f"No Keyword rows found — types: {types}"
-    assert any("Responsive" in t or "RSA" in t or "Ad" in t for t in types), \
-        f"No Ad rows found — types: {types}"
+    # In flat format there is no "Type" column — identify rows by their unique columns
+    kw_texts = [r.get("Keyword", "") for r in rows]
+    assert any(kw_texts), "No Keyword rows found (Keyword column empty in all rows)"
+    ad_types = [r.get("Ad type", "") for r in rows]
+    assert any("search ad" in t.lower() for t in ad_types), \
+        f"No RSA rows found — Ad type values: {set(ad_types)}"
 
 
 # ── test_csv_negative_keywords_match_type ─────────────────────────────────────

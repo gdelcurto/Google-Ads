@@ -300,4 +300,4 @@ class TestCsvExporter:
         plan = CampaignOrchestrator().generate_plan(sample_brief, "test-csv4")
         csv_output = export_plan_to_csv(plan)
 
-        assert "Responsive Search Ad" in csv_output
+        assert "Responsive search ad" in csv_output
