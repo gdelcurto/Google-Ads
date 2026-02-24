@@ -332,6 +332,9 @@ export const autofillApi = {
       suggested_total_monthly_eur: number
       min_budget_warning: string | null
       api_call_log?: ApiCallLogEntry
+      ai_raw_response?: string | null
+      ai_prompt_used?: string | null
+      reasoning_steps?: Array<{ step: number; label: string; detail: string; value: string }>
     }>('/autofill/budget-strategy', data).then((r) => r.data),
 }
 

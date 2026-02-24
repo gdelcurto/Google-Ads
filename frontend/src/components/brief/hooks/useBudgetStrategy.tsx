@@ -15,6 +15,9 @@ export interface StrategyResult {
   overall_strategy: string
   suggested_total_monthly_eur: number
   min_budget_warning: string | null
+  ai_raw_response?: string | null
+  ai_prompt_used?: string | null
+  reasoning_steps?: Array<{ step: number; label: string; detail: string; value: string }>
 }
 
 interface UseBudgetStrategyParams {
@@ -80,6 +83,9 @@ export function useBudgetStrategy({
         budget_split: data.budget_split,
         daily_by_type_lang: data.daily_by_type_lang,
         rationale: data.rationale || {},
+        ai_raw_response: data.ai_raw_response ?? null,
+        ai_prompt_used: data.ai_prompt_used ?? null,
+        reasoning_steps: data.reasoning_steps ?? [],
       })
       localStorage.setItem(key, JSON.stringify(existing.slice(0, 10)))
     },

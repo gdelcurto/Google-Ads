@@ -81,6 +81,9 @@ class BudgetStrategyResponse(BaseModel):
     api_call_log: Optional[dict] = None
     suggested_total_monthly_eur: float
     min_budget_warning: Optional[str] = None
+    ai_raw_response: Optional[str] = None
+    ai_prompt_used: Optional[str] = None
+    reasoning_steps: Optional[List[dict]] = None
 
 
 class StartJobRequest(BaseModel):

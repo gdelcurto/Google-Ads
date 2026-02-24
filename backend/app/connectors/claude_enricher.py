@@ -790,38 +790,72 @@ Regole:
         """
         user_budget = payload.get("total_monthly_budget_eur", 0) or 0
         budget_provided = user_budget > 0
+        stars = payload.get("stars", 3)
+        hotel_category = payload.get("hotel_category", "city_hotel")
+        languages = payload.get("languages", ["IT"])
 
-        # Static fallback total (used only when AI fails)
-        static_total = (
-            float(user_budget) if budget_provided
-            else _suggest_budget(payload.get("stars", 3), payload.get("hotel_category", "city_hotel"))
-        )
+        # ── Step 1: Static reference budget ──────────────────────────────────
+        static_base = _suggest_budget(stars, hotel_category)
+        static_total = float(user_budget) if budget_provided else static_base
         static_recommended, warning = _select_campaign_types(static_total)
         static_split = _compute_split(static_recommended)
+        steps: list[dict] = []
+        steps.append({
+            "step": 1,
+            "label": "Budget di riferimento statico",
+            "detail": (
+                f"Categoria: {hotel_category}, stelle: {stars} → "
+                f"base €{static_base:.0f}/mese"
+                + (f" (fissato dal cliente: €{user_budget:.0f})" if budget_provided else "")
+            ),
+            "value": f"€{static_total:.0f}/mese",
+        })
 
-        langs_str = ", ".join(payload.get("languages", ["IT"]))
-        n_langs = len(payload.get("languages", ["IT"]))
+        # ── Step 2: Campaign type pre-selection (static) ──────────────────────
+        steps.append({
+            "step": 2,
+            "label": "Tipi campagna (selezione statica)",
+            "detail": (
+                f"Budget €{static_total:.0f} → soglia: "
+                + ("solo brand+acquisition (<€600)" if static_total < 600
+                   else "brand+acq+retargeting (<€1500)" if static_total < 1500
+                   else "brand+acq+pmax+retargeting (<€3000)" if static_total < 3000
+                   else "tutti i tipi (≥€3000)")
+            ),
+            "value": ", ".join(static_recommended),
+        })
+
+        # ── Step 3: Static split weights ─────────────────────────────────────
+        steps.append({
+            "step": 3,
+            "label": "Split pesi statici",
+            "detail": "Pesi di base normalizzati sui tipi selezionati",
+            "value": " · ".join(
+                f"{k} {round(v * 100)}%"
+                for k, v in static_split.items()
+            ),
+        })
+
+        langs_str = ", ".join(languages)
+        n_langs = len(languages)
         all_types = list(_BASE_WEIGHTS.keys())
         split_example = ", ".join(f'"{t}": 20' for t in all_types[:3])
 
-        # Build the budget section of the prompt differently depending on whether
-        # the user has already provided a fixed total or we need AI to recommend one.
         if budget_provided:
             budget_section = f"BUDGET MENSILE TOTALE (fissato dal cliente): €{user_budget:.0f}"
-            total_field = ""  # Claude doesn't need to suggest a total
+            total_field = ""
         else:
-            static_hint = _suggest_budget(payload.get("stars", 3), payload.get("hotel_category", "city_hotel"))
             budget_section = (
                 f"BUDGET MENSILE: non specificato dal cliente.\n"
                 f"Suggerisci il budget mensile ottimale (intero, multiplo di 100) per questo profilo.\n"
-                f"Riferimento indicativo: €{static_hint:.0f} (valore di partenza, puoi discostartene)."
+                f"Riferimento indicativo: €{static_base:.0f} (valore di partenza, puoi discostartene)."
             )
             total_field = '"suggested_total_eur": 1500,'
 
         ai_prompt = f"""Sei uno stratega Google Ads specializzato in hotel e hospitality.
 Definisci la strategia budget OTTIMALE per questo hotel specifico.
 
-HOTEL: {payload.get('brand_name', '')} — {payload.get('hotel_category', '')} {payload.get('stars', 3)} stelle
+HOTEL: {payload.get('brand_name', '')} — {hotel_category} {stars} stelle
 PAESE: {payload.get('country', 'IT')} — LINGUE: {langs_str} ({n_langs} mercati target)
 {budget_section}
 
@@ -833,7 +867,7 @@ LINEE GUIDA:
 - Budget €600-€1499: aggiungi retargeting
 - Budget €1500-€2999: aggiungi performance_max
 - Budget ≥€3000: valuta demand_gen
-Benchmark % per {payload.get('hotel_category', 'city_hotel')} {payload.get('stars', 3)}★:
+Benchmark % per {hotel_category} {stars}★:
   search_brand 18-25%, search_acquisition 30-45%, performance_max 20-30%,
   retargeting 8-15%, demand_gen 5-12% (solo se budget >€2500)
 
@@ -859,6 +893,16 @@ Regole JSON:
         recommended = static_recommended
         split = static_split
         total_monthly = static_total
+        ai_raw_response: Optional[str] = None
+        ai_used = False
+
+        # ── Step 4: AI call ───────────────────────────────────────────────────
+        steps.append({
+            "step": 4,
+            "label": "Chiamata AI (Claude Haiku)",
+            "detail": f"Prompt: {len(ai_prompt)} caratteri — skills: BID_STRATEGY_RECOMMENDATIONS + BUDGET_SCENARIO_PLANNER",
+            "value": "in corso…",
+        })
 
         try:
             message = await self._client.messages.create(
@@ -869,33 +913,68 @@ Regole JSON:
             )
             api_log = _api_log_entry(
                 agent="BudgetStrategyAgent",
-                reason=f"AI total+strategy+split — {payload.get('hotel_category', '')} {payload.get('stars', 3)}★",
+                reason=f"AI total+strategy+split — {hotel_category} {stars}★",
                 endpoint="POST /api/autofill/budget-strategy",
                 model="claude-haiku-4-5-20251001",
                 usage=message.usage,
             )
-            raw = message.content[0].text.strip()
-            logger.debug(f"BudgetStrategy Claude raw: {raw[:600]}")
-            parsed = json.loads(_extract_json_object(raw))
+            ai_raw_response = message.content[0].text.strip()
+            ai_used = True
+            steps[-1]["value"] = (
+                f"OK — {message.usage.input_tokens} token in, "
+                f"{message.usage.output_tokens} token out"
+            )
+            logger.debug(f"BudgetStrategy Claude raw: {ai_raw_response[:600]}")
+            parsed = json.loads(_extract_json_object(ai_raw_response))
 
-            # ── AI-suggested total budget (only when not provided by user) ────
+            # ── Step 5: AI total budget ───────────────────────────────────────
             if not budget_provided:
                 ai_total = parsed.get("suggested_total_eur")
                 if isinstance(ai_total, (int, float)) and 100 <= ai_total <= 50000:
                     total_monthly = float(ai_total)
-                    # Recompute warning threshold with AI total
                     _, warning = _select_campaign_types(total_monthly)
+                    steps.append({
+                        "step": 5,
+                        "label": "Budget totale suggerito da AI",
+                        "detail": f"Statico: €{static_total:.0f} → AI: €{total_monthly:.0f}",
+                        "value": f"€{total_monthly:.0f}/mese",
+                    })
                     logger.info(
                         f"BudgetStrategy AI total: €{static_total:.0f} (static) → "
-                        f"€{total_monthly:.0f} (AI) for {payload.get('hotel_category')} {payload.get('stars')}★"
+                        f"€{total_monthly:.0f} (AI) for {hotel_category} {stars}★"
                     )
+                else:
+                    steps.append({
+                        "step": 5,
+                        "label": "Budget totale suggerito da AI",
+                        "detail": f"AI non ha fornito valore valido — mantenuto statico: €{static_total:.0f}",
+                        "value": f"€{static_total:.0f}/mese (statico)",
+                    })
 
-            # ── Recommended types (validate against known keys) ────────────────
+            # ── Step 6: AI recommended types ──────────────────────────────────
             ai_types = [t for t in parsed.get("recommended_types", []) if t in _BASE_WEIGHTS]
             if ai_types:
                 recommended = ai_types
+                steps.append({
+                    "step": 6,
+                    "label": "Tipi campagna scelti da AI",
+                    "detail": (
+                        f"Statico: [{', '.join(static_recommended)}] → "
+                        f"AI: [{', '.join(ai_types)}]"
+                        if ai_types != static_recommended
+                        else "AI conferma la selezione statica"
+                    ),
+                    "value": ", ".join(recommended),
+                })
+            else:
+                steps.append({
+                    "step": 6,
+                    "label": "Tipi campagna scelti da AI",
+                    "detail": "AI non ha fornito tipi validi — mantenuto fallback statico",
+                    "value": ", ".join(recommended),
+                })
 
-            # ── AI-generated split percentages ────────────────────────────────
+            # ── Step 7: AI split percentages ──────────────────────────────────
             ai_split_raw: dict = parsed.get("split", {})
             ai_split = {
                 k: float(v)
@@ -903,26 +982,48 @@ Regole JSON:
                 if k in recommended and isinstance(v, (int, float)) and v > 0
             }
             if ai_split:
-                # Fill any missing types proportionally
                 for t in recommended:
                     if t not in ai_split:
                         ai_split[t] = _BASE_WEIGHTS.get(t, 1.0) * 10
                 total_pct = sum(ai_split.values())
                 split = {k: ai_split[k] / total_pct for k in recommended}
+                raw_sum = sum(ai_split_raw.get(k, 0) for k in recommended if isinstance(ai_split_raw.get(k), (int, float)))
+                steps.append({
+                    "step": 7,
+                    "label": "Split AI + normalizzazione",
+                    "detail": (
+                        f"AI grezzo: {' · '.join(f'{k} {round(float(ai_split_raw.get(k, 0)))}%' for k in recommended if k in ai_split_raw)}"
+                        + (f" (somma={round(raw_sum)}% → normalizzato a 100%)" if abs(raw_sum - 100) > 1 else " (somma già 100%)")
+                    ),
+                    "value": " · ".join(f"{k} {round(v * 100)}%" for k, v in split.items()),
+                })
                 logger.info(
                     f"BudgetStrategy AI split: "
                     + ", ".join(f"{k}={round(v*100)}%" for k, v in split.items())
                 )
             else:
-                logger.warning("BudgetStrategy: no valid split from Claude, using static fallback")
+                steps.append({
+                    "step": 7,
+                    "label": "Split AI + normalizzazione",
+                    "detail": "AI non ha fornito split valido — usato fallback statico",
+                    "value": " · ".join(f"{k} {round(v * 100)}%" for k, v in split.items()),
+                })
                 split = _compute_split(recommended)
+                logger.warning("BudgetStrategy: no valid split from Claude, using static fallback")
 
-            # ── Rationale text per type ───────────────────────────────────────
+            # ── Step 8: Rationale text ────────────────────────────────────────
             overall_strategy = parsed.get("overall", "")
             for t in recommended:
                 rationale[t] = parsed.get(t, _STATIC_RATIONALE.get(t, ""))
+            steps.append({
+                "step": 8,
+                "label": "Rationale AI per tipo",
+                "detail": f"{len(rationale)} tipi con testo di motivazione generato da AI",
+                "value": "OK",
+            })
 
         except Exception as exc:
+            steps[-1]["value"] = f"FALLBACK (errore: {exc})"
             logger.warning(f"BudgetStrategy AI failed: {exc}. Using static fallback.")
             total_monthly = static_total
             recommended = static_recommended
@@ -934,7 +1035,20 @@ Regole JSON:
                 f"€{total_monthly:.0f}/mese."
             )
 
-        daily = _compute_daily(split, total_monthly, payload.get("languages", ["IT"]))
+        # ── Step 9: Daily budget computation ─────────────────────────────────
+        daily = _compute_daily(split, total_monthly, languages)
+        steps.append({
+            "step": 9,
+            "label": "Budget giornaliero per lingua",
+            "detail": (
+                f"€{total_monthly:.0f}/mese ÷ 30.44 giorni ÷ {n_langs} lingue"
+            ),
+            "value": " · ".join(
+                f"{_FRONTEND_KEYS.get(t, t)} {lang} €{v:.2f}/g"
+                for t, by_lang in zip(split.keys(), daily.values())
+                for lang, v in list(by_lang.items())[:1]  # show first lang as sample
+            ),
+        })
 
         # Prepend split summary so the user immediately sees AI-generated percentages
         _type_labels = {
@@ -947,7 +1061,7 @@ Regole JSON:
             for k, v in split.items()
         )
         full_strategy = (
-            f"Distribuzione AI: {split_summary}\n\n{overall_strategy}".strip()
+            f"Distribuzione {'AI' if ai_used else 'statica'}: {split_summary}\n\n{overall_strategy}".strip()
             if overall_strategy else split_summary
         )
 
@@ -960,6 +1074,9 @@ Regole JSON:
             "suggested_total_monthly_eur": total_monthly,
             "min_budget_warning": warning,
             "api_call_log": api_log,
+            "ai_raw_response": ai_raw_response,
+            "ai_prompt_used": ai_prompt,
+            "reasoning_steps": steps,
         }
 
 
