@@ -36,7 +36,7 @@ export function useCopySuggest({ form, setLangs, setErrors, projectId }: UseCopy
         strengths:      toLines(form.strengths),
       })
     },
-    onSuccess: (data, { langIdx, lang, target }) => {
+    onSuccess: (data, { langIdx, target }) => {
       const descriptions = data.descriptions.join('\n')
       const headlines    = data.headlines.join('\n')
 
