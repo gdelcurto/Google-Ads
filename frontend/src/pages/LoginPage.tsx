@@ -106,8 +106,8 @@ export default function LoginPage() {
           <img src={T.logoApp} alt="AdAtelier" style={s.logo} />
         </div>
         <div style={s.cardBody}>
-          <div style={s.title}>Google Ads Campaigns</div>
-          <div style={s.subtitle}>Piattaforma interna — Blastness / Mentefredda</div>
+          <div style={s.title}>Ad Atelier</div>
+          <div style={s.subtitle}>Boutique Campaigns. Industrial Intelligence.</div>
           {error && <div style={s.error}>{error}</div>}
           <form onSubmit={handleLogin}>
             <label style={s.label}>Email</label>
