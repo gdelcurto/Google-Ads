@@ -159,6 +159,27 @@ export const projectsApi = {
       )
       .then((r) => r.data),
 
+  /**
+   * Apply all structured suggested_fix items atomically to the project brief.
+   * After calling this the caller should re-generate the plan once.
+   */
+  applyAllBriefFixes: (
+    id: string,
+    fixes: NonNullable<ValidationWarning['suggested_fix']>[],
+  ) =>
+    api
+      .post<{ status: string; applied: { brief_path: string; action: string }[]; count: number }>(
+        `/projects/${id}/apply-all-brief-fixes`,
+        {
+          fixes: fixes.map(f => ({
+            brief_path: f.brief_path,
+            value: f.value,
+            action: f.action,
+          })),
+        },
+      )
+      .then((r) => r.data),
+
   softDelete: (id: string) =>
     api.delete<{ detail: string }>(`/projects/${id}`).then((r) => r.data),
 

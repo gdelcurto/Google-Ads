@@ -176,11 +176,29 @@ export default function ProjectDetailPage() {
       await projectsApi.applyBriefFix(id, fix.brief_path, fix.value, fix.action)
       qc.invalidateQueries({ queryKey: ['brief', id] })
       setMessage({ type: 'success', text: `Fix applicato: ${fix.label}. Rigenerazione piano in corso…` })
-      // Re-generate the plan so the user immediately sees the effect
       generateMutation.mutate()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Errore applicazione fix'
       setMessage({ type: 'error', text: `Impossibile applicare il fix: ${msg}` })
+    }
+  }
+
+  /**
+   * Apply all suggested_fix items at once, then regenerate the plan once.
+   */
+  const handleApplyAllFixes = async (fixes: NonNullable<import('../api/projects').ValidationWarning['suggested_fix']>[]) => {
+    if (!id) return
+    try {
+      const result = await projectsApi.applyAllBriefFixes(id, fixes)
+      qc.invalidateQueries({ queryKey: ['brief', id] })
+      setMessage({
+        type: 'success',
+        text: `${result.count} suggeriment${result.count === 1 ? 'o applicato' : 'i applicati'}. Rigenerazione piano in corso…`,
+      })
+      generateMutation.mutate()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Errore applicazione fix'
+      setMessage({ type: 'error', text: `Impossibile applicare i fix: ${msg}` })
     }
   }
 
@@ -285,7 +303,7 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'overview' && (
         <div>
-          {plan ? <PlanSummary plan={plan} onApplyFix={handleApplyFix} /> : (
+          {plan ? <PlanSummary plan={plan} onApplyFix={handleApplyFix} onApplyAllFixes={handleApplyAllFixes} /> : (
             <div style={s.card}>
               <p style={{ color: T.textGray }}>
                 {project.has_brief
@@ -301,7 +319,7 @@ export default function ProjectDetailPage() {
         <div>
           {plan ? (
             <>
-              <PlanSummary plan={plan} onApplyFix={handleApplyFix} />
+              <PlanSummary plan={plan} onApplyFix={handleApplyFix} onApplyAllFixes={handleApplyAllFixes} />
               {plan.campaigns.map(c => <CampaignCard key={c.external_key} campaign={c} />)}
             </>
           ) : <p style={{ color: T.textGray }}>Genera prima il piano.</p>}

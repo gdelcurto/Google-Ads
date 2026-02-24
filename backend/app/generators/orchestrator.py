@@ -309,10 +309,11 @@ class CampaignOrchestrator:
         # Both optimisations modify the brief BEFORE the sync generators run so
         # the rule-based pipeline uses the AI-recommended configuration instead
         # of the default auto-distribution or empty keyword templates.
+        budget_was_optimized = False
         try:
             budget_task = asyncio.ensure_future(optimize_brief_budget_ai(brief, api_key))
             kw_task     = asyncio.ensure_future(generate_acquisition_keywords_ai(brief, api_key))
-            optimized_brief, ai_kw = await asyncio.gather(budget_task, kw_task)
+            (optimized_brief, budget_was_optimized), ai_kw = await asyncio.gather(budget_task, kw_task)
 
             # Apply optimised budget
             brief = optimized_brief
@@ -379,14 +380,17 @@ class CampaignOrchestrator:
                 ),
             })
 
-        # ── Step 5: AI strategic advisor (budget, bidding, negatives) ─────────
-        # Run all three advisor analyses in parallel — each is independent.
-        advisor_results = await asyncio.gather(
-            analyze_budget_strategy_ai(brief, api_key),
+        # ── Step 5: AI strategic advisor (budget residual, bidding, negatives) ─
+        # When the brief was already AI-optimized in Step 0, skip the residual
+        # budget check to avoid spurious SEARCH_BRAND_UNDERINVESTED warnings.
+        advisor_coroutines = [
             analyze_bidding_strategy_ai(brief, api_key),
             analyze_negative_keywords_ai(brief, plan.campaigns, api_key),
-            return_exceptions=True,
-        )
+        ]
+        if not budget_was_optimized:
+            advisor_coroutines.insert(0, analyze_budget_strategy_ai(brief, api_key))
+
+        advisor_results = await asyncio.gather(*advisor_coroutines, return_exceptions=True)
 
         advisor_issues: list[ValidationIssue] = []
         for result in advisor_results:

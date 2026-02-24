@@ -251,6 +251,39 @@ def _plan_to_preview(plan: AccountPlan) -> dict:
     }
 
 
+def _apply_fix_to_dict(brief_dict: dict, brief_path: str, value: object, action: str) -> None:
+    """
+    Apply a single fix to brief_dict in-place using dot-notation path.
+    Raises ValueError on invalid path or mismatched action/type.
+    """
+    keys = brief_path.split(".")
+    node = brief_dict
+    try:
+        for key in keys[:-1]:
+            if key not in node:
+                node[key] = {}
+            node = node[key]
+        final_key = keys[-1]
+    except (TypeError, KeyError) as exc:
+        raise ValueError(f"Path non valido '{brief_path}': {exc}")
+
+    if action == "append_list":
+        existing = node.get(final_key, [])
+        if not isinstance(existing, list):
+            raise ValueError(f"Il campo '{brief_path}' non è una lista.")
+        if not isinstance(value, list):
+            raise ValueError("Per 'append_list' value deve essere un array.")
+        # Deduplicate while preserving order
+        seen = set(existing)
+        for item in value:
+            if item not in seen:
+                existing.append(item)
+                seen.add(item)
+        node[final_key] = existing
+    else:  # "set"
+        node[final_key] = value
+
+
 @router.post("/{project_id}/apply-brief-fix")
 async def apply_brief_fix(
     project_id: str,
@@ -286,33 +319,10 @@ async def apply_brief_fix(
 
     brief_dict: dict = json.loads(project.brief_json)
 
-    # Navigate to parent node using dot-notation
-    keys = brief_path.split(".")
-    node = brief_dict
     try:
-        for key in keys[:-1]:
-            if key not in node:
-                node[key] = {}
-            node = node[key]
-        final_key = keys[-1]
-    except (TypeError, KeyError) as exc:
-        raise HTTPException(status_code=422, detail=f"Path non valido '{brief_path}': {exc}")
-
-    if action == "append_list":
-        existing = node.get(final_key, [])
-        if not isinstance(existing, list):
-            raise HTTPException(status_code=422, detail=f"Il campo '{brief_path}' non è una lista.")
-        if not isinstance(value, list):
-            raise HTTPException(status_code=422, detail="Per 'append_list' value deve essere un array.")
-        # Deduplicate while preserving order
-        seen = set(existing)
-        for item in value:
-            if item not in seen:
-                existing.append(item)
-                seen.add(item)
-        node[final_key] = existing
-    else:  # "set"
-        node[final_key] = value
+        _apply_fix_to_dict(brief_dict, brief_path, value, action)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
     # Re-validate the patched brief
     try:
@@ -334,6 +344,78 @@ async def apply_brief_fix(
     await db.commit()
 
     return {"status": "ok", "brief_path": brief_path, "value": value}
+
+
+@router.post("/{project_id}/apply-all-brief-fixes")
+async def apply_all_brief_fixes(
+    project_id: str,
+    body: dict,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Apply all structured suggested_fix items to the project's brief atomically.
+
+    Request body:
+      {
+        "fixes": [
+          {"brief_path": "objectives.kpi.target_cpa_eur", "value": 60.0, "action": "set"},
+          {"brief_path": "acquisition_keywords.IT.negative_keywords",
+           "value": ["hostel", "low cost"], "action": "append_list"}
+        ]
+      }
+
+    All fixes are applied to the same brief dict before re-validation,
+    so the caller needs to trigger only one re-generation.
+    """
+    project = await _get_project_or_404(project_id, db)
+    if not project.brief_json:
+        raise HTTPException(status_code=400, detail="Brief non trovato per questo progetto.")
+
+    fixes: list = body.get("fixes", [])
+    if not fixes:
+        raise HTTPException(status_code=422, detail="Nessun fix fornito.")
+
+    brief_dict: dict = json.loads(project.brief_json)
+    applied: list[dict] = []
+
+    for fix in fixes:
+        brief_path: str = fix.get("brief_path", "")
+        value = fix.get("value")
+        action: str = fix.get("action", "set")
+
+        if not brief_path or value is None:
+            continue  # Skip malformed entries silently
+
+        try:
+            _apply_fix_to_dict(brief_dict, brief_path, value, action)
+            applied.append({"brief_path": brief_path, "action": action})
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+
+    if not applied:
+        raise HTTPException(status_code=422, detail="Nessun fix valido da applicare.")
+
+    # Re-validate the fully patched brief once
+    try:
+        Brief(**brief_dict)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Brief non valido dopo i fix: {exc}")
+
+    project.brief_json = json.dumps(brief_dict)
+
+    log = AuditLog(
+        project_id=project_id,
+        user_id=current_user.user_id,
+        action="apply_all_brief_fixes",
+        entity_type="project",
+        entity_id=project_id,
+        details=json.dumps({"applied": applied, "count": len(applied)}),
+    )
+    db.add(log)
+    await db.commit()
+
+    return {"status": "ok", "applied": applied, "count": len(applied)}
 
 
 async def _get_project_or_404(project_id: str, db: AsyncSession) -> Project:

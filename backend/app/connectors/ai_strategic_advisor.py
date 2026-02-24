@@ -91,48 +91,110 @@ def _parse_keyword_themes_text(text: str) -> Dict[str, List[str]]:
 
 # ── Budget Pre-optimization ───────────────────────────────────────────────────
 
-async def optimize_brief_budget_ai(brief: "Brief", api_key: str) -> "Brief":
+async def optimize_brief_budget_ai(brief: "Brief", api_key: str) -> "tuple[Brief, bool]":
     """
     Apply AI-recommended budget allocation to the brief BEFORE campaign generation.
 
-    Calls ClaudeEnricher.suggest_budget_strategy() to get an optimal split
-    based on the hotel profile and total budget, then rebuilds
-    budgets.by_campaign_type with the AI-recommended weights.
+    Calls Claude directly (not the static _BASE_WEIGHTS path) to get optimal split
+    percentages for the active campaign types, then rebuilds budgets.by_campaign_type.
 
-    Returns a modified brief copy. Falls back to the original brief silently
-    on any error so generation always proceeds.
+    Returns (modified_brief, True) when the allocation was changed,
+    (original_brief, False) on any error or if no valid split was returned.
+    This flag lets the orchestrator skip the residual budget advisor step.
     """
-    from app.connectors.claude_enricher import ClaudeEnricher
+    import anthropic
     from app.domain.schemas.brief import BudgetByLanguage
 
     total = brief.budgets.total_monthly_eur
     if total <= 0:
-        return brief
+        return brief, False
 
     lang_codes = [lang.code for lang in brief.languages]
+    n_langs = max(len(lang_codes), 1)
+    hotel_cat = brief.hotel_specifics.category.value
+    stars = brief.hotel_specifics.stars
 
-    payload = {
-        "brand_name": brief.client.brand_name,
-        "hotel_category": brief.hotel_specifics.category.value,
-        "stars": brief.hotel_specifics.stars,
-        "country": brief.client.country,
-        "languages": lang_codes,
-        "total_monthly_budget_eur": total,
-    }
+    # Determine active budget keys from the existing by_campaign_type mapping,
+    # or derive them from the campaign_types enum list in the brief.
+    if brief.budgets.by_campaign_type:
+        active_keys = list(brief.budgets.by_campaign_type.keys())
+    else:
+        _enum_to_keys: Dict[str, List[str]] = {
+            "search": ["search_brand", "search_acquisition"],
+            "performance_max": ["performance_max"],
+            "display": ["retargeting"],
+            "demand_gen": ["demand_gen"],
+        }
+        active_keys = []
+        for ct in brief.campaign_types:
+            for k in _enum_to_keys.get(ct.value, []):
+                if k not in active_keys:
+                    active_keys.append(k)
+
+    if not active_keys:
+        return brief, False
+
+    keys_json = "{" + ", ".join(f'"{k}": <intero>' for k in active_keys) + "}"
+    existing_pcts = {
+        k: round(v.total / total * 100, 1)
+        for k, v in brief.budgets.by_campaign_type.items()
+    } if brief.budgets.by_campaign_type else {}
+    existing_str = (
+        ", ".join(f"{k}: {p:.1f}%" for k, p in existing_pcts.items())
+        if existing_pcts else "non definita"
+    )
+
+    prompt = f"""Sei un esperto Google Ads per l'hospitality. Definisci la distribuzione percentuale ottimale del budget mensile tra i tipi di campagna per questo hotel.
+
+PROFILO: {hotel_cat} {stars}★ — Budget totale €{total:.0f}/mese
+TIPI ATTIVI: {', '.join(active_keys)}
+DISTRIBUZIONE ATTUALE: {existing_str}
+
+Rispondi SOLO con JSON object (percentuali intere che sommano a 100):
+{keys_json}
+
+Linee guida:
+- search_brand: difesa branded (min 18-22% per hotel con concorrenza alta)
+- search_acquisition: acquisizione nuovi clienti (peso principale)
+- performance_max: per hotel con buone immagini/video
+- retargeting: solo se traffico esistente sufficiente
+- demand_gen: solo con budget >€2000/mese totale
+
+SOLO JSON, nessun testo aggiuntivo."""
 
     try:
-        enricher = ClaudeEnricher(api_key)
-        strategy = await enricher.suggest_budget_strategy(payload)
+        client = anthropic.AsyncAnthropic(api_key=api_key, max_retries=2)
+        response = await client.messages.create(
+            model=_MODEL,
+            max_tokens=200,
+            system=combined_skills(BUDGET_SCENARIO_PLANNER),
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
 
-        # budget_split: {backend_type_key: percentage}  e.g. {"search_brand": 13.3}
-        budget_split: dict = strategy.get("budget_split", {})
-        if not budget_split:
-            return brief
+        # Extract JSON object from Claude response
+        m = re.search(r'\{[^}]+\}', raw, re.DOTALL)
+        if not m:
+            logger.warning(f"AI budget optimization: no JSON object in response: {raw[:120]}")
+            return brief, False
 
-        n_langs = max(len(lang_codes), 1)
+        split_dict = json.loads(m.group(0))
+
+        # Keep only active keys with numeric values
+        validated = {
+            k: float(v) for k, v in split_dict.items()
+            if k in active_keys and isinstance(v, (int, float)) and v > 0
+        }
+        if not validated:
+            logger.warning("AI budget optimization: no valid active keys in response")
+            return brief, False
+
+        # Normalize so percentages sum to exactly 100
+        total_pct = sum(validated.values())
+        normalized = {k: v / total_pct * 100 for k, v in validated.items()}
+
         new_by_type: dict = {}
-
-        for type_key, pct in budget_split.items():
+        for type_key, pct in normalized.items():
             monthly_for_type = round(total * pct / 100, 2)
             per_lang = round(monthly_for_type / n_langs, 2)
             new_by_type[type_key] = BudgetByLanguage(
@@ -140,27 +202,23 @@ async def optimize_brief_budget_ai(brief: "Brief", api_key: str) -> "Brief":
                 by_language={lang: per_lang for lang in lang_codes},
             )
 
-        # Merge: AI allocation wins for recommended types;
-        # types in the brief but not in the AI recommendation keep their values
-        # (e.g. a manually configured demand_gen the AI didn't recommend).
+        # Merge: AI allocation wins for recommended types
         merged = dict(brief.budgets.by_campaign_type)
         merged.update(new_by_type)
 
         new_budgets = brief.budgets.model_copy(update={"by_campaign_type": merged})
         optimized = brief.model_copy(update={"budgets": new_budgets})
 
-        changed = [
-            f"{k}: €{v.total:.0f}" for k, v in new_by_type.items()
-        ]
+        changed = [f"{k}: €{v.total:.0f} ({normalized[k]:.0f}%)" for k, v in new_by_type.items()]
         logger.info(
-            f"AI budget pre-optimization applied — total €{total:.0f} → "
-            f"{', '.join(changed)}"
+            f"AI budget pre-optimization (direct Claude) applied — "
+            f"total €{total:.0f} → {', '.join(changed)}"
         )
-        return optimized
+        return optimized, True
 
     except Exception as exc:
         logger.warning(f"AI budget pre-optimization failed (using existing): {exc}")
-        return brief
+        return brief, False
 
 
 # ── Budget Strategist AI (residual post-check) ───────────────────────────────
