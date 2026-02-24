@@ -71,6 +71,7 @@ _ORDERED_HEADERS = [
     "Bid Strategy Type",
     "Target CPA",
     "Target ROAS",
+    "EU political ads",
     "Languages",
     "Start Date",
     "End Date",
@@ -131,7 +132,10 @@ class AdsEditorCsvExporter:
             rows.extend(self._asset_rows(campaign))
             rows.extend(self._pmax_rows(campaign))
 
-        rows.extend(self._global_negative_rows(plan))
+        # Global (account-level) negative keywords cannot be represented in
+        # this per-campaign CSV format — they would appear as rows with no
+        # Campaign field, which Ads Editor reads as an extra blank campaign.
+        # Skipped intentionally; manage them via Shared Negative Keyword Lists.
 
         # UTF-8 BOM so that tools like Excel / Ads Editor auto-detect encoding
         output = io.StringIO()
@@ -190,6 +194,7 @@ class AdsEditorCsvExporter:
             "Campaign Status":       campaign.status.value,
             "Networks":              self._networks(campaign),
             "Bid Strategy Type":     self._bid_strategy(campaign),
+            "EU political ads":      "No",
             "Languages":             self._languages(campaign),
             "Location":              self._location(campaign),
             "Tracking template":     s.tracking_template,
