@@ -92,10 +92,17 @@ def _truncate_assets(data: dict) -> dict:
 
 
 def _extract_json_object(raw: str) -> str:
-    """Extract the first {...} block from a Claude response, stripping ```json fences."""
-    m = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', raw, re.DOTALL)
-    if m:
-        return m.group(1)
+    """
+    Extract the outermost {...} block from a Claude response, stripping ```json fences.
+
+    Uses rfind('}') to find the outer closing brace so nested objects are preserved.
+    The greedy approach (start + rfind) is more reliable than a non-greedy regex which
+    would stop at the first } it finds (e.g. the closing brace of a nested object).
+    """
+    # Strip ```json ... ``` fences if present, then extract normally
+    fence = re.search(r'```(?:json)?\s*(\{.*\})\s*```', raw, re.DOTALL)
+    if fence:
+        raw = fence.group(1)
     start, end = raw.find('{'), raw.rfind('}')
     if start != -1 and end != -1:
         return raw[start:end + 1]
@@ -768,44 +775,45 @@ Regole:
             if not payload.get("total_monthly_budget_eur")
             else "fornito dal cliente"
         )
+        # Build example JSON template using the EXACT key names Claude must return
+        all_types = list(_BASE_WEIGHTS.keys())
+        split_example = ", ".join(f'"{t}": 20' for t in all_types[:3])
 
         ai_prompt = f"""Sei uno stratega Google Ads specializzato in hotel e hospitality.
-Definisci la strategia budget OTTIMALE per questo hotel.
+Definisci la strategia budget OTTIMALE per questo hotel specifico.
 
 HOTEL: {payload.get('brand_name', '')} — {payload.get('hotel_category', '')} {payload.get('stars', 3)} stelle
 PAESE: {payload.get('country', 'IT')}
 LINGUE: {langs_str}
 BUDGET MENSILE TOTALE: €{total_monthly:.0f} ({budget_source})
 
-Tipi campagna disponibili: search_brand, search_acquisition, performance_max, retargeting, demand_gen
+Tipi campagna disponibili (usa ESATTAMENTE questi nomi):
+  search_brand, search_acquisition, performance_max, retargeting, demand_gen
 
-LINEE GUIDA SELEZIONE:
+LINEE GUIDA SELEZIONE E PERCENTUALI:
 - Budget <€600: solo search_brand + search_acquisition
 - Budget €600-€1499: aggiungi retargeting
 - Budget €1500-€2999: aggiungi performance_max
 - Budget ≥€3000: valuta demand_gen
-- search_brand: 18-25% (difesa branded, sempre presente)
-- search_acquisition: 30-45% (acquisizione, peso principale)
-- performance_max: 20-35% (omnicanale, se budget sufficiente)
-- retargeting: 8-15% (solo se traffico esistente)
-- demand_gen: 5-12% (solo con budget >€2500/mese)
+Benchmark percentuali per categoria {payload.get('hotel_category', 'city_hotel')} {payload.get('stars', 3)}★:
+- search_brand: 18-25% (difesa branded contro OTA, sempre prioritario)
+- search_acquisition: 30-45% (acquisizione nuovi clienti, peso principale)
+- performance_max: 20-30% (omnicanale, rende bene con buone immagini)
+- retargeting: 8-15% (solo se c'è traffico pregresso)
+- demand_gen: 5-12% (solo se budget >€2500/mese)
 
-Rispondi ESCLUSIVAMENTE con JSON valido:
+Rispondi ESCLUSIVAMENTE con un oggetto JSON valido nel formato seguente
+(sostituisci i valori numerici con i tuoi, i valori in "split" devono essere interi e sommare 100):
 {{
-  "recommended_types": ["search_brand", "search_acquisition", ...],
-  "split": {{
-    "search_brand": <intero>,
-    "search_acquisition": <intero>,
-    "...": <intero>
-  }},
-  "overall": "2-3 frasi sulla strategia complessiva e budget full-funnel per questo hotel",
-  "search_brand": "2-3 frasi specifiche per questo hotel",
-  "search_acquisition": "2-3 frasi",
-  "...": "..."
+  "recommended_types": ["search_brand", "search_acquisition", "performance_max"],
+  "split": {{{split_example}}},
+  "overall": "2-3 frasi sulla strategia per questo hotel",
+  "search_brand": "rationale specifico per questo hotel",
+  "search_acquisition": "rationale",
+  "performance_max": "rationale"
 }}
 
-I valori in split devono essere interi e sommare esattamente a 100.
-Includi nel JSON una chiave di rationale per ogni tipo in recommended_types."""
+IMPORTANTE: includi in "split" SOLO i tipi in "recommended_types", con gli stessi nomi esatti."""
 
         rationale: dict[str, str] = {}
         overall_strategy = ""
@@ -828,6 +836,7 @@ Includi nel JSON una chiave di rationale per ogni tipo in recommended_types."""
                 usage=message.usage,
             )
             raw = message.content[0].text.strip()
+            logger.debug(f"BudgetStrategy Claude raw response: {raw[:500]}")
             parsed = json.loads(_extract_json_object(raw))
 
             # ── Recommended types (validate against known keys) ────────────────
@@ -837,17 +846,28 @@ Includi nel JSON una chiave di rationale per ogni tipo in recommended_types."""
 
             # ── AI-generated split percentages ────────────────────────────────
             ai_split_raw: dict = parsed.get("split", {})
+            # Keep only keys that match recommended types exactly
             ai_split = {
                 k: float(v)
                 for k, v in ai_split_raw.items()
                 if k in recommended and isinstance(v, (int, float)) and v > 0
             }
-            if ai_split and len(ai_split) == len(recommended):
+            if ai_split:
+                # Use whatever Claude provided, even if not all types are present;
+                # fill missing ones with proportional weight from _BASE_WEIGHTS
+                for t in recommended:
+                    if t not in ai_split:
+                        ai_split[t] = _BASE_WEIGHTS.get(t, 1.0) * 10
                 # Normalize so values sum to exactly 1.0
                 total_pct = sum(ai_split.values())
-                split = {k: v / total_pct for k, v in ai_split.items()}
+                split = {k: ai_split[k] / total_pct for k in recommended}
+                logger.info(
+                    f"BudgetStrategy AI split for {payload.get('hotel_category')} {payload.get('stars')}★: "
+                    + ", ".join(f"{k}={round(v*100)}%" for k, v in split.items())
+                )
             else:
-                # Fall back to static weights for the AI-chosen types
+                # No valid split from Claude → fall back to static weights
+                logger.warning("BudgetStrategy: no valid split from Claude, using static fallback")
                 split = _compute_split(recommended)
 
             # ── Rationale text per type ───────────────────────────────────────
@@ -869,12 +889,27 @@ Includi nel JSON una chiave di rationale per ogni tipo in recommended_types."""
 
         daily = _compute_daily(split, total_monthly, payload.get("languages", ["IT"]))
 
+        # Prepend the AI-generated split summary to overall_strategy so the user
+        # can immediately see the percentages differ from the static defaults.
+        _type_labels = {
+            "search_brand": "Brand Search",
+            "search_acquisition": "Acquisition",
+            "performance_max": "Performance Max",
+            "retargeting": "Retargeting",
+            "demand_gen": "Demand Gen",
+        }
+        split_summary = " · ".join(
+            f"{_type_labels.get(k, k)} {round(v * 100)}%"
+            for k, v in split.items()
+        )
+        full_strategy = f"Distribuzione AI: {split_summary}\n\n{overall_strategy}".strip() if overall_strategy else split_summary
+
         return {
             "recommended_types": recommended,
             "budget_split": {k: round(v * 100, 1) for k, v in split.items()},
             "daily_by_type_lang": daily,
             "rationale": rationale,
-            "overall_strategy": overall_strategy,
+            "overall_strategy": full_strategy,
             "suggested_total_monthly_eur": total_monthly,
             "min_budget_warning": warning,
             "api_call_log": api_log,
