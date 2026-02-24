@@ -322,11 +322,12 @@ export default function Layout() {
         <Link to="/" style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: SIDEBAR_W, height: 56, flexShrink: 0,
+          background: '#fff',
         }}>
           <img
-            src={T.logo}
+            src="https://www.blastness.com/loghi/2342/logofooter.png"
             alt="Blastness"
-            style={{ width: 28, objectFit: 'contain', filter: 'brightness(0) invert(1)' }}
+            style={{ width: 34, objectFit: 'contain' }}
           />
         </Link>
 
