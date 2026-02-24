@@ -6,6 +6,7 @@ import { getMyPermissions, type MyPermissions, DEFAULT_ALL_TABS } from '../api/u
 import BriefForm from '../components/BriefForm'
 import { T } from '../styles/theme'
 import { useAutofillJobs } from '../contexts/AutofillJobContext'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 import { CampaignCard } from '../components/project/CampaignCard'
 import { PlanSummary } from '../components/project/PlanSummary'
 import { ActionPlanTab } from '../components/project/ActionPlanTab'
@@ -86,6 +87,22 @@ const s: Record<string, React.CSSProperties> = {
     width: '100%', fontFamily: 'monospace', fontSize: 12, padding: 12,
     border: `1px solid ${T.border}`, borderRadius: T.radiusSm, minHeight: 400, resize: 'vertical',
   },
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  draft:     T.textGray,
+  validated: T.blue,
+  preview:   T.warning,
+  published: T.success,
+  archived:  '#888',
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  draft:     'Bozza',
+  validated: 'Validato',
+  preview:   'Preview',
+  published: 'Pubblicato',
+  archived:  'Archiviato',
 }
 
 type Tab = 'overview' | 'campaigns' | 'preview' | 'brief' | 'action_plan' | 'plan_json' | 'audit' | 'scan_log' | 'api_log'
@@ -220,6 +237,56 @@ export default function ProjectDetailPage() {
     onError: (e: Error) => setMessage({ type: 'error', text: e.message }),
   })
 
+  useHeaderActions(
+    project ? (
+      <>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center',
+          padding: '3px 10px', borderRadius: 999,
+          fontSize: 12, fontWeight: 700,
+          background: STATUS_COLORS[project.status] || T.textGray,
+          color: '#fff',
+        }}>
+          {STATUS_LABELS[project.status] || project.status}
+        </span>
+        {canWrite && (
+          <button
+            style={s.btn}
+            onClick={() => generateMutation.mutate()}
+            disabled={generateMutation.isPending || !project.has_brief}
+          >
+            {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
+          </button>
+        )}
+        <button
+          style={s.btnGreen}
+          onClick={async () => {
+            try {
+              await projectsApi.exportCsv(id!)
+            } catch (e: unknown) {
+              const msg = e instanceof Error ? e.message : 'Errore export'
+              setMessage({ type: 'error', text: `Export CSV: ${msg}` })
+            }
+          }}
+          disabled={!plan}
+        >
+          Esporta CSV
+        </button>
+        {canWrite && (
+          <button
+            style={s.btnOutline}
+            onClick={() => publishMutation.mutate()}
+            disabled={!plan || publishMutation.isPending}
+          >
+            {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
+          </button>
+        )}
+      </>
+    ) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [project?.status, project?.has_brief, canWrite, !!plan, generateMutation.isPending, publishMutation.isPending, id],
+  )
+
   if (!project) return <p>Caricamento...</p>
 
   return (
@@ -227,7 +294,7 @@ export default function ProjectDetailPage() {
       <div style={s.header}>
         <h1 style={s.h1}>{project.name}</h1>
         <div style={{ fontSize: 13, color: T.textGray }}>
-          {project.client_slug} · {project.preset} · {project.vertical} · <strong>{project.status}</strong>
+          {project.client_slug} · {project.preset} · {project.vertical}
         </div>
       </div>
 
@@ -269,33 +336,6 @@ export default function ProjectDetailPage() {
           </button>
         </div>
       )}
-
-      <div style={s.actions}>
-        {canWrite && (
-          <button style={s.btn} onClick={() => generateMutation.mutate()} disabled={generateMutation.isPending || !project.has_brief}>
-            {generateMutation.isPending ? 'Generando...' : plan ? 'Rigenera Piano' : 'Genera Piano'}
-          </button>
-        )}
-        <button
-          style={s.btnGreen}
-          onClick={async () => {
-            try {
-              await projectsApi.exportCsv(id!)
-            } catch (e: unknown) {
-              const msg = e instanceof Error ? e.message : 'Errore export'
-              setMessage({ type: 'error', text: `Export CSV: ${msg}` })
-            }
-          }}
-          disabled={!plan}
-        >
-          Esporta CSV
-        </button>
-        {canWrite && (
-          <button style={s.btnOutline} onClick={() => publishMutation.mutate()} disabled={!plan || publishMutation.isPending}>
-            {publishMutation.isPending ? 'Pubblicando...' : project.status === 'published' ? 'Ripubblica' : 'Pubblica'}
-          </button>
-        )}
-      </div>
 
       <div style={s.tabs}>
         {(([

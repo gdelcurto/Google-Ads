@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Outlet, Link, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { T } from '../styles/theme'
 import { useAutofillJobs, type PersistedNotification } from '../contexts/AutofillJobContext'
+import { HeaderActionsProvider, useHeaderActionsSlot } from '../contexts/HeaderActionsContext'
 
 const SIDEBAR_W = 56
 
@@ -287,13 +288,14 @@ function LogoutButton({ onLogout }: { onLogout: () => void }) {
   )
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────────
+// ── Layout inner (needs context) ─────────────────────────────────────────────
 
-export default function Layout() {
+function LayoutInner() {
   const navigate = useNavigate()
   const location = useLocation()
   const token = localStorage.getItem('token')
   const role = getTokenRole()
+  const headerActions = useHeaderActionsSlot()
 
   if (!token) return <Navigate to="/login" replace />
 
@@ -371,10 +373,13 @@ export default function Layout() {
         minHeight: '100vh',
         width: `calc(100% - ${SIDEBAR_W}px)`,
       }}>
-        {/* App header */}
+        {/* App header — logo left, page actions right */}
         <div style={{
-          paddingTop: 28,
-          paddingBottom: 20,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingTop: 24,
+          paddingBottom: 18,
           marginBottom: 28,
           borderBottom: `1px solid ${T.borderLight}`,
         }}>
@@ -383,10 +388,25 @@ export default function Layout() {
             alt="AdAtelier"
             style={{ height: 28, display: 'block' }}
           />
+          {headerActions && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {headerActions}
+            </div>
+          )}
         </div>
 
         <Outlet />
       </main>
     </div>
+  )
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+export default function Layout() {
+  return (
+    <HeaderActionsProvider>
+      <LayoutInner />
+    </HeaderActionsProvider>
   )
 }

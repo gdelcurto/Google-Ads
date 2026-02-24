@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usersApi, type UserItem, type PermissionItem, type PermissionCreate } from '../api/users'
 import { projectsApi } from '../api/projects'
 import { T } from '../styles/theme'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 
@@ -414,6 +415,13 @@ export default function UsersPage() {
   const [showPermModal, setShowPermModal] = useState(false)
   const [editingPerm, setEditingPerm] = useState<PermissionItem | null>(null)
 
+  useHeaderActions(
+    <button style={s.btn} onClick={() => { setEditingUser(null); setShowUserModal(true) }}>
+      + Nuovo utente
+    </button>,
+    [],
+  )
+
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
     queryFn: usersApi.list,
@@ -443,9 +451,6 @@ export default function UsersPage() {
     <div>
       <div style={s.header}>
         <h1 style={s.h1}>Gestione Utenti</h1>
-        <button style={s.btn} onClick={() => { setEditingUser(null); setShowUserModal(true) }}>
-          + Nuovo utente
-        </button>
       </div>
 
       {isLoading ? (

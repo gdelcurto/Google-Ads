@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, type Project } from '../api/projects'
 import { T } from '../styles/theme'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 
 const STATUS_COLORS: Record<string, string> = {
   draft:     T.textGray,
@@ -221,6 +222,11 @@ function CreateProjectModal({ onClose }: { onClose: () => void }) {
 export default function ProjectsPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null)
+
+  useHeaderActions(
+    <button style={s.btn} onClick={() => setShowCreate(true)}>+ Nuovo Progetto</button>,
+    [],
+  )
   const qc = useQueryClient()
   const { data: projects = [], isLoading } = useQuery({
     queryKey: ['projects'],
@@ -244,7 +250,6 @@ export default function ProjectsPage() {
             <i className="fa-solid fa-trash-can"></i> Cestino
           </Link>
         </div>
-        <button style={s.btn} onClick={() => setShowCreate(true)}>+ Nuovo Progetto</button>
       </div>
 
       {isLoading && <p style={{ color: T.textGray }}>Caricamento...</p>}
