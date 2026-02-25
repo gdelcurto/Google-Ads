@@ -373,13 +373,13 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     <div>
       <LoadingOverlay
         visible={budgetStrategyMutation.isPending}
-        message="Ottimizzazione strategia budget…"
-        submessage="L'AI sta analizzando il profilo hotel e definendo la distribuzione ottimale"
+        message="L'AI sta costruendo la tua strategia."
+        submessage="Analisi del profilo hotel, obiettivi e distribuzione ottimale del budget"
       />
       <LoadingOverlay
         visible={saveMutation.isPending}
-        message="Salvataggio brief in corso…"
-        submessage="Validazione struttura dati e salvataggio"
+        message="Brief salvato. Tutto a posto."
+        submessage="Validazione e salvataggio della configurazione in corso"
       />
       {/* ── Stepper ── */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 32 }}>

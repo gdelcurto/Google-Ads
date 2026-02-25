@@ -87,7 +87,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 52px;
+  /* must be >= outer ring diameter so rings stay contained and don't bleed into text */
+  min-height: 280px;
+  min-width: 280px;
+  margin-bottom: 40px;
 }
 
 /* Two concentric spinning rings centred on the logo */
@@ -156,24 +159,26 @@
 
 .lo-message {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 17px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.95);
-  letter-spacing: 0.3px;
-  margin-bottom: 6px;
+  font-size: 22px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 1);
+  letter-spacing: 0.2px;
+  margin-bottom: 10px;
   animation: lo-msg-in 0.5s ease 0.4s both;
   text-align: center;
 }
 
 .lo-submessage {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.42);
-  letter-spacing: 0.4px;
-  margin-bottom: 28px;
+  color: rgba(255, 255, 255, 0.62);
+  letter-spacing: 0.5px;
+  margin-bottom: 32px;
   animation: lo-msg-in 0.5s ease 0.6s both;
   text-align: center;
+  max-width: 360px;
+  line-height: 1.5;
 }
 
 /* ── Bouncing dots ─────────────────────────────────────────────────────────── */

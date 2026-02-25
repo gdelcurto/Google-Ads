@@ -252,13 +252,13 @@ export default function ProjectDetailPage() {
     <div>
       <LoadingOverlay
         visible={generateMutation.isPending}
-        message="Generazione piano in corso…"
-        submessage="Analisi struttura campagne, copy e distribuzione budget"
+        message="Il piano sta prendendo forma."
+        submessage="Strutturiamo campagne, budget e copy per ogni mercato e lingua"
       />
       <LoadingOverlay
         visible={hasRunningJob && !generateMutation.isPending}
-        message="Analisi sito hotel in corso…"
-        submessage="Lettura pagine, estrazione dati e arricchimento brief con AI"
+        message="Stiamo leggendo il tuo hotel."
+        submessage="Analisi del sito, estrazione dati chiave e arricchimento brief con AI"
       />
       <div style={s.header}>
         <h1 style={s.h1}>{project.name}</h1>
