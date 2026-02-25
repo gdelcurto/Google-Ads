@@ -426,16 +426,13 @@ export default function ClientDetailPage() {
   }, [client])
 
   useHeaderActions(
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      {saveMsg && <span style={{ fontSize: 13, color: T.success }}>{saveMsg}</span>}
-      <button style={s.btnGhost} onClick={startEditClient}>
-        <i className="fa-solid fa-pen" /> Modifica
-      </button>
-      <button style={s.btn} onClick={() => setHotelModal('new')}>
-        + Nuovo hotel
-      </button>
-    </div>,
-    [saveMsg, startEditClient],
+    <button
+      style={{ background: T.primary, color: '#fff', border: 'none', padding: '10px 20px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+      onClick={() => setHotelModal('new')}
+    >
+      + Nuovo hotel
+    </button>,
+    [],
   )
 
   if (isLoading) return <div style={{ padding: 40, color: T.textGray }}>Caricamento...</div>
@@ -457,6 +454,12 @@ export default function ClientDetailPage() {
             {client.bb_client_id && <span>BB: {client.bb_client_id} · </span>}
             {client.contact_email}
           </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {saveMsg && <span style={{ fontSize: 13, color: T.success }}>{saveMsg}</span>}
+          <button style={s.btnGhost} onClick={startEditClient}>
+            <i className="fa-solid fa-pen" /> Modifica
+          </button>
         </div>
       </div>
 
