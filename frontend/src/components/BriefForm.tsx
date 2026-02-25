@@ -28,6 +28,7 @@ import { Step2Lingue }    from './brief/steps/Step2Lingue'
 import { Step3Hotel }     from './brief/steps/Step3Hotel'
 import { Step4Anteprima } from './brief/steps/Step4Anteprima'
 import { Step5Revisione } from './brief/steps/Step5Revisione'
+import { LoadingOverlay } from './LoadingOverlay'
 
 interface BriefFormProps {
   projectId: string
@@ -370,6 +371,16 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
 
   return (
     <div>
+      <LoadingOverlay
+        visible={budgetStrategyMutation.isPending}
+        message="Ottimizzazione strategia budget…"
+        submessage="L'AI sta analizzando il profilo hotel e definendo la distribuzione ottimale"
+      />
+      <LoadingOverlay
+        visible={saveMutation.isPending}
+        message="Salvataggio brief in corso…"
+        submessage="Validazione struttura dati e salvataggio"
+      />
       {/* ── Stepper ── */}
       <div style={{ display: 'flex', alignItems: 'center', marginBottom: 32 }}>
         {STEPS.map((label, i) => (

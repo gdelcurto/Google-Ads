@@ -14,6 +14,7 @@ import { CampaignPreviewCard } from '../components/project/CampaignPreviewCard'
 import { ScanLogTab } from '../components/project/ScanLogTab'
 import { ApiLogTab } from '../components/project/ApiLogTab'
 import { BudgetLogTab } from '../components/project/BudgetLogTab'
+import { LoadingOverlay } from '../components/LoadingOverlay'
 
 const s: Record<string, React.CSSProperties> = {
   header: { marginBottom: 28 },
@@ -249,6 +250,16 @@ export default function ProjectDetailPage() {
 
   return (
     <div>
+      <LoadingOverlay
+        visible={generateMutation.isPending}
+        message="Generazione piano in corso…"
+        submessage="Analisi struttura campagne, copy e distribuzione budget"
+      />
+      <LoadingOverlay
+        visible={hasRunningJob && !generateMutation.isPending}
+        message="Analisi sito hotel in corso…"
+        submessage="Lettura pagine, estrazione dati e arricchimento brief con AI"
+      />
       <div style={s.header}>
         <h1 style={s.h1}>{project.name}</h1>
         <div style={{ fontSize: 13, color: T.textGray }}>

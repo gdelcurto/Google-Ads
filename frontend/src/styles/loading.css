@@ -1,0 +1,196 @@
+/* ── LoadingOverlay animations ─────────────────────────────────────────────── */
+
+@keyframes lo-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes lo-logo-in {
+  from { opacity: 0; transform: scale(0.88) translateY(6px); filter: blur(4px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);   filter: blur(0);   }
+}
+
+@keyframes lo-glow-pulse {
+  0%,100% {
+    filter:
+      drop-shadow(0 0  8px rgba(225, 0, 152, 0.45))
+      drop-shadow(0 0 24px rgba(225, 0, 152, 0.20));
+  }
+  50% {
+    filter:
+      drop-shadow(0 0 20px rgba(225, 0, 152, 0.90))
+      drop-shadow(0 0 56px rgba(225, 0, 152, 0.40))
+      drop-shadow(0 0 90px rgba(225, 0, 152, 0.15));
+  }
+}
+
+@keyframes lo-spin-cw {
+  from { transform: rotate(0deg);   }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes lo-spin-ccw {
+  from { transform: rotate(0deg);    }
+  to   { transform: rotate(-360deg); }
+}
+
+@keyframes lo-scan {
+  0%   { left: -60%; opacity: 0;   }
+  10%  {             opacity: 0.6; }
+  90%  {             opacity: 0.6; }
+  100% { left: 115%; opacity: 0;   }
+}
+
+@keyframes lo-msg-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+
+@keyframes lo-dot {
+  0%, 60%, 100% { transform: scale(0.55); opacity: 0.25; }
+  30%           { transform: scale(1);    opacity: 1;    }
+}
+
+/* ── Overlay shell ─────────────────────────────────────────────────────────── */
+
+.lo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  background: radial-gradient(ellipse at 50% 40%, rgba(225, 0, 152, 0.07) 0%, transparent 65%),
+              rgba(4, 4, 12, 0.93);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  animation: lo-fade-in 0.35s ease both;
+  transition: opacity 0.3s ease;
+}
+
+/* subtle dot grid pattern */
+.lo-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+}
+
+/* ── Logo area ─────────────────────────────────────────────────────────────── */
+
+.lo-logo-area {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 52px;
+}
+
+/* Two concentric spinning rings centred on the logo */
+.lo-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  pointer-events: none;
+}
+
+.lo-ring-outer {
+  width: 260px;
+  height: 260px;
+  border-top-color:   rgba(225, 0, 152, 0.75);
+  border-right-color: rgba(225, 0, 152, 0.30);
+  border-bottom-color:rgba(225, 0, 152, 0.08);
+  border-left-color:  transparent;
+  animation: lo-spin-cw 2.4s linear infinite;
+}
+
+.lo-ring-inner {
+  width: 210px;
+  height: 210px;
+  border-top-color:   transparent;
+  border-right-color: rgba(225, 0, 152, 0.20);
+  border-bottom-color:rgba(225, 0, 152, 0.55);
+  border-left-color:  rgba(225, 0, 152, 0.10);
+  animation: lo-spin-ccw 1.8s linear infinite;
+}
+
+/* Logo image + glow */
+.lo-logo-wrap {
+  position: relative;
+  animation: lo-logo-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both,
+             lo-glow-pulse 2.8s ease-in-out 0.7s infinite;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.lo-logo-wrap::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(225, 0, 152, 0.18) 40%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(225, 0, 152, 0.18) 60%,
+    transparent 100%
+  );
+  animation: lo-scan 3.2s ease-in-out 0.8s infinite;
+}
+
+.lo-logo {
+  display: block;
+  width: 200px;
+  height: auto;
+  /* SVG paths: "Ad" in #A6A6A6, "Atelier" in #E10098 — readable on dark bg */
+}
+
+/* ── Text area ─────────────────────────────────────────────────────────────── */
+
+.lo-message {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 17px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+  animation: lo-msg-in 0.5s ease 0.4s both;
+  text-align: center;
+}
+
+.lo-submessage {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: 0.4px;
+  margin-bottom: 28px;
+  animation: lo-msg-in 0.5s ease 0.6s both;
+  text-align: center;
+}
+
+/* ── Bouncing dots ─────────────────────────────────────────────────────────── */
+
+.lo-dots {
+  display: flex;
+  gap: 7px;
+  animation: lo-msg-in 0.5s ease 0.8s both;
+}
+
+.lo-dots span {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e10098;
+  animation: lo-dot 1.5s ease-in-out infinite;
+}
+.lo-dots span:nth-child(2) { animation-delay: 0.18s; }
+.lo-dots span:nth-child(3) { animation-delay: 0.36s; }
