@@ -39,6 +39,7 @@ def _hotel_to_response(h: Hotel) -> HotelResponse:
         bb_hotel_id=h.bb_hotel_id,
         category=h.category,
         stars=h.stars,
+        rooms=h.rooms,
         address=h.address,
         city=h.city,
         country=h.country,
