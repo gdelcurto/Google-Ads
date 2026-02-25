@@ -12,6 +12,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
+_NEW_TABLES = ["clients", "hotels"]
+
 revision: str = "008"
 down_revision: Union[str, None] = "007"
 branch_labels: Union[str, Sequence[str], None] = None
@@ -86,6 +88,14 @@ def upgrade() -> None:
             batch_op.create_foreign_key(
                 "fk_projects_hotel_id", "hotels", ["hotel_id"], ["id"]
             )
+
+    # ── RLS (PostgreSQL / Supabase only) ──────────────────────────────────────
+    # clients and hotels were created after migration 007 (which enabled RLS on
+    # all tables existing at that point). Apply the same policy here.
+    if bind.dialect.name == "postgresql":
+        for t in _NEW_TABLES:
+            op.execute(f"ALTER TABLE public.{t} ENABLE ROW LEVEL SECURITY;")
+            op.execute(f"ALTER TABLE public.{t} FORCE ROW LEVEL SECURITY;")
 
 
 def downgrade() -> None:

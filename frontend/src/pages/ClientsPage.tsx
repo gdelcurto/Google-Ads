@@ -3,10 +3,9 @@ import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi, type ClientCreate } from '../api/clients'
 import { T } from '../styles/theme'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 
 const s: Record<string, React.CSSProperties> = {
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 },
-  h1: { fontSize: 26, fontWeight: 700, color: T.text, letterSpacing: -0.5 },
   btn: {
     background: T.primary, color: '#fff', border: 'none',
     padding: '10px 20px', borderRadius: T.radiusSm,
@@ -136,6 +135,12 @@ function CreateClientModal({ onClose }: { onClose: () => void }) {
 
 export default function ClientsPage() {
   const [showCreate, setShowCreate] = useState(false)
+
+  useHeaderActions(
+    <button style={s.btn} onClick={() => setShowCreate(true)}>+ Nuovo cliente</button>,
+    [],
+  )
+
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: clientsApi.list,
@@ -143,13 +148,6 @@ export default function ClientsPage() {
 
   return (
     <div>
-      <div style={s.header}>
-        <h1 style={s.h1}>Clienti</h1>
-        <button style={s.btn} onClick={() => setShowCreate(true)}>
-          + Nuovo cliente
-        </button>
-      </div>
-
       {isLoading ? (
         <div style={s.emptyBox}>Caricamento...</div>
       ) : clients.length === 0 ? (
