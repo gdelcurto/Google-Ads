@@ -41,7 +41,7 @@ export function LoadingOverlay({
         {/* Logo with shimmer + glow */}
         <div className="lo-logo-wrap">
           <img
-            src="/AdAtelier.svg"
+            src="/stemma.svg"
             className="lo-logo"
             alt="AdAtelier"
             draggable={false}

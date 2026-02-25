@@ -150,9 +150,8 @@
 
 .lo-logo {
   display: block;
-  width: 110px;
+  width: 80px;
   height: auto;
-  /* SVG paths: "Ad" in #A6A6A6, "Atelier" in #E10098 — readable on dark bg */
 }
 
 /* ── Text area ─────────────────────────────────────────────────────────────── */
