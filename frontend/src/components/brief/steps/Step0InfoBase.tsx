@@ -177,7 +177,6 @@ export function Step0InfoBase({
           </div>
           <div style={css.field}>
             <label style={css.label}>Google Ads Customer ID</label>
-            <span style={css.hint}>Formato: 123-456-7890</span>
             <input
               style={css.input}
               value={form.google_ads_customer_id}
