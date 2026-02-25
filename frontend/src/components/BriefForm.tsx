@@ -80,6 +80,15 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     const domain = hotel.website_url
       ? hotel.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')
       : ''
+    // Derive occupancy_rate and direct_pct from seasonality averages
+    const seasons = hotel.seasonality ?? []
+    const avgOf = (key: 'avg_occupancy_pct' | 'direct_booking_pct') => {
+      const vals = seasons.map(s => s[key]).filter((v): v is number => v != null)
+      if (!vals.length) return null
+      return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+    }
+    const derivedOccupancy = avgOf('avg_occupancy_pct')
+    const derivedDirectPct = avgOf('direct_booking_pct')
     setForm(prev => ({
       ...prev,
       brand_name:     prev.brand_name     || fullClient?.name || hotel.name,
@@ -91,6 +100,9 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
       stars:          hotel.stars != null ? String(hotel.stars) : prev.stars,
       address:        prev.address        || [hotel.address, hotel.city, hotel.country].filter(Boolean).join(', '),
       booking_engine_url: prev.booking_engine_url || hotel.booking_engine || '',
+      adr:            hotel.adr != null   ? String(hotel.adr) : prev.adr,
+      occupancy_rate: derivedOccupancy != null ? String(derivedOccupancy) : prev.occupancy_rate,
+      direct_pct:     derivedDirectPct != null  ? String(derivedDirectPct)  : prev.direct_pct,
     }))
     if (!autofillUrl && hotel.website_url) setAutofillUrl(hotel.website_url)
   }
