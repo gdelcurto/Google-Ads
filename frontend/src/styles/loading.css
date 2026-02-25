@@ -10,17 +10,20 @@
   to   { opacity: 1; transform: scale(1)    translateY(0);   filter: blur(0);   }
 }
 
-@keyframes lo-glow-pulse {
-  0%,100% {
+/* scale + drop-shadow pulsano insieme — drop-shadow sull'<img> segue i pixel del SVG */
+@keyframes lo-logo-pulse {
+  0%, 100% {
+    transform: scale(1);
     filter:
-      drop-shadow(0 0  8px rgba(225, 0, 152, 0.45))
-      drop-shadow(0 0 24px rgba(225, 0, 152, 0.20));
+      drop-shadow(0 0  6px rgba(225, 0, 152, 0.50))
+      drop-shadow(0 0 20px rgba(225, 0, 152, 0.22));
   }
   50% {
+    transform: scale(1.10);
     filter:
-      drop-shadow(0 0 20px rgba(225, 0, 152, 0.90))
-      drop-shadow(0 0 56px rgba(225, 0, 152, 0.40))
-      drop-shadow(0 0 90px rgba(225, 0, 152, 0.15));
+      drop-shadow(0 0 18px rgba(225, 0, 152, 0.95))
+      drop-shadow(0 0 48px rgba(225, 0, 152, 0.45))
+      drop-shadow(0 0 80px rgba(225, 0, 152, 0.18));
   }
 }
 
@@ -34,12 +37,6 @@
   to   { transform: rotate(-360deg); }
 }
 
-@keyframes lo-scan {
-  0%   { left: -60%; opacity: 0;   }
-  10%  {             opacity: 0.6; }
-  90%  {             opacity: 0.6; }
-  100% { left: 115%; opacity: 0;   }
-}
 
 @keyframes lo-msg-in {
   from { opacity: 0; transform: translateY(10px); }
@@ -124,34 +121,17 @@
 /* Logo image + glow */
 .lo-logo-wrap {
   position: relative;
-  animation: lo-logo-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both,
-             lo-glow-pulse 2.8s ease-in-out 0.7s infinite;
+  animation: lo-logo-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
   z-index: 2;
-  overflow: hidden;
-  border-radius: 6px;
-}
-
-.lo-logo-wrap::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(225, 0, 152, 0.18) 40%,
-    rgba(255, 255, 255, 0.12) 50%,
-    rgba(225, 0, 152, 0.18) 60%,
-    transparent 100%
-  );
-  animation: lo-scan 3.2s ease-in-out 0.8s infinite;
 }
 
 .lo-logo {
   display: block;
   width: 80px;
   height: auto;
+  /* pulse on the <img> so drop-shadow traces the SVG silhouette */
+  animation: lo-logo-pulse 2.6s ease-in-out 0.7s infinite;
+  transform-origin: center center;
 }
 
 /* ── Text area ─────────────────────────────────────────────────────────────── */
