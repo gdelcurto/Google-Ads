@@ -325,6 +325,15 @@ export const autofillApi = {
     vertical?: string
     country?: string
     total_monthly_budget_eur?: number
+    primary_objective?: string
+    rooms?: number
+    adr?: number
+    occupancy_rate?: number
+    direct_pct?: number
+    target_countries?: string
+    services?: string
+    strengths?: string
+    booking_engine_url?: string
   }) =>
     api.post<{
       recommended_types: string[]
