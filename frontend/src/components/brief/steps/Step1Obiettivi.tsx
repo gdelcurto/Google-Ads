@@ -33,132 +33,6 @@ export function Step1Obiettivi({
   return (
     <>
       <div style={css.section}>
-        <div style={css.sectionTitle}>Obiettivi per tipologia di campagna</div>
-        <div style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
-          Definisci obiettivo primario e azione di conversione per ogni tipo attivo.
-          Le campagne non selezionate nella tabella budget non vengono mostrate.
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  Tipo campagna
-                </th>
-                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  Obiettivo primario *
-                </th>
-                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  Azione di conversione primaria
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {CAMPAIGN_TYPES.map(ct => {
-                const isSel = selectedTypes.has(ct.key)
-                if (!isSel) return null
-                const obj: TypeObjective = objectivesByType[ct.key] ?? DEFAULT_TYPE_OBJECTIVE
-                return (
-                  <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                    <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
-                      {ct.label}
-                    </td>
-                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
-                      <select
-                        style={{ ...css.select, marginBottom: 0 }}
-                        value={obj.primary_objective}
-                        onChange={e => setObjectivesByType(prev => ({
-                          ...prev,
-                          [ct.key]: { ...obj, primary_objective: e.target.value },
-                        }))}
-                      >
-                        {OBJECTIVE_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
-                      <input
-                        style={{ ...css.input, marginBottom: 0 }}
-                        value={obj.primary_conversion_action}
-                        onChange={e => setObjectivesByType(prev => ({
-                          ...prev,
-                          [ct.key]: { ...obj, primary_conversion_action: e.target.value },
-                        }))}
-                        placeholder="purchase"
-                      />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {[...selectedTypes].length === 0 && (
-            <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
-              Seleziona almeno un tipo di campagna nella sezione Budget qui sotto.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={css.section}>
-        <div style={css.sectionTitle}>Strategia di offerta per tipologia di campagna</div>
-        <div style={{ fontSize: 12, color: T.textGray, marginBottom: 12 }}>
-          Definisci la strategia di offerta da applicare su Google Ads per ogni tipo di campagna attivo.
-        </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  Tipo campagna
-                </th>
-                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                  Strategia di offerta *
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {CAMPAIGN_TYPES.map(ct => {
-                const isSel = selectedTypes.has(ct.key)
-                if (!isSel) return null
-                const obj: TypeObjective = objectivesByType[ct.key] ?? {
-                  ...DEFAULT_TYPE_OBJECTIVE,
-                  bid_strategy: DEFAULT_BID_STRATEGY_BY_TYPE[ct.key] as BidStrategyChoice,
-                }
-                return (
-                  <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
-                    <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
-                      {ct.label}
-                    </td>
-                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
-                      <select
-                        style={{ ...css.select, marginBottom: 0 }}
-                        value={obj.bid_strategy ?? DEFAULT_BID_STRATEGY_BY_TYPE[ct.key]}
-                        onChange={e => setObjectivesByType(prev => ({
-                          ...prev,
-                          [ct.key]: { ...obj, bid_strategy: e.target.value as BidStrategyChoice },
-                        }))}
-                      >
-                        {BID_STRATEGY_OPTIONS.map(o => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-          {[...selectedTypes].length === 0 && (
-            <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
-              Seleziona almeno un tipo di campagna nella sezione Budget qui sotto.
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div style={css.section}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', ...css.sectionTitle }}>
           <span>Budget campagne (€/giorno per lingua)</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
@@ -351,6 +225,90 @@ export function Step1Obiettivi({
             </div>
           </div>
         )}
+      </div>
+
+      <div style={css.section}>
+        <div style={css.sectionTitle}>Obiettivi e Strategia di offerta per tipologia di campagna</div>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingRight: 16, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Tipo campagna
+                </th>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Obiettivo primario *
+                </th>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, paddingRight: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Azione di conversione primaria
+                </th>
+                <th style={{ textAlign: 'left', paddingBottom: 10, paddingLeft: 8, color: T.textGray, fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                  Strategia di offerta *
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {CAMPAIGN_TYPES.map(ct => {
+                if (!selectedTypes.has(ct.key)) return null
+                const obj: TypeObjective = objectivesByType[ct.key] ?? {
+                  ...DEFAULT_TYPE_OBJECTIVE,
+                  bid_strategy: DEFAULT_BID_STRATEGY_BY_TYPE[ct.key] as BidStrategyChoice,
+                }
+                return (
+                  <tr key={ct.key} style={{ borderTop: `1px solid ${T.borderLight}` }}>
+                    <td style={{ padding: '10px 16px 10px 0', verticalAlign: 'middle', whiteSpace: 'nowrap', fontWeight: 600, fontSize: 13 }}>
+                      {ct.label}
+                    </td>
+                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                      <select
+                        style={{ ...css.select, marginBottom: 0 }}
+                        value={obj.primary_objective}
+                        onChange={e => setObjectivesByType(prev => ({
+                          ...prev,
+                          [ct.key]: { ...obj, primary_objective: e.target.value },
+                        }))}
+                      >
+                        {OBJECTIVE_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                      <input
+                        style={{ ...css.input, marginBottom: 0 }}
+                        value={obj.primary_conversion_action}
+                        onChange={e => setObjectivesByType(prev => ({
+                          ...prev,
+                          [ct.key]: { ...obj, primary_conversion_action: e.target.value },
+                        }))}
+                        placeholder="purchase"
+                      />
+                    </td>
+                    <td style={{ padding: '8px 8px', verticalAlign: 'middle' }}>
+                      <select
+                        style={{ ...css.select, marginBottom: 0 }}
+                        value={obj.bid_strategy ?? DEFAULT_BID_STRATEGY_BY_TYPE[ct.key]}
+                        onChange={e => setObjectivesByType(prev => ({
+                          ...prev,
+                          [ct.key]: { ...obj, bid_strategy: e.target.value as BidStrategyChoice },
+                        }))}
+                      >
+                        {BID_STRATEGY_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {[...selectedTypes].length === 0 && (
+            <div style={{ padding: '12px 0', color: T.textGray, fontSize: 13 }}>
+              Seleziona almeno un tipo di campagna nella tabella Budget qui sopra.
+            </div>
+          )}
+        </div>
       </div>
     </>
   )
