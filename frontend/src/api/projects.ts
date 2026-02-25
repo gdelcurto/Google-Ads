@@ -330,6 +330,9 @@ export const autofillApi = {
     adr?: number
     occupancy_rate?: number
     direct_pct?: number
+    city?: string
+    booking_channels?: string
+    seasonality_summary?: string
     target_countries?: string
     services?: string
     strengths?: string

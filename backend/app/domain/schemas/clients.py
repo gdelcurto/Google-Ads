@@ -24,6 +24,7 @@ class HotelCreate(BaseModel):
     bb_hotel_id: Optional[str] = None
     category: Optional[str] = "city_hotel"
     stars: Optional[int] = 0
+    rooms: Optional[int] = None
     address: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
@@ -48,6 +49,7 @@ class HotelResponse(BaseModel):
     bb_hotel_id: Optional[str]
     category: Optional[str]
     stars: Optional[int]
+    rooms: Optional[int]
     address: Optional[str]
     city: Optional[str]
     country: Optional[str]

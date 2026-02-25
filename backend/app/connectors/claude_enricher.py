@@ -782,7 +782,10 @@ Regole:
             "brand_awareness": "Brand awareness",
         }
         ctx: list[str] = []
-        ctx.append(f"- Hotel: {payload.get('brand_name', '')} ({hotel_category} {stars}★)")
+        ctx.append(f"- Hotel: {payload.get('brand_name', '')}")
+        ctx.append(f"- Categoria: {hotel_category} {stars}★")
+        if payload.get("city"):
+            ctx.append(f"- Città: {payload['city']}")
         ctx.append(f"- Paese: {payload.get('country', 'IT')}")
         if payload.get("target_countries"):
             tc = ", ".join(
@@ -790,13 +793,20 @@ Regole:
             )
             ctx.append(f"- Mercati target: {tc}")
         if payload.get("rooms"):
-            ctx.append(f"- Camere: {payload['rooms']}")
+            ctx.append(f"- Numero camere: {payload['rooms']}")
         if payload.get("adr"):
             ctx.append(f"- ADR: €{payload['adr']:.0f}/notte")
         if payload.get("occupancy_rate"):
             ctx.append(f"- Tasso di occupazione attuale: {payload['occupancy_rate']:.0f}%")
         if payload.get("direct_pct"):
             ctx.append(f"- Prenotazioni dirette vs OTA: {payload['direct_pct']:.0f}% dirette")
+        if payload.get("booking_channels"):
+            ctx.append(f"- Canali di prenotazione attuali: {payload['booking_channels']}")
+        if payload.get("seasonality_summary"):
+            lines = [ln.strip() for ln in payload["seasonality_summary"].split("\n") if ln.strip()]
+            ctx.append("- Stagionalità:")
+            for ln in lines:
+                ctx.append(f"    {ln}")
         if payload.get("booking_engine_url"):
             ctx.append(f"- Booking engine: {payload['booking_engine_url']}")
         obj_label = _obj_labels.get(payload.get("primary_objective", ""), payload.get("primary_objective", "direct_bookings"))

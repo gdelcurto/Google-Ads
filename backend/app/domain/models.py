@@ -52,6 +52,7 @@ class Hotel(Base):
     # Hotel profile
     category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="city_hotel")
     stars: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
+    rooms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     city: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     country: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)

@@ -75,6 +75,9 @@ class BudgetStrategyRequest(BaseModel):
     adr: Optional[float] = None             # Average Daily Rate €/notte
     occupancy_rate: Optional[float] = None  # % tasso occupazione (0–100)
     direct_pct: Optional[float] = None      # % prenotazioni dirette vs OTA
+    city: Optional[str] = None             # città della struttura
+    booking_channels: Optional[str] = None  # canali prenotazione, comma-separated
+    seasonality_summary: Optional[str] = None  # testo stagionalità, newline-separated
     target_countries: Optional[str] = None  # codici ISO, newline-separated
     services: Optional[str] = None          # uno per riga
     strengths: Optional[str] = None         # uno per riga

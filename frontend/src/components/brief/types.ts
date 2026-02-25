@@ -21,6 +21,9 @@ export interface FormState {
   adr: string           // ADR €/notte
   occupancy_rate: string // % tasso di occupazione (0–100)
   direct_pct: string    // % prenotazioni dirette vs OTA
+  city: string
+  booking_channels: string   // canali prenotazione separati da virgola
+  seasonality_summary: string // testo riassuntivo stagionalità
   address: string
   services: string
   strengths: string
@@ -122,6 +125,9 @@ export const DEFAULT_FORM: FormState = {
   adr: '',
   occupancy_rate: '',
   direct_pct: '',
+  city: '',
+  booking_channels: '',
+  seasonality_summary: '',
   address: '',
   services: '',
   strengths: '',
