@@ -449,7 +449,7 @@ export default function ProjectDetailPage() {
           ) : briefFetching ? (
             <p style={{ color: T.textGray }}>Caricamento brief...</p>
           ) : brief ? (
-            <ActionPlanTab brief={brief} />
+            <ActionPlanTab brief={brief} plan={plan ?? null} />
           ) : (
             <div style={s.card}><p style={{ color: T.textGray }}>Brief non disponibile.</p></div>
           )}
