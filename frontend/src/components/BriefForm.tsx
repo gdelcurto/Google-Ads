@@ -80,6 +80,33 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
     const domain = hotel.website_url
       ? hotel.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')
       : ''
+    const seasons = hotel.seasonality ?? []
+    const avgOf = (key: 'avg_occupancy_pct' | 'direct_booking_pct') => {
+      const vals = seasons.map(s => s[key]).filter((v): v is number => v != null)
+      if (!vals.length) return null
+      return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+    }
+    const derivedOccupancy = avgOf('avg_occupancy_pct')
+    const derivedDirectPct = avgOf('direct_booking_pct')
+
+    const allChannels = Array.from(
+      new Set(seasons.flatMap(s => s.booking_channels ?? []).filter(Boolean))
+    )
+
+    const MONTH_SHORT = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic']
+    const fmtDate = (mm_dd: string) => {
+      const [m] = mm_dd.split('-')
+      return MONTH_SHORT[parseInt(m, 10) - 1] ?? mm_dd
+    }
+    const seasonalityLines = seasons.map(s => {
+      const parts: string[] = []
+      if (s.date_from && s.date_to) parts.push(`${fmtDate(s.date_from)}-${fmtDate(s.date_to)}`)
+      if (s.avg_occupancy_pct != null) parts.push(`occ. ${Math.round(s.avg_occupancy_pct)}%`)
+      if (s.direct_booking_pct != null) parts.push(`dirette ${Math.round(s.direct_booking_pct)}%`)
+      if (s.booking_channels?.length) parts.push(`canali: ${s.booking_channels.join(', ')}`)
+      return `${s.name || 'Periodo'}: ${parts.join(', ')}`
+    })
+
     setForm(prev => ({
       ...prev,
       brand_name:     prev.brand_name     || fullClient?.name || hotel.name,
@@ -89,8 +116,15 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
       hotel_category: hotel.category      || prev.hotel_category,
       vertical:       hotel.category      || prev.vertical,
       stars:          hotel.stars != null ? String(hotel.stars) : prev.stars,
+      rooms:          hotel.rooms != null ? String(hotel.rooms) : prev.rooms,
+      city:           hotel.city          || prev.city,
       address:        prev.address        || [hotel.address, hotel.city, hotel.country].filter(Boolean).join(', '),
       booking_engine_url: prev.booking_engine_url || hotel.booking_engine || '',
+      adr:            hotel.adr != null   ? String(hotel.adr)          : prev.adr,
+      occupancy_rate: derivedOccupancy != null ? String(derivedOccupancy) : prev.occupancy_rate,
+      direct_pct:     derivedDirectPct != null  ? String(derivedDirectPct)  : prev.direct_pct,
+      booking_channels:    allChannels.length      ? allChannels.join(', ')       : prev.booking_channels,
+      seasonality_summary: seasonalityLines.length ? seasonalityLines.join('\n')  : prev.seasonality_summary,
     }))
     if (!autofillUrl && hotel.website_url) setAutofillUrl(hotel.website_url)
   }

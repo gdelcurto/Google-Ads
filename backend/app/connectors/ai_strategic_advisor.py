@@ -202,9 +202,27 @@ SOLO JSON, nessun testo aggiuntivo."""
                 by_language={lang: per_lang for lang in lang_codes},
             )
 
-        # Merge: AI allocation wins for recommended types
+        # Merge: AI allocation wins for recommended types; then rescale the
+        # entire merged map so its sum equals total_monthly_eur exactly.
+        # Without the rescale, types NOT returned by the AI keep their old
+        # budget while the AI-assigned types are already calibrated to 100%
+        # of total — making the merged sum exceed total_monthly_eur.
         merged = dict(brief.budgets.by_campaign_type)
         merged.update(new_by_type)
+
+        merged_sum = sum(v.total for v in merged.values())
+        if merged_sum > 0 and abs(merged_sum - total) / total > 0.005:
+            scale = total / merged_sum
+            rescaled: dict = {}
+            for k, v in merged.items():
+                new_total_k = round(v.total * scale, 2)
+                new_by_lang = {lang: round(amt * scale, 2) for lang, amt in v.by_language.items()}
+                rescaled[k] = BudgetByLanguage(total=new_total_k, by_language=new_by_lang)
+            merged = rescaled
+            logger.info(
+                f"AI budget merge rescaled {merged_sum:.2f}→{total:.2f} "
+                f"(scale {scale:.4f})"
+            )
 
         new_budgets = brief.budgets.model_copy(update={"by_campaign_type": merged})
         optimized = brief.model_copy(update={"budgets": new_budgets})

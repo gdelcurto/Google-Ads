@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { clientsApi, type Hotel, type HotelCreate, type SeasonalityPeriod } from '../api/clients'
 import { T } from '../styles/theme'
+import { useHeaderActions } from '../contexts/HeaderActionsContext'
 
 // ── styles ───────────────────────────────────────────────────────────────────
 
@@ -411,10 +412,8 @@ export default function ClientDetailPage() {
     },
   })
 
-  if (isLoading) return <div style={{ padding: 40, color: T.textGray }}>Caricamento...</div>
-  if (!client) return <div style={{ padding: 40, color: T.error }}>Cliente non trovato</div>
-
-  const startEditClient = () => {
+  const startEditClient = useCallback(() => {
+    if (!client) return
     setClientForm({
       name: client.name,
       bb_client_id: client.bb_client_id ?? '',
@@ -424,7 +423,20 @@ export default function ClientDetailPage() {
       notes: client.notes ?? '',
     })
     setEditClient(true)
-  }
+  }, [client])
+
+  useHeaderActions(
+    <button
+      style={{ background: T.primary, color: '#fff', border: 'none', padding: '10px 20px', borderRadius: T.radiusSm, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}
+      onClick={() => setHotelModal('new')}
+    >
+      + Nuovo hotel
+    </button>,
+    [],
+  )
+
+  if (isLoading) return <div style={{ padding: 40, color: T.textGray }}>Caricamento...</div>
+  if (!client) return <div style={{ padding: 40, color: T.error }}>Cliente non trovato</div>
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -443,13 +455,10 @@ export default function ClientDetailPage() {
             {client.contact_email}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {saveMsg && <span style={{ fontSize: 13, color: T.success, alignSelf: 'center' }}>{saveMsg}</span>}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {saveMsg && <span style={{ fontSize: 13, color: T.success }}>{saveMsg}</span>}
           <button style={s.btnGhost} onClick={startEditClient}>
             <i className="fa-solid fa-pen" /> Modifica
-          </button>
-          <button style={s.btn} onClick={() => setHotelModal('new')}>
-            + Nuovo hotel
           </button>
         </div>
       </div>

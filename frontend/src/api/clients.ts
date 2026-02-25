@@ -19,6 +19,7 @@ export interface Hotel {
   bb_hotel_id: string | null
   category: string | null
   stars: number | null
+  rooms: number | null
   address: string | null
   city: string | null
   country: string | null
@@ -66,6 +67,7 @@ export interface HotelCreate {
   lat?: number | null
   lng?: number | null
   website_url?: string | null
+  rooms?: number | null
   booking_engine?: string | null
   property_type?: string | null
   adr?: number | null

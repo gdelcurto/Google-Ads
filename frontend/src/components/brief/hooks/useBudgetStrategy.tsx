@@ -48,13 +48,29 @@ export function useBudgetStrategy({
     mutationFn: () => {
       if (!form.brand_name) throw new Error('Inserisci il nome del brand (Step 0) prima di richiedere la strategia.')
       const existingBudget = parseFloat(form.total_monthly_eur) || 0
+      const adr           = parseFloat(form.adr) || undefined
+      const occupancyRate = parseFloat(form.occupancy_rate) || undefined
+      const directPct     = parseFloat(form.direct_pct) || undefined
+      const rooms         = parseInt(form.rooms) || undefined
       return autofillApi.suggestBudgetStrategy({
-        brand_name:     form.brand_name,
-        hotel_category: form.hotel_category || 'city_hotel',
-        stars:          parseInt(form.stars) || 3,
-        languages:      langs.map(l => l.code.toUpperCase()).filter(Boolean),
-        vertical:       form.vertical || 'hotel',
-        country:        form.country || 'IT',
+        brand_name:        form.brand_name,
+        hotel_category:    form.hotel_category || 'city_hotel',
+        stars:             parseInt(form.stars) || 3,
+        languages:         langs.map(l => l.code.toUpperCase()).filter(Boolean),
+        vertical:          form.vertical || 'hotel',
+        country:           form.country || 'IT',
+        primary_objective: form.primary_objective || 'direct_bookings',
+        ...(rooms            ? { rooms }                               : {}),
+        ...(adr              ? { adr }                                 : {}),
+        ...(occupancyRate    ? { occupancy_rate: occupancyRate }       : {}),
+        ...(directPct        ? { direct_pct: directPct }               : {}),
+        ...(form.city?.trim()                 ? { city: form.city }                             : {}),
+        ...(form.booking_channels?.trim()     ? { booking_channels: form.booking_channels }     : {}),
+        ...(form.seasonality_summary?.trim()  ? { seasonality_summary: form.seasonality_summary } : {}),
+        ...(form.target_countries?.trim()     ? { target_countries: form.target_countries }     : {}),
+        ...(form.services?.trim()             ? { services: form.services }                     : {}),
+        ...(form.strengths?.trim()            ? { strengths: form.strengths }                   : {}),
+        ...(form.booking_engine_url?.trim()   ? { booking_engine_url: form.booking_engine_url } : {}),
         ...(existingBudget > 0 ? { total_monthly_budget_eur: existingBudget } : {}),
       })
     },
