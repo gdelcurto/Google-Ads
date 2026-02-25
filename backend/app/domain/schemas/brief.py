@@ -347,6 +347,9 @@ class HotelSpecifics(BaseModel):
     category: HotelVertical
     stars: int = Field(..., ge=1, le=5)
     rooms: Optional[int] = Field(None, ge=1)
+    adr: Optional[float] = Field(None, ge=0, description="Average Daily Rate €/notte")
+    occupancy_rate: Optional[float] = Field(None, ge=0, le=100, description="Tasso di occupazione % (0–100)")
+    direct_pct: Optional[float] = Field(None, ge=0, le=100, description="% prenotazioni dirette vs OTA")
     location: HotelLocation
     room_categories: List[str] = Field(default_factory=list)
     services: List[str] = Field(default_factory=list)
