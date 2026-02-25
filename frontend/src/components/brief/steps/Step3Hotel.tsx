@@ -64,6 +64,51 @@ export function Step3Hotel({
               placeholder="https://booking.hotel.it/it"
             />
           </div>
+          <div style={css.field}>
+            <label style={css.label}>
+              ADR — Prezzo medio a notte (€){' '}
+              <span style={{ fontWeight: 400, color: T.textGray }}>usato per la strategia budget AI</span>
+            </label>
+            <input
+              style={css.input}
+              type="number"
+              min="0"
+              step="10"
+              value={form.adr}
+              onChange={e => setField('adr', e.target.value)}
+              placeholder="es. 180"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>
+              Tasso di occupazione attuale (%){' '}
+              <span style={{ fontWeight: 400, color: T.textGray }}>es. 65</span>
+            </label>
+            <input
+              style={css.input}
+              type="number"
+              min="0"
+              max="100"
+              value={form.occupancy_rate}
+              onChange={e => setField('occupancy_rate', e.target.value)}
+              placeholder="es. 65"
+            />
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>
+              Prenotazioni dirette (%){' '}
+              <span style={{ fontWeight: 400, color: T.textGray }}>vs OTA — es. 30</span>
+            </label>
+            <input
+              style={css.input}
+              type="number"
+              min="0"
+              max="100"
+              value={form.direct_pct}
+              onChange={e => setField('direct_pct', e.target.value)}
+              placeholder="es. 30"
+            />
+          </div>
         </div>
         <div style={css.field}>
           <label style={css.label}>Indirizzo completo *</label>

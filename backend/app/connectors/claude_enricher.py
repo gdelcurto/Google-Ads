@@ -773,10 +773,49 @@ Regole:
             total_field = '"suggested_total_eur": 1500,'
 
         types_str = ", ".join(_VALID_CAMPAIGN_TYPES)
-        ai_prompt = f"""Analizza il profilo di questo hotel e definisci la strategia di campagne Google Ads ottimale.
 
-HOTEL: {payload.get('brand_name', '')} — {hotel_category} {stars}★
-PAESE: {payload.get('country', 'IT')} — LINGUE: {langs_str} ({n_langs} {'lingua' if n_langs == 1 else 'lingue'})
+        # Build enriched hotel context — only include fields with actual values
+        _obj_labels = {
+            "direct_bookings": "Prenotazioni dirette",
+            "lead_gen": "Lead generation",
+            "phone_calls": "Telefonate",
+            "brand_awareness": "Brand awareness",
+        }
+        ctx: list[str] = []
+        ctx.append(f"- Hotel: {payload.get('brand_name', '')} ({hotel_category} {stars}★)")
+        ctx.append(f"- Paese: {payload.get('country', 'IT')}")
+        if payload.get("target_countries"):
+            tc = ", ".join(
+                c.strip() for c in payload["target_countries"].replace("\n", ",").split(",") if c.strip()
+            )
+            ctx.append(f"- Mercati target: {tc}")
+        if payload.get("rooms"):
+            ctx.append(f"- Camere: {payload['rooms']}")
+        if payload.get("adr"):
+            ctx.append(f"- ADR: €{payload['adr']:.0f}/notte")
+        if payload.get("occupancy_rate"):
+            ctx.append(f"- Tasso di occupazione attuale: {payload['occupancy_rate']:.0f}%")
+        if payload.get("direct_pct"):
+            ctx.append(f"- Prenotazioni dirette vs OTA: {payload['direct_pct']:.0f}% dirette")
+        if payload.get("booking_engine_url"):
+            ctx.append(f"- Booking engine: {payload['booking_engine_url']}")
+        obj_label = _obj_labels.get(payload.get("primary_objective", ""), payload.get("primary_objective", "direct_bookings"))
+        ctx.append(f"- Obiettivo principale: {obj_label}")
+        ctx.append(f"- Lingue campagne: {langs_str} ({n_langs} {'lingua' if n_langs == 1 else 'lingue'})")
+        if payload.get("strengths"):
+            items = [s.strip() for s in payload["strengths"].split("\n") if s.strip()][:5]
+            ctx.append(f"- Punti di forza: {', '.join(items)}")
+        if payload.get("services"):
+            items = [s.strip() for s in payload["services"].split("\n") if s.strip()][:5]
+            ctx.append(f"- Servizi principali: {', '.join(items)}")
+        context_block = "\n".join(ctx)
+
+        ai_prompt = f"""Agisci come un esperto senior di Google Ads con 15+ anni di esperienza nel settore turismo e hospitality.
+Definisci la strategia ottimale di campagne Google Ads e l'allocazione del budget per questa struttura ricettiva.
+
+STRUTTURA RICETTIVA:
+{context_block}
+
 {budget_line}
 
 Tipi campagna disponibili (usa ESATTAMENTE questi nomi chiave):

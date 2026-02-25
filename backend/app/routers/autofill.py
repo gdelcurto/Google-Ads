@@ -70,6 +70,16 @@ class BudgetStrategyRequest(BaseModel):
     vertical: str = "hotel"
     country: str = "IT"
     total_monthly_budget_eur: float = 0.0
+    # Enriched hotel profile
+    rooms: Optional[int] = None
+    adr: Optional[float] = None             # Average Daily Rate €/notte
+    occupancy_rate: Optional[float] = None  # % tasso occupazione (0–100)
+    direct_pct: Optional[float] = None      # % prenotazioni dirette vs OTA
+    target_countries: Optional[str] = None  # codici ISO, newline-separated
+    services: Optional[str] = None          # uno per riga
+    strengths: Optional[str] = None         # uno per riga
+    booking_engine_url: Optional[str] = None
+    primary_objective: str = "direct_bookings"
 
 
 class BudgetStrategyResponse(BaseModel):

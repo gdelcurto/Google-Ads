@@ -18,6 +18,9 @@ export interface FormState {
   hotel_category: string
   stars: string
   rooms: string
+  adr: string           // ADR €/notte
+  occupancy_rate: string // % tasso di occupazione (0–100)
+  direct_pct: string    // % prenotazioni dirette vs OTA
   address: string
   services: string
   strengths: string
@@ -116,6 +119,9 @@ export const DEFAULT_FORM: FormState = {
   hotel_category: 'city_hotel',
   stars: '3',
   rooms: '',
+  adr: '',
+  occupancy_rate: '',
+  direct_pct: '',
   address: '',
   services: '',
   strengths: '',
