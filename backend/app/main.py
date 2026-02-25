@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import engine, get_db, Base
-from app.domain.models import User, ProjectPermission  # noqa: F401 — registers models on Base.metadata
+from app.domain.models import User, ProjectPermission, Client, Hotel  # noqa: F401 — registers models on Base.metadata
 from app.auth import hash_password
 
 settings = get_settings()
@@ -116,6 +116,8 @@ def _ensure_missing_columns(conn) -> None:
         ("project_permissions", "tab_scan_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("project_permissions", "tab_api_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("project_permissions", "tab_budget_log", "BOOLEAN NOT NULL DEFAULT TRUE"),
+        ("projects", "client_id", "TEXT"),
+        ("projects", "hotel_id",  "TEXT"),
     ]
     for table, column, col_type in _COLUMN_FIXES:
         if table not in insp.get_table_names():
@@ -264,10 +266,11 @@ app.add_middleware(
 )
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
-from app.routers import auth, autofill, campaigns, export, projects, templates, users
+from app.routers import auth, autofill, campaigns, clients, export, projects, templates, users
 
 app.include_router(auth.router)
 app.include_router(users.router)
+app.include_router(clients.router)
 app.include_router(projects.router)
 app.include_router(campaigns.router)
 app.include_router(export.router)

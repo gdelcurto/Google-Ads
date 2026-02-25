@@ -343,6 +343,12 @@ function LayoutInner() {
           label="Progetti"
           active={isActive('/projects')}
         />
+        <NavLink
+          to="/clients"
+          icon="fa-solid fa-building"
+          label="Clienti"
+          active={isActive('/clients')}
+        />
         {role === 'admin' && (
           <NavLink
             to="/users"

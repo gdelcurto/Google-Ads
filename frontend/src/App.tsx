@@ -4,6 +4,8 @@ import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import TrashPage from './pages/TrashPage'
 import UsersPage from './pages/UsersPage'
+import ClientsPage from './pages/ClientsPage'
+import ClientDetailPage from './pages/ClientDetailPage'
 import Layout from './components/Layout'
 import { AutofillJobProvider, useAutofillJobs, type AutofillNotification } from './contexts/AutofillJobContext'
 
@@ -117,6 +119,8 @@ function AppRoutes() {
           <Route index element={<Navigate to="/projects" replace />} />
           <Route path="projects" element={<ProjectsPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="clients" element={<ClientsPage />} />
+          <Route path="clients/:id" element={<ClientDetailPage />} />
           <Route path="trash" element={<TrashPage />} />
           <Route path="users" element={<UsersPage />} />
         </Route>
