@@ -166,7 +166,8 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
   const [saveHadWarnings, setSaveHadWarnings] = useState(false)
   const [previewLangIdx, setPreviewLangIdx]   = useState(0)
   const [autofillUrl, setAutofillUrl]         = useState<string>(() => {
-    const domain = String((existingBrief as Record<string, unknown> | null)?.domain ?? '')
+    const client = ((existingBrief as Record<string, unknown> | null)?.client ?? {}) as Record<string, unknown>
+    const domain = String(client.domain ?? '')
     return domain ? `https://${domain}` : ''
   })
   const [autofillLangs, setAutofillLangs]     = useState<string[]>(['IT', 'EN'])
