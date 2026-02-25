@@ -17,6 +17,66 @@ def new_uuid() -> str:
     return str(uuid.uuid4())
 
 
+class Client(Base):
+    """A hotel client / customer account."""
+    __tablename__ = "clients"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    bb_client_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    agency: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    contact_email: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    contact_phone: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    owner: Mapped["User"] = relationship("User", back_populates="clients")
+    hotels: Mapped[list["Hotel"]] = relationship(
+        "Hotel", back_populates="client", cascade="all, delete-orphan"
+    )
+    projects: Mapped[list["Project"]] = relationship("Project", back_populates="client")
+
+
+class Hotel(Base):
+    """A hotel property belonging to a Client."""
+    __tablename__ = "hotels"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=new_uuid)
+    client_id: Mapped[str] = mapped_column(ForeignKey("clients.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    bb_hotel_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Hotel profile
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, default="city_hotel")
+    stars: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=0)
+    address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    country_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    lat: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lng: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    website_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    booking_engine: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    property_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # Revenue / market data
+    adr: Mapped[Optional[float]] = mapped_column(Float, nullable=True)   # Average Daily Rate €
+    seasonality_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array of periods
+    # Cached scrape data (replaced on each new autofill)
+    scraped_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scraped_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    client: Mapped["Client"] = relationship("Client", back_populates="hotels")
+    projects: Mapped[list["Project"]] = relationship("Project", back_populates="hotel")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -33,6 +93,7 @@ class User(Base):
     permissions: Mapped[list["ProjectPermission"]] = relationship(
         "ProjectPermission", foreign_keys="ProjectPermission.user_id", back_populates="user"
     )
+    clients: Mapped[list["Client"]] = relationship("Client", back_populates="owner")
 
 
 class Project(Base):
@@ -48,6 +109,9 @@ class Project(Base):
     brief_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     plan_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    # Client / Hotel link (nullable for backwards compat with existing projects)
+    client_id: Mapped[Optional[str]] = mapped_column(ForeignKey("clients.id"), nullable=True)
+    hotel_id: Mapped[Optional[str]] = mapped_column(ForeignKey("hotels.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -55,6 +119,8 @@ class Project(Base):
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, default=None)
 
     owner: Mapped["User"] = relationship("User", back_populates="projects")
+    client: Mapped[Optional["Client"]] = relationship("Client", back_populates="projects")
+    hotel: Mapped[Optional["Hotel"]] = relationship("Hotel", back_populates="projects")
     campaigns: Mapped[list["CampaignRecord"]] = relationship(
         "CampaignRecord", back_populates="project", cascade="all, delete-orphan"
     )

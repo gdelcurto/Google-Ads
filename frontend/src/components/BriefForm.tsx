@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { projectsApi, autofillApi, EnrichedAutofillResult } from '../api/projects'
+import { clientsApi, type Hotel } from '../api/clients'
 import { T } from '../styles/theme'
 
 import {
@@ -30,7 +31,7 @@ import { Step5Revisione } from './brief/steps/Step5Revisione'
 
 interface BriefFormProps {
   projectId: string
-  project?: { preset?: string; vertical?: string; name?: string; client_slug?: string } | null
+  project?: { preset?: string; vertical?: string; name?: string; client_slug?: string; client_id?: string | null; hotel_id?: string | null } | null
   existingBrief?: Record<string, unknown> | null
   onSaved: () => void
   pendingAutofill?: EnrichedAutofillResult | null
@@ -39,6 +40,61 @@ interface BriefFormProps {
 
 export default function BriefForm({ projectId, project, existingBrief, onSaved, pendingAutofill, onJobStarted }: BriefFormProps) {
   const qc = useQueryClient()
+
+  // ── Client / Hotel link ────────────────────────────────────────────────────
+  const [linkedClientId, setLinkedClientId] = useState<string>(project?.client_id ?? '')
+  const [linkedHotelId,  setLinkedHotelId]  = useState<string>(project?.hotel_id ?? '')
+
+  const { data: clientsList = [] } = useQuery({
+    queryKey: ['clients'],
+    queryFn: clientsApi.list,
+  })
+
+  // Fetch full client with hotels when client is selected
+  const { data: fullClient } = useQuery({
+    queryKey: ['client', linkedClientId],
+    queryFn: () => clientsApi.get(linkedClientId),
+    enabled: !!linkedClientId,
+  })
+
+  const hotelsForClientFull: Hotel[] = fullClient?.hotels ?? []
+
+  const linkMutation = useMutation({
+    mutationFn: ({ cid, hid }: { cid: string | null; hid: string | null }) =>
+      projectsApi.link(projectId, cid, hid),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['project', projectId] }),
+  })
+
+  const handleSelectClient = (clientId: string) => {
+    setLinkedClientId(clientId)
+    setLinkedHotelId('')
+    linkMutation.mutate({ cid: clientId || null, hid: null })
+  }
+
+  const handleSelectHotel = (hotelId: string) => {
+    setLinkedHotelId(hotelId)
+    linkMutation.mutate({ cid: linkedClientId || null, hid: hotelId || null })
+  }
+
+  const prefillFromHotel = (hotel: Hotel) => {
+    const domain = hotel.website_url
+      ? hotel.website_url.replace(/^https?:\/\//, '').replace(/\/$/, '')
+      : ''
+    setForm(prev => ({
+      ...prev,
+      brand_name:     prev.brand_name     || fullClient?.name || hotel.name,
+      brand_slug:     prev.brand_slug     || hotel.name.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-'),
+      domain:         prev.domain         || domain,
+      country:        prev.country        || hotel.country_code || '',
+      hotel_category: hotel.category      || prev.hotel_category,
+      vertical:       hotel.category      || prev.vertical,
+      stars:          hotel.stars != null ? String(hotel.stars) : prev.stars,
+      address:        prev.address        || [hotel.address, hotel.city, hotel.country].filter(Boolean).join(', '),
+      booking_engine_url: prev.booking_engine_url || hotel.booking_engine || '',
+    }))
+    if (!autofillUrl && hotel.website_url) setAutofillUrl(hotel.website_url)
+  }
+
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<FormState>(() => {
     if (existingBrief) return briefToForm(existingBrief)
@@ -335,6 +391,75 @@ export default function BriefForm({ projectId, project, existingBrief, onSaved, 
           <ul style={{ marginLeft: 16, marginTop: 4 }}>
             {errors.map((e, i) => <li key={i}>{e}</li>)}
           </ul>
+        </div>
+      )}
+
+      {/* ── Client / Hotel selector (step 0 only) ── */}
+      {step === 0 && (
+        <div style={{
+          background: '#f0f4ff',
+          border: `1.5px solid ${T.blue}`,
+          borderRadius: T.radiusLg,
+          padding: '16px 20px',
+          marginBottom: 24,
+        }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.blue, marginBottom: 12 }}>
+            <i className="fa-solid fa-building" /> Collega cliente e hotel
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 12, alignItems: 'flex-end' }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: T.textGray, display: 'block', marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+                Cliente
+              </label>
+              <select
+                style={{ width: '100%', padding: '8px 11px', borderRadius: T.radiusSm, border: `1.5px solid ${T.borderLight}`, fontSize: 13, color: T.text }}
+                value={linkedClientId}
+                onChange={e => handleSelectClient(e.target.value)}
+              >
+                <option value="">— Nessun cliente —</option>
+                {clientsList.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}{c.agency ? ` (${c.agency})` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: T.textGray, display: 'block', marginBottom: 4, textTransform: 'uppercase' as const, letterSpacing: 0.5 }}>
+                Hotel
+              </label>
+              <select
+                style={{ width: '100%', padding: '8px 11px', borderRadius: T.radiusSm, border: `1.5px solid ${T.borderLight}`, fontSize: 13, color: T.text }}
+                value={linkedHotelId}
+                onChange={e => handleSelectHotel(e.target.value)}
+                disabled={!linkedClientId}
+              >
+                <option value="">— Seleziona hotel —</option>
+                {hotelsForClientFull.map(h => (
+                  <option key={h.id} value={h.id}>{h.name}{h.stars ? ` ${'★'.repeat(h.stars)}` : ''}</option>
+                ))}
+              </select>
+            </div>
+            {linkedHotelId && (() => {
+              const hotel = hotelsForClientFull.find(h => h.id === linkedHotelId)
+              return hotel ? (
+                <button
+                  style={{ padding: '8px 14px', background: T.blue, color: '#fff', border: 'none', borderRadius: T.radiusSm, cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' as const }}
+                  onClick={() => prefillFromHotel(hotel)}
+                  title="Pre-compila i campi del brief con i dati salvati dell'hotel"
+                >
+                  <i className="fa-solid fa-wand-sparkles" /> Pre-compila
+                </button>
+              ) : null
+            })()}
+          </div>
+          {linkedHotelId && (() => {
+            const hotel = hotelsForClientFull.find(h => h.id === linkedHotelId)
+            return hotel?.has_scraped_data ? (
+              <div style={{ marginTop: 10, fontSize: 12, color: T.success }}>
+                <i className="fa-solid fa-circle-check" /> Dati scansionati disponibili per questo hotel
+                {hotel.scraped_at && <span style={{ color: T.textGray }}> · {new Date(hotel.scraped_at).toLocaleDateString('it-IT')}</span>}
+              </div>
+            ) : null
+          })()}
         </div>
       )}
 

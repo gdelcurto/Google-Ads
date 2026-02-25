@@ -189,6 +189,9 @@ export const projectsApi = {
   restore: (id: string) =>
     api.post<{ detail: string }>(`/projects/${id}/restore`).then((r) => r.data),
 
+  link: (id: string, clientId: string | null, hotelId: string | null) =>
+    api.patch<Project>(`/projects/${id}/link`, { client_id: clientId, hotel_id: hotelId }).then((r) => r.data),
+
   permanentDelete: (id: string) =>
     api.delete<{ detail: string }>(`/projects/${id}/permanent`).then((r) => r.data),
 }

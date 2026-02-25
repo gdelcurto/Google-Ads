@@ -107,7 +107,7 @@ async def _update_job_status(
     scraped: dict | None = None,
 ) -> None:
     from sqlalchemy import select
-    from app.domain.models import AutofillJob
+    from app.domain.models import AutofillJob, Hotel
 
     async with AsyncSessionLocal() as db:
         res = await db.execute(select(AutofillJob).where(AutofillJob.id == job_id))
@@ -123,6 +123,27 @@ async def _update_job_status(
             job.error_message = str(error)[:2000]
         if status in ("completed", "failed"):
             job.completed_at = datetime.utcnow()
+
+        # When a job completes successfully, save the enriched result to the
+        # hotel record so future briefs can use it without re-scanning.
+        if status == "completed" and result is not None:
+            from app.domain.models import Project
+            proj_res = await db.execute(
+                select(Project).where(Project.id == job.project_id)
+            )
+            project = proj_res.scalar_one_or_none()
+            if project and project.hotel_id:
+                hotel_res = await db.execute(
+                    select(Hotel).where(Hotel.id == project.hotel_id)
+                )
+                hotel = hotel_res.scalar_one_or_none()
+                if hotel:
+                    hotel.scraped_json = json.dumps(result)
+                    hotel.scraped_at = datetime.utcnow()
+                    logger.info(
+                        f"AutofillJob {job_id}: saved enriched data to hotel {hotel.id}"
+                    )
+
         await db.commit()
 
 

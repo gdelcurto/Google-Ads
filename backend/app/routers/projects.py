@@ -28,6 +28,8 @@ class ProjectCreate(BaseModel):
     client_slug: str
     preset: str = "blastness"
     vertical: str = "city_hotel"
+    client_id: Optional[str] = None
+    hotel_id: Optional[str] = None
 
 
 class ProjectResponse(BaseModel):
@@ -40,6 +42,8 @@ class ProjectResponse(BaseModel):
     has_brief: bool
     has_plan: bool
     owner_id: str
+    client_id: Optional[str] = None
+    hotel_id: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -55,6 +59,8 @@ def _to_response(p: Project) -> ProjectResponse:
         has_brief=p.brief_json is not None,
         has_plan=p.plan_json is not None,
         owner_id=p.owner_id,
+        client_id=p.client_id,
+        hotel_id=p.hotel_id,
         created_at=p.created_at.isoformat(),
         updated_at=p.updated_at.isoformat(),
     )
@@ -113,6 +119,8 @@ async def create_project(
         preset=payload.preset,
         vertical=payload.vertical,
         owner_id=current_user.user_id,
+        client_id=payload.client_id,
+        hotel_id=payload.hotel_id,
     )
     db.add(project)
     await db.flush()
@@ -406,3 +414,23 @@ async def get_my_permissions(
 ):
     """Return the current user's effective permissions for a project."""
     return await _resolve_permissions(current_user.user_id, current_user.role, project_id, db)
+
+
+class ProjectLinkPayload(BaseModel):
+    client_id: Optional[str] = None
+    hotel_id: Optional[str] = None
+
+
+@router.patch("/{project_id}/link", response_model=ProjectResponse)
+async def link_project(
+    project_id: str,
+    payload: ProjectLinkPayload,
+    current_user: TokenData = Depends(require_strategist_or_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Link (or unlink) a project to a Client and Hotel."""
+    project = await _get_project_or_404(project_id, db)
+    project.client_id = payload.client_id
+    project.hotel_id  = payload.hotel_id
+    project.updated_at = datetime.now(_TZ_ROME)
+    return _to_response(project)
